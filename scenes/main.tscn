@@ -10,20 +10,3 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_main")
-
-[node name="Title" type="Label" parent="."]
-layout_mode = 0
-offset_left = 32.0
-offset_top = 24.0
-offset_right = 640.0
-offset_bottom = 64.0
-theme_override_font_sizes/font_size = 24
-text = "Magic Robot Tactic War — Combat Prototype v0.1"
-
-[node name="Status" type="Label" parent="."]
-layout_mode = 0
-offset_left = 32.0
-offset_top = 76.0
-offset_right = 900.0
-offset_bottom = 112.0
-text = "Graybox skeleton ready. Next: 7x10 grid + deterministic combat simulation."
