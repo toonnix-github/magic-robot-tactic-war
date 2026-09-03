@@ -10,6 +10,10 @@ const PART_MAX_HP := 100
 const PLACEHOLDER_ATTACK_DAMAGE := 25
 const PLACEHOLDER_HIT_PERCENT := 80
 const HEAD_DESTROYED_HIT_PENALTY := -30
+const HEIGHT_HIT_PER_LEVEL := 5
+const HEIGHT_HIT_CAP := 15
+const COVER_DODGE_BONUS := 10
+const COVER_DAMAGE_REDUCTION_PERCENT := 10
 const PLACEHOLDER_WEAPON_RANGES := {
 	"Sword": 1,
 	"Spear": 2,
@@ -124,10 +128,12 @@ var turn_number := 1
 var last_action_message := "Ready"
 var target_preview := {}
 var last_attack_result := {}
+var terrain_tiles := {}
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	_create_terrain()
 	_create_units()
 	_initialize_initiative()
 	_begin_next_activation()
@@ -740,7 +746,7 @@ func _resolve_shield_damage(attacker, shield_unit, original_target, preview: Dic
 	var hit := _roll_hit(hit_percent, hit_seed)
 	var damage_result := _shield_damage_result(shield_unit)
 	if hit:
-		damage_result = _damage_shield(shield_unit, damage)
+		damage_result = _damage_shield(shield_unit, _terrain_adjusted_damage(shield_unit, damage))
 	return {
 		"attacker_id": str(attacker["id"]),
 		"target_id": str(shield_unit["id"]),
@@ -788,7 +794,7 @@ func _resolve_weapon_attack(attacker, target, preview: Dictionary, part_name := 
 	var damage_result := _miss_damage_result(target, resolved_part)
 	if hit:
 		var damage: int = damage_override if damage_override >= 0 else int(weapon_data["damage"])
-		damage_result = _damage_part(target, resolved_part, damage)
+		damage_result = _damage_part(target, resolved_part, _terrain_adjusted_damage(target, damage))
 
 	return {
 		"attacker_id": str(attacker["id"]),
@@ -1067,7 +1073,11 @@ func _attack_preview(attacker, target) -> Dictionary:
 	var attack_range := _attack_range_for(attacker)
 	var legal := _is_attack_target_legal(attacker, target)
 	var base_hit := int(weapon_data["hit_percent"]) if attacker != null else 0
-	var hit_percent: int = int(clamp(base_hit + int(attacker.get("accuracy_modifier", 0)) if attacker != null else 0, 0, 100))
+	var accuracy_modifier := int(attacker.get("accuracy_modifier", 0)) if attacker != null else 0
+	var height_modifier := _height_hit_modifier(attacker, target)
+	var cover_dodge_modifier := -int(_terrain_at(target["grid"]).get("cover_dodge_bonus", 0)) if target != null and _has_cover(target["grid"]) else 0
+	var hit_percent: int = int(clamp(base_hit + accuracy_modifier + height_modifier + cover_dodge_modifier, 0, 100))
+	var base_damage := int(weapon_data.get("damage", 0))
 	var preview := {
 		"attacker_id": str(attacker["id"]) if attacker != null else "",
 		"target_id": str(target["id"]) if target != null else "",
@@ -1075,6 +1085,11 @@ func _attack_preview(attacker, target) -> Dictionary:
 		"min_range": attack_min_range,
 		"range": attack_range,
 		"hit_percent": hit_percent if legal else 0,
+		"base_hit_percent": base_hit,
+		"height_hit_modifier": height_modifier,
+		"cover_dodge_modifier": cover_dodge_modifier,
+		"damage": _terrain_adjusted_damage(target, base_damage) if legal else 0,
+		"base_damage": base_damage,
 		"legal": legal,
 		"weapon_pattern": str(weapon_data.get("pattern", "single")),
 	}
@@ -1105,7 +1120,9 @@ func _is_attack_target_legal(attacker, target) -> bool:
 	if str(weapon_data.get("pattern", "single")) == "line_2":
 		return _spear_direction(attacker, target) != Vector2i.ZERO
 	var distance: int = _grid_distance(attacker["grid"], target["grid"])
-	return distance >= int(weapon_data["range_min"]) and distance <= int(weapon_data["range_max"])
+	if distance < int(weapon_data["range_min"]) or distance > int(weapon_data["range_max"]):
+		return false
+	return _has_line_of_sight(attacker["grid"], target["grid"])
 
 
 func _attack_range_for(unit) -> int:
@@ -1179,7 +1196,7 @@ func _calculate_reachable_tiles(unit) -> Dictionary:
 			var next_grid = current["grid"] + direction
 			if not _is_in_bounds(next_grid):
 				continue
-			if abs(_height_at(next_grid) - _height_at(current["grid"])) > 1:
+			if not _can_traverse_step(current["grid"], next_grid):
 				continue
 			if _occupied_by_opponent(next_grid, str(unit["team"])):
 				continue
@@ -1244,8 +1261,97 @@ func _is_in_bounds(grid) -> bool:
 	return grid.x >= 0 and grid.x < GRID_COLUMNS and grid.y >= 0 and grid.y < GRID_ROWS
 
 
+func _create_terrain() -> void:
+	terrain_tiles.clear()
+	_set_tile_terrain(Vector2i(5, 4), {"cover": true})
+	_set_tile_terrain(Vector2i(8, 1), {"cover": true})
+
+
+func _set_tile_terrain(grid: Vector2i, data: Dictionary) -> void:
+	if not _is_in_bounds(grid):
+		return
+	var key := _grid_key(grid)
+	var tile: Dictionary = terrain_tiles.get(key, {}).duplicate(true)
+	for property in data.keys():
+		tile[property] = data[property]
+	terrain_tiles[key] = tile
+
+
+func _terrain_at(grid) -> Dictionary:
+	var terrain := {
+		"height": _default_height_at(grid),
+		"cover": false,
+		"cover_dodge_bonus": COVER_DODGE_BONUS,
+		"cover_damage_reduction_percent": COVER_DAMAGE_REDUCTION_PERCENT,
+		"blocks_los": false,
+	}
+	if grid != null and _is_in_bounds(grid):
+		var override: Dictionary = terrain_tiles.get(_grid_key(grid), {})
+		for property in override.keys():
+			terrain[property] = override[property]
+	terrain["height"] = int(clamp(int(terrain["height"]), 0, 4))
+	return terrain
+
+
+func _default_height_at(grid) -> int:
+	if grid == null:
+		return 0
+	return int(clamp(floor(float(grid.x) / 2.0), 0.0, 4.0))
+
+
 func _height_at(grid) -> int:
-	return int(floor(float(grid.x) / 2.0))
+	return int(_terrain_at(grid)["height"])
+
+
+func _height_hit_modifier(attacker, target) -> int:
+	if attacker == null or target == null:
+		return 0
+	var height_delta: int = _height_at(attacker["grid"]) - _height_at(target["grid"])
+	return int(clamp(height_delta * HEIGHT_HIT_PER_LEVEL, -HEIGHT_HIT_CAP, HEIGHT_HIT_CAP))
+
+
+func _has_cover(grid) -> bool:
+	return bool(_terrain_at(grid).get("cover", false))
+
+
+func _terrain_adjusted_damage(target, damage: int) -> int:
+	var adjusted: int = max(0, damage)
+	if target == null or not _has_cover(target["grid"]):
+		return adjusted
+	var reduction := int(_terrain_at(target["grid"]).get("cover_damage_reduction_percent", 0))
+	return int(round(float(adjusted) * (100.0 - float(reduction)) / 100.0))
+
+
+func _can_traverse_step(from_grid: Vector2i, to_grid: Vector2i) -> bool:
+	return abs(_height_at(to_grid) - _height_at(from_grid)) <= 1
+
+
+func _blocks_los(grid) -> bool:
+	return bool(_terrain_at(grid).get("blocks_los", false))
+
+
+func _has_line_of_sight(a: Vector2i, b: Vector2i) -> bool:
+	for grid in _line_grids_between(a, b):
+		if _blocks_los(grid):
+			return false
+	return true
+
+
+func _line_grids_between(a: Vector2i, b: Vector2i) -> Array:
+	var between := []
+	var steps: int = max(abs(b.x - a.x), abs(b.y - a.y))
+	if steps <= 1:
+		return between
+
+	for step in range(1, steps):
+		var t := float(step) / float(steps)
+		var grid := Vector2i(
+			int(round(lerp(float(a.x), float(b.x), t))),
+			int(round(lerp(float(a.y), float(b.y), t)))
+		)
+		if grid != a and grid != b and (between.is_empty() or between[between.size() - 1] != grid):
+			between.append(grid)
+	return between
 
 
 func _event_press_position(event: InputEvent):
@@ -1320,8 +1426,14 @@ func _draw_battlefield() -> void:
 		for column in range(GRID_COLUMNS):
 			_draw_tile(Vector2i(column, row))
 
-	_draw_cover(Vector2i(5, 4))
-	_draw_cover(Vector2i(8, 1))
+	for key in terrain_tiles.keys():
+		var terrain_grid := _grid_from_key(key)
+		var rect := _tile_rect(terrain_grid)
+		if _blocks_los(terrain_grid):
+			draw_rect(rect.grow(-12.0 * min(_scale().x, _scale().y)), Color(0.32, 0.30, 0.31), true)
+			draw_rect(rect.grow(-12.0 * min(_scale().x, _scale().y)), Color(0.55, 0.51, 0.48), false, 1.5)
+		if _has_cover(terrain_grid):
+			_draw_cover(terrain_grid)
 
 	for unit in units:
 		if _is_unit_in_battle(unit):

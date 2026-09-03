@@ -139,6 +139,26 @@ class BattleMilestoneStaticTests(unittest.TestCase):
             self.assertIn(hook, self.source)
         self.assertIn('"shield_hit_weight"', self.source)
 
+    def test_terrain_los_and_cover_hooks_are_encoded(self):
+        for hook in [
+            "func _create_terrain",
+            "func _set_tile_terrain",
+            "func _terrain_at",
+            "func _height_hit_modifier",
+            "func _has_cover",
+            "func _terrain_adjusted_damage",
+            "func _can_traverse_step",
+            "func _has_line_of_sight",
+        ]:
+            self.assertIn(hook, self.source)
+        for constant in [
+            "HEIGHT_HIT_PER_LEVEL",
+            "HEIGHT_HIT_CAP",
+            "COVER_DODGE_BONUS",
+            "COVER_DAMAGE_REDUCTION_PERCENT",
+        ]:
+            self.assertIn(constant, self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

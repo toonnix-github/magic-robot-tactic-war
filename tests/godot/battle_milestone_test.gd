@@ -79,6 +79,7 @@ func _run() -> void:
 	_run_rifle_acceptance(scene)
 	_run_sniper_acceptance(scene)
 	_run_shield_acceptance(scene)
+	_run_terrain_acceptance(scene)
 
 	if _failures.is_empty():
 		print("GODOT TESTS PASSED")
@@ -249,7 +250,32 @@ func _run_shield_acceptance(scene: Control) -> void:
 	_test_shield_interception_works_for_enemy_team(scene)
 
 
+func _run_terrain_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_create_terrain",
+		"_set_tile_terrain",
+		"_terrain_at",
+		"_height_hit_modifier",
+		"_has_cover",
+		"_terrain_adjusted_damage",
+		"_can_traverse_step",
+		"_has_line_of_sight",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "Terrain API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_height_advantage_caps_at_plus_fifteen(scene)
+	_test_height_disadvantage_caps_at_minus_fifteen(scene)
+	_test_equal_elevation_has_no_height_modifier(scene)
+	_test_steep_elevation_step_blocks_movement(scene)
+	_test_cover_modifies_preview_and_resolved_damage(scene)
+	_test_los_blocker_prevents_target_selection(scene)
+
+
 func _reset_turn_fixture(scene: Control) -> void:
+	scene._create_terrain()
 	scene._create_units()
 	scene._initialize_initiative()
 	scene._begin_next_activation()
@@ -350,6 +376,23 @@ func _set_enemy_shield_fixture(scene: Control) -> Dictionary:
 	scene._unit_by_id("enemy_blade")["grid"] = Vector2i(8, 6)
 	scene._unit_by_id("enemy_sniper")["grid"] = Vector2i(8, 5)
 	return {"attacker": attacker, "shield": shield, "protected": protected}
+
+
+func _set_terrain_attack_fixture(scene: Control, attacker_height: int, target_height: int, target_has_cover := false, blocker_grid = null) -> Dictionary:
+	_reset_turn_fixture(scene)
+	var attacker = scene._unit_by_id("mira")
+	var target = scene._unit_by_id("enemy_blade")
+	attacker["weapon"] = "Sniper"
+	attacker["grid"] = Vector2i(1, 1)
+	target["grid"] = Vector2i(4, 1)
+	scene._unit_by_id("enemy_rifle")["grid"] = Vector2i(8, 4)
+	scene._unit_by_id("enemy_sniper")["grid"] = Vector2i(8, 5)
+	scene._unit_by_id("commander")["grid"] = Vector2i(9, 6)
+	scene._set_tile_terrain(attacker["grid"], {"height": attacker_height})
+	scene._set_tile_terrain(target["grid"], {"height": target_height, "cover": target_has_cover})
+	if blocker_grid != null:
+		scene._set_tile_terrain(blocker_grid, {"blocks_los": true})
+	return {"attacker": attacker, "target": target}
 
 
 func _part_hp_snapshot(unit) -> Dictionary:
@@ -490,6 +533,8 @@ func _test_legal_target_can_be_selected_and_resolved_once(scene: Control) -> voi
 	var arlen = scene._unit_by_id("arlen")
 	var target = scene._unit_by_id("enemy_blade")
 	target["grid"] = Vector2i(2, 1)
+	scene._set_tile_terrain(arlen["grid"], {"height": 0})
+	scene._set_tile_terrain(target["grid"], {"height": 0})
 	scene._select_action("Attack")
 	var preview: Dictionary = scene._attack_preview(arlen, target)
 	_assert_true(preview["legal"], "legal target preview is marked legal")
@@ -559,6 +604,8 @@ func _test_head_destroyed_reduces_hit_preview(scene: Control) -> void:
 	var arlen = scene._unit_by_id("arlen")
 	var target = scene._unit_by_id("enemy_blade")
 	target["grid"] = Vector2i(2, 1)
+	scene._set_tile_terrain(arlen["grid"], {"height": 0})
+	scene._set_tile_terrain(target["grid"], {"height": 0})
 	scene._damage_part(arlen, "Head", 999)
 	var preview: Dictionary = scene._attack_preview(arlen, target)
 	_assert_equal(preview["hit_percent"], 50, "Head destruction applies prototype accuracy penalty")
@@ -856,6 +903,56 @@ func _test_shield_interception_works_for_enemy_team(scene: Control) -> void:
 	_assert_true(result["intercepted"], "enemy shield can intercept for enemy ally")
 	_assert_equal(result["target_id"], "enemy_rifle", "enemy shield bearer receives intercepted hit")
 	_assert_equal(_changed_part_count(protected_before, _part_hp_snapshot(fixture["protected"])), 0, "enemy protected unit takes no damage from intercepted shot")
+
+
+func _test_height_advantage_caps_at_plus_fifteen(scene: Control) -> void:
+	var fixture := _set_terrain_attack_fixture(scene, 4, 0)
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["target"])
+	_assert_equal(preview["height_hit_modifier"], 15, "H4 shooting H0 caps height bonus at +15")
+	_assert_equal(preview["hit_percent"], 95, "height advantage applies to preview hit percent")
+
+
+func _test_height_disadvantage_caps_at_minus_fifteen(scene: Control) -> void:
+	var fixture := _set_terrain_attack_fixture(scene, 0, 4)
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["target"])
+	_assert_equal(preview["height_hit_modifier"], -15, "H0 shooting H4 caps height penalty at -15")
+	_assert_equal(preview["hit_percent"], 65, "height disadvantage applies to preview hit percent")
+
+
+func _test_equal_elevation_has_no_height_modifier(scene: Control) -> void:
+	var fixture := _set_terrain_attack_fixture(scene, 2, 2)
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["target"])
+	_assert_equal(preview["height_hit_modifier"], 0, "equal elevation has no height modifier")
+	_assert_equal(preview["hit_percent"], 80, "equal elevation keeps base hit percent")
+
+
+func _test_steep_elevation_step_blocks_movement(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var arlen = scene._unit_by_id("arlen")
+	arlen["grid"] = Vector2i(1, 1)
+	scene._set_tile_terrain(Vector2i(1, 1), {"height": 0})
+	scene._set_tile_terrain(Vector2i(2, 1), {"height": 2})
+	_assert_false(scene._can_traverse_step(Vector2i(1, 1), Vector2i(2, 1)), "movement cannot cross elevation difference greater than one")
+
+
+func _test_cover_modifies_preview_and_resolved_damage(scene: Control) -> void:
+	var fixture := _set_terrain_attack_fixture(scene, 1, 1, true)
+	var target_before := _part_hp_snapshot(fixture["target"])
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["target"])
+	_assert_equal(preview["cover_dodge_modifier"], -10, "cover applies data-driven dodge penalty to incoming hit")
+	_assert_true(int(preview["damage"]) < 35, "cover reduces incoming preview damage")
+	var result: Dictionary = scene._resolve_weapon_attack(fixture["attacker"], fixture["target"], preview, "", 11, 35, 11)
+	_assert_equal(result["damage_requested"], preview["damage"], "resolved attack uses preview cover-adjusted damage")
+	_assert_true(_changed_part_count(target_before, _part_hp_snapshot(fixture["target"])) > 0, "covered target still takes reduced damage on hit")
+
+
+func _test_los_blocker_prevents_target_selection(scene: Control) -> void:
+	var fixture := _set_terrain_attack_fixture(scene, 1, 1, false, Vector2i(2, 1))
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["target"])
+	var targetable: Dictionary = scene._calculate_targetable_tiles(fixture["attacker"])
+	_assert_false(scene._has_line_of_sight(fixture["attacker"]["grid"], fixture["target"]["grid"]), "terrain blocker breaks grid-ray LOS")
+	_assert_false(preview["legal"], "LOS blocker makes attack preview illegal")
+	_assert_false(targetable.has(scene._grid_key(fixture["target"]["grid"])), "LOS-blocked target is not selectable")
 
 
 func _assert_true(actual: bool, message: String) -> void:
