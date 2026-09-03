@@ -79,6 +79,22 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn("PLACEHOLDER_HIT_PERCENT", self.source)
         self.assertIn("PLACEHOLDER_WEAPON_RANGES", self.source)
 
+    def test_part_hp_hooks_are_encoded(self):
+        for hook in [
+            "func _damage_part",
+            "func _apply_part_consequence",
+            "func _part_hp_ratio",
+            "func _overall_hp_ratio",
+            "func _is_unit_in_battle",
+        ]:
+            self.assertIn(hook, self.source)
+        for constant in [
+            "PART_MAX_HP",
+            "PLACEHOLDER_ATTACK_DAMAGE",
+            "HEAD_DESTROYED_HIT_PENALTY",
+        ]:
+            self.assertIn(constant, self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

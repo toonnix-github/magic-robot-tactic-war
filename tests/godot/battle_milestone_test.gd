@@ -73,6 +73,7 @@ func _run() -> void:
 	_assert_equal(scene._short_part_name("Legs"), "Legs", "plain part label")
 	_run_turn_flow_acceptance(scene)
 	_run_attack_pipeline_acceptance(scene)
+	_run_part_hp_acceptance(scene)
 
 	if _failures.is_empty():
 		print("GODOT TESTS PASSED")
@@ -135,6 +136,29 @@ func _run_attack_pipeline_acceptance(scene: Control) -> void:
 	_test_attack_cannot_be_used_twice_in_one_activation(scene)
 	_test_cancel_target_selection_does_not_consume_attack(scene)
 	_test_confirmed_attack_advances_initiative(scene)
+
+
+func _run_part_hp_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_damage_part",
+		"_apply_part_consequence",
+		"_part_hp_ratio",
+		"_overall_hp_ratio",
+		"_is_unit_in_battle",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "part HP API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_each_part_takes_independent_damage(scene)
+	_test_destroyed_parts_clamp_and_disable_orbs(scene)
+	_test_head_destroyed_reduces_hit_preview(scene)
+	_test_arm_destroyed_disables_mounted_weapon(scene)
+	_test_legs_destroyed_removes_movement(scene)
+	_test_body_destroyed_removes_unit_from_combat(scene)
+	_test_part_state_survives_initiative_changes(scene)
+	_test_placeholder_attack_damages_chosen_part(scene)
 
 
 func _reset_turn_fixture(scene: Control) -> void:
@@ -303,6 +327,86 @@ func _test_confirmed_attack_advances_initiative(scene: Control) -> void:
 	_assert_true(scene._confirm_attack_target(target), "confirmed attack resolves")
 	_assert_equal(scene.active_unit["id"], "mira", "confirmed attack advances to next player activation")
 	_assert_true(scene.turn_log.has("arlen:attack"), "confirmed attack is logged")
+
+
+func _test_each_part_takes_independent_damage(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var target = scene._unit_by_id("enemy_blade")
+	scene._damage_part(target, "Head", 15)
+	scene._damage_part(target, "Left Arm", 40)
+	_assert_equal(target["parts"]["Head"]["hp"], 65, "Head HP changes independently")
+	_assert_equal(target["parts"]["Left Arm"]["hp"], 38, "Left Arm HP changes independently")
+	_assert_equal(target["parts"]["Body"]["hp"], 85, "Body HP is unchanged by other part damage")
+
+
+func _test_destroyed_parts_clamp_and_disable_orbs(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var target = scene._unit_by_id("enemy_blade")
+	target["parts"]["Head"]["orb"] = {"id": "test_fire_orb"}
+	var result: Dictionary = scene._damage_part(target, "Head", 999)
+	_assert_equal(target["parts"]["Head"]["hp"], 0, "destroyed part clamps at zero")
+	_assert_true(target["parts"]["Head"]["destroyed"], "destroyed flag is stored")
+	_assert_true(target["parts"]["Head"]["orb_disabled"], "destroyed part disables installed Orb hook")
+	_assert_equal(result["damage_applied"], 80, "damage result reports clamped applied damage")
+
+
+func _test_head_destroyed_reduces_hit_preview(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var arlen = scene._unit_by_id("arlen")
+	var target = scene._unit_by_id("enemy_blade")
+	scene._damage_part(arlen, "Head", 999)
+	var preview: Dictionary = scene._attack_preview(arlen, target)
+	_assert_equal(preview["hit_percent"], 50, "Head destruction applies prototype accuracy penalty")
+
+
+func _test_arm_destroyed_disables_mounted_weapon(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var arlen = scene._unit_by_id("arlen")
+	scene._damage_part(arlen, "Right Arm", 999)
+	_assert_true(arlen["weapon_disabled"], "destroying mounted weapon arm disables weapon")
+	_assert_false(scene._can_attack(arlen), "unit with disabled mounted weapon cannot attack")
+
+
+func _test_legs_destroyed_removes_movement(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var arlen = scene._unit_by_id("arlen")
+	scene._damage_part(arlen, "Legs", 999)
+	_assert_equal(arlen["current_move_range"], 0, "destroyed Legs set Move to zero")
+	_assert_equal(arlen["dodge"], 0, "destroyed Legs set Dodge to zero")
+	_assert_false(scene._can_move(arlen), "unit with destroyed Legs cannot move")
+	_assert_equal(scene._calculate_reachable_tiles(arlen).size(), 0, "destroyed Legs expose no movement tiles")
+
+
+func _test_body_destroyed_removes_unit_from_combat(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var arlen = scene._unit_by_id("arlen")
+	var target = scene._unit_by_id("enemy_blade")
+	var target_grid = target["grid"]
+	scene._damage_part(target, "Body", 999)
+	scene._rebuild_initiative_timeline()
+	_assert_true(target["defeated"], "Body destruction defeats mech")
+	_assert_false(scene._is_unit_in_battle(target), "Body-destroyed mech leaves normal combat")
+	_assert_false(scene._occupied_by_any_unit(target_grid), "defeated mech no longer occupies its tile")
+	_assert_false(scene._valid_attack_targets(arlen).has(target), "defeated mech is not a legal target")
+	_assert_false(scene.initiative_timeline.has("enemy_blade"), "defeated mech leaves initiative")
+
+
+func _test_part_state_survives_initiative_changes(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var arlen = scene._unit_by_id("arlen")
+	scene._damage_part(arlen, "Head", 10)
+	_assert_true(scene._try_wait_active_unit(), "advance away from damaged unit")
+	_assert_equal(scene._unit_by_id("arlen")["parts"]["Head"]["hp"], 74, "part HP survives initiative changes")
+
+
+func _test_placeholder_attack_damages_chosen_part(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var target = scene._unit_by_id("enemy_blade")
+	scene._select_action("Attack")
+	_assert_true(scene._confirm_attack_target(target, "Head"), "confirmed attack damages chosen part")
+	_assert_equal(target["parts"]["Head"]["hp"], 55, "placeholder attack applies deterministic part damage")
+	_assert_equal(scene.last_attack_result["part_name"], "Head", "attack result records damaged part")
+	_assert_equal(scene.last_attack_result["damage_applied"], 25, "attack result records placeholder damage")
 
 
 func _assert_true(actual: bool, message: String) -> void:

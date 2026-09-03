@@ -6,7 +6,10 @@ const GRID_ROWS := 7
 const MOVE_RANGE := 3
 const PRIMARY_ACTIONS := ["Move", "Attack", "Wait"]
 const INITIATIVE_ROUND := 100.0
+const PART_MAX_HP := 100
+const PLACEHOLDER_ATTACK_DAMAGE := 25
 const PLACEHOLDER_HIT_PERCENT := 80
+const HEAD_DESTROYED_HIT_PENALTY := -30
 const PLACEHOLDER_WEAPON_RANGES := {
 	"Spear": 6,
 	"Sniper": 6,
@@ -226,9 +229,18 @@ func _create_units() -> void:
 	for unit in units:
 		unit["speed"] = speed_by_id[unit["id"]]
 		unit["initiative_time"] = initial_time_by_id[unit["id"]]
+		unit["accuracy_modifier"] = 0
+		unit["base_move_range"] = MOVE_RANGE
+		unit["current_move_range"] = MOVE_RANGE
+		unit["dodge"] = 10
+		unit["weapon_mount_part"] = _weapon_mount_part(unit)
+		unit["weapon_disabled"] = false
+		unit["defeated"] = false
+		unit["in_battle"] = true
 		unit["has_moved"] = false
 		unit["has_attacked"] = false
 		unit["activation_complete"] = false
+		_initialize_part_state(unit)
 
 
 func _select_unit(unit) -> void:
@@ -306,6 +318,8 @@ func _initialize_initiative() -> void:
 		unit["has_moved"] = false
 		unit["has_attacked"] = false
 		unit["activation_complete"] = false
+		if not unit.has("in_battle"):
+			unit["in_battle"] = not bool(unit.get("defeated", false))
 	_rebuild_initiative_timeline()
 
 
@@ -321,7 +335,8 @@ func _rebuild_initiative_timeline() -> void:
 
 	initiative_timeline.clear()
 	for unit in ordered_units:
-		initiative_timeline.append(str(unit["id"]))
+		if _is_unit_in_battle(unit):
+			initiative_timeline.append(str(unit["id"]))
 
 
 func _begin_next_activation() -> void:
@@ -342,6 +357,9 @@ func _begin_next_activation() -> void:
 
 
 func _begin_activation(unit) -> void:
+	if not _is_unit_in_battle(unit):
+		return
+
 	active_unit = unit
 	selected_unit = unit
 	unit["has_moved"] = false
@@ -399,7 +417,9 @@ func _can_move(unit) -> bool:
 	return (
 		unit != null
 		and _is_active_unit(unit)
+		and _is_unit_in_battle(unit)
 		and unit["team"] == "player"
+		and _movement_range_for(unit) > 0
 		and not bool(unit["has_moved"])
 		and not bool(unit["activation_complete"])
 	)
@@ -409,7 +429,9 @@ func _can_attack(unit) -> bool:
 	return (
 		unit != null
 		and _is_active_unit(unit)
+		and _is_unit_in_battle(unit)
 		and unit["team"] == "player"
+		and not bool(unit["weapon_disabled"])
 		and not bool(unit["has_attacked"])
 		and not bool(unit["activation_complete"])
 		and not _valid_attack_targets(unit).is_empty()
@@ -420,6 +442,7 @@ func _can_wait(unit) -> bool:
 	return (
 		unit != null
 		and _is_active_unit(unit)
+		and _is_unit_in_battle(unit)
 		and unit["team"] == "player"
 		and not bool(unit["activation_complete"])
 	)
@@ -454,7 +477,7 @@ func _try_move_active_unit(grid: Vector2i) -> bool:
 	return true
 
 
-func _try_attack_active_unit(target = null) -> bool:
+func _try_attack_active_unit(target = null, part_name := "Body") -> bool:
 	if not _can_attack(active_unit):
 		return false
 
@@ -468,11 +491,11 @@ func _try_attack_active_unit(target = null) -> bool:
 	if not bool(preview["legal"]):
 		return false
 
-	_resolve_attack(acting_unit, chosen_target, preview)
+	_resolve_attack(acting_unit, chosen_target, preview, part_name)
 	return true
 
 
-func _confirm_attack_target(target) -> bool:
+func _confirm_attack_target(target, part_name := "Body") -> bool:
 	if target == null or active_unit == null:
 		return false
 
@@ -482,7 +505,7 @@ func _confirm_attack_target(target) -> bool:
 		queue_redraw()
 		return false
 
-	var resolved := _try_attack_active_unit(target)
+	var resolved := _try_attack_active_unit(target, part_name)
 	queue_redraw()
 	return resolved
 
@@ -516,17 +539,24 @@ func _preview_attack_target(target) -> Dictionary:
 	return target_preview
 
 
-func _resolve_attack(attacker, target, preview: Dictionary) -> Dictionary:
+func _resolve_attack(attacker, target, preview: Dictionary, part_name := "Body") -> Dictionary:
 	attacker["has_attacked"] = true
 	attacker["activation_complete"] = true
 	turn_log.append("%s:attack" % attacker["id"])
+	var damage_result := _damage_part(target, part_name, PLACEHOLDER_ATTACK_DAMAGE)
 	last_attack_result = {
 		"attacker_id": str(attacker["id"]),
 		"target_id": str(target["id"]),
+		"part_name": str(damage_result["part_name"]),
+		"damage_requested": int(damage_result["damage_requested"]),
+		"damage_applied": int(damage_result["damage_applied"]),
+		"hp_before": int(damage_result["hp_before"]),
+		"hp_after": int(damage_result["hp_after"]),
+		"destroyed": bool(damage_result["destroyed"]),
 		"hit": true,
 		"hit_percent": int(preview["hit_percent"]),
 	}
-	last_action_message = "%s attacks %s" % [attacker["name"], target["name"]]
+	last_action_message = "%s hits %s %s" % [attacker["name"], target["name"], part_name]
 	_finish_activation(attacker)
 	return last_attack_result
 
@@ -545,13 +575,109 @@ func _try_wait_active_unit() -> bool:
 
 func _valid_attack_targets(unit) -> Array:
 	var targets := []
-	if unit == null:
+	if unit == null or not _is_unit_in_battle(unit) or bool(unit["weapon_disabled"]):
 		return targets
 
 	for other in units:
 		if _is_attack_target_legal(unit, other):
 			targets.append(other)
 	return targets
+
+
+func _initialize_part_state(unit) -> void:
+	var source_parts: Dictionary = unit["parts"]
+	var part_state := {}
+	for part_name in PART_NAMES:
+		var ratio := float(source_parts[part_name])
+		part_state[part_name] = {
+			"max_hp": PART_MAX_HP,
+			"hp": int(round(ratio * float(PART_MAX_HP))),
+			"destroyed": ratio <= 0.0,
+			"orb": null,
+			"orb_disabled": false,
+		}
+	unit["parts"] = part_state
+	unit["hp"] = _overall_hp_ratio(unit)
+
+
+func _damage_part(unit, part_name: String, amount: int) -> Dictionary:
+	if unit == null or not unit["parts"].has(part_name):
+		return {}
+
+	var part: Dictionary = unit["parts"][part_name]
+	var hp_before := int(part["hp"])
+	var hp_after: int = max(0, hp_before - max(0, amount))
+	part["hp"] = hp_after
+	var destroyed_now := hp_before > 0 and hp_after == 0
+	if hp_after == 0:
+		_apply_part_consequence(unit, part_name)
+
+	unit["hp"] = _overall_hp_ratio(unit)
+	return {
+		"unit_id": str(unit["id"]),
+		"part_name": part_name,
+		"damage_requested": amount,
+		"damage_applied": hp_before - hp_after,
+		"hp_before": hp_before,
+		"hp_after": hp_after,
+		"destroyed": bool(part["destroyed"]),
+		"destroyed_now": destroyed_now,
+		"orb_disabled": bool(part["orb_disabled"]),
+	}
+
+
+func _apply_part_consequence(unit, part_name: String) -> void:
+	var part: Dictionary = unit["parts"][part_name]
+	part["destroyed"] = true
+	part["orb_disabled"] = true
+
+	if part_name == "Head":
+		unit["accuracy_modifier"] = HEAD_DESTROYED_HIT_PENALTY
+	elif part_name == "Legs":
+		unit["current_move_range"] = 0
+		unit["dodge"] = 0
+	elif part_name == "Body":
+		unit["defeated"] = true
+		unit["in_battle"] = false
+		if active_unit != null and active_unit["id"] == unit["id"]:
+			active_unit = null
+	elif part_name == unit["weapon_mount_part"]:
+		unit["weapon_disabled"] = true
+
+
+func _part_hp_ratio(unit, part_name: String) -> float:
+	if unit == null or not unit["parts"].has(part_name):
+		return 0.0
+	var part: Dictionary = unit["parts"][part_name]
+	return float(part["hp"]) / max(1.0, float(part["max_hp"]))
+
+
+func _overall_hp_ratio(unit) -> float:
+	if unit == null:
+		return 0.0
+	var hp_total := 0
+	var max_total := 0
+	for part_name in PART_NAMES:
+		var part: Dictionary = unit["parts"][part_name]
+		hp_total += int(part["hp"])
+		max_total += int(part["max_hp"])
+	return float(hp_total) / max(1.0, float(max_total))
+
+
+func _is_unit_in_battle(unit) -> bool:
+	return unit != null and bool(unit.get("in_battle", true)) and not bool(unit.get("defeated", false))
+
+
+func _movement_range_for(unit) -> int:
+	if unit == null:
+		return 0
+	return max(0, int(unit.get("current_move_range", MOVE_RANGE)))
+
+
+func _weapon_mount_part(unit) -> String:
+	if unit != null and str(unit["weapon"]) == "Shield":
+		return "Left Arm"
+	return "Right Arm"
 
 
 func _calculate_targetable_tiles(unit) -> Dictionary:
@@ -565,18 +691,23 @@ func _attack_preview(attacker, target) -> Dictionary:
 	var distance := _grid_distance(attacker["grid"], target["grid"]) if attacker != null and target != null else 0
 	var attack_range := _attack_range_for(attacker)
 	var legal := _is_attack_target_legal(attacker, target)
+	var hit_percent: int = int(clamp(PLACEHOLDER_HIT_PERCENT + int(attacker.get("accuracy_modifier", 0)) if attacker != null else 0, 0, 100))
 	return {
 		"attacker_id": str(attacker["id"]) if attacker != null else "",
 		"target_id": str(target["id"]) if target != null else "",
 		"distance": distance,
 		"range": attack_range,
-		"hit_percent": PLACEHOLDER_HIT_PERCENT if legal else 0,
+		"hit_percent": hit_percent if legal else 0,
 		"legal": legal,
 	}
 
 
 func _is_attack_target_legal(attacker, target) -> bool:
 	if attacker == null or target == null:
+		return false
+	if not _is_unit_in_battle(attacker) or not _is_unit_in_battle(target):
+		return false
+	if bool(attacker["weapon_disabled"]):
 		return false
 	if attacker["team"] == target["team"]:
 		return false
@@ -598,13 +729,17 @@ func _is_active_unit(unit) -> bool:
 
 
 func _calculate_reachable_tiles(unit) -> Dictionary:
+	if not _is_unit_in_battle(unit):
+		return {}
+
 	var visited := {}
 	var frontier := [{"grid": unit["grid"], "distance": 0}]
 	visited[_grid_key(unit["grid"])] = 0
+	var move_range := _movement_range_for(unit)
 
 	while not frontier.is_empty():
 		var current = frontier.pop_front()
-		if current["distance"] >= MOVE_RANGE:
+		if current["distance"] >= move_range:
 			continue
 
 		for direction in DIRECTIONS:
@@ -633,14 +768,14 @@ func _calculate_reachable_tiles(unit) -> Dictionary:
 
 func _occupied_by_opponent(grid: Vector2i, team: String) -> bool:
 	for unit in units:
-		if unit["grid"] == grid and unit["team"] != team:
+		if _is_unit_in_battle(unit) and unit["grid"] == grid and unit["team"] != team:
 			return true
 	return false
 
 
 func _occupied_by_any_unit(grid: Vector2i) -> bool:
 	for unit in units:
-		if unit["grid"] == grid:
+		if _is_unit_in_battle(unit) and unit["grid"] == grid:
 			return true
 	return false
 
@@ -648,6 +783,8 @@ func _occupied_by_any_unit(grid: Vector2i) -> bool:
 func _unit_at_position(position: Vector2):
 	for index in range(units.size() - 1, -1, -1):
 		var unit = units[index]
+		if not _is_unit_in_battle(unit):
+			continue
 		var center := _tile_center(unit["grid"])
 		if position.distance_to(center) <= _unit_radius() * 1.35:
 			return unit
@@ -747,7 +884,8 @@ func _draw_battlefield() -> void:
 	_draw_cover(Vector2i(8, 1))
 
 	for unit in units:
-		_draw_unit(unit)
+		if _is_unit_in_battle(unit):
+			_draw_unit(unit)
 
 
 func _draw_tile(grid: Vector2i) -> void:
@@ -820,7 +958,7 @@ func _draw_selected_unit_panel() -> void:
 	draw_string(_font(), _p(115, 79), "%s / %s" % [selected_unit["mech"], selected_unit["weapon"]], HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(12), Color(0.62, 0.69, 0.73))
 	if _is_active_unit(selected_unit):
 		draw_string(_font(), _p(222, 55), "ACTIVE", HORIZONTAL_ALIGNMENT_RIGHT, 25.0 * _scale().x, _font_size(9), Color(0.96, 0.86, 0.48))
-	_draw_bar(_r(115, 92, 122, 8), float(selected_unit["hp"]), Color(0.46, 0.65, 0.56))
+	_draw_bar(_r(115, 92, 122, 8), _overall_hp_ratio(selected_unit), Color(0.46, 0.65, 0.56))
 
 
 func _draw_initiative_strip() -> void:
@@ -859,8 +997,10 @@ func _draw_part_status_panel() -> void:
 	for index in range(PART_NAMES.size()):
 		var part_name: String = PART_NAMES[index]
 		var y := 458.0 + index * 17.0
-		draw_string(_font(), _p(48, y), _short_part_name(part_name), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.78, 0.82, 0.84))
-		_draw_bar(_r(100, y - 8.0, 76, 7), float(selected_unit["parts"][part_name]), Color(0.46, 0.65, 0.56))
+		var part: Dictionary = selected_unit["parts"][part_name]
+		var label_color := Color(0.78, 0.82, 0.84) if not bool(part["destroyed"]) else Color(0.88, 0.48, 0.46)
+		draw_string(_font(), _p(48, y), _short_part_name(part_name), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), label_color)
+		_draw_bar(_r(100, y - 8.0, 76, 7), _part_hp_ratio(selected_unit, part_name), Color(0.46, 0.65, 0.56) if not bool(part["destroyed"]) else Color(0.76, 0.32, 0.31))
 
 
 func _draw_action_bar() -> void:
