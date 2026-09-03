@@ -1,0 +1,66 @@
+# AGENTS.md
+
+## Project
+Magic Robot Tactic War is a mobile-first landscape tactical RPG combining modular mechs, pilots, elemental Orbs, part-based damage, and short grid battles.
+
+## Current Goal
+Build ONLY the Phase 1 graybox combat prototype. Do not add town building, story systems, gacha, crafting, account systems, multiplayer, monetization, polished art, or live-service features.
+
+## Technology
+- Engine: Godot 4.x
+- Language: GDScript
+- Target: mobile landscape first; desktop is acceptable for development/testing.
+- Standard battle map: 7 rows x 10 columns.
+- Prefer data-driven definitions for maps, weapons, units, Orbs, and missions.
+
+## Design Source of Truth
+Read these before implementing or changing combat behavior:
+1. `docs/combat-rulebook.md`
+2. `docs/prototype-scope.md`
+
+If implementation conflicts with those files, the docs win unless they are intentionally updated in the same change.
+
+## Phase 1 UX
+Keep the battle UI minimal:
+- Select unit
+- Move
+- Attack
+- Wait
+- Basic target preview: Hit %, weapon pattern, target part status
+- Orb effects are passive/proc-based; no Orb active-skill buttons.
+
+## Engineering Principles
+- Separate simulation state from presentation/animation.
+- Combat rules must be testable without rendering.
+- Use deterministic RNG seeds in automated tests and debug simulations.
+- Prefer small composable systems over large scene scripts.
+- Avoid hard-coding map-specific logic into core combat systems.
+- Keep all balance numbers easy to edit in data files/resources.
+
+## Suggested Structure
+- `src/combat/` simulation, actions, initiative, damage, targeting
+- `src/grid/` coordinates, movement, height, line of sight
+- `src/data/` resource/data definitions and loaders
+- `src/ui/` battle HUD and input
+- `scenes/` Godot scenes
+- `data/maps/`, `data/weapons/`, `data/orbs/`, `data/units/`
+- `tests/` deterministic combat tests
+
+## Prototype Acceptance Tests
+Before Phase 1 is considered complete, the game should support:
+- 7x10 battle map with H0-H4 elevation
+- 4-direction movement
+- allies can move through allies but cannot end on the same tile
+- enemies cannot move through opponents
+- unit bodies do not normally block ranged line of sight
+- initiative timeline based on Speed; sufficiently fast units can act more often
+- Head, Body, Left Arm, Right Arm, Legs HP
+- part destruction consequences
+- Sword, Spear, Rifle, Sniper, Shield
+- passive/proc Orb effects
+- simple cover and height accuracy modifiers
+- at least 3 playable prototype missions
+- deterministic auto-battle simulation for testing
+
+## Scope Guardrail
+If a requested feature is not required to prove that the core loop is fun, record it as a future idea instead of implementing it in Phase 1.
