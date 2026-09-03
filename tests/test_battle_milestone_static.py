@@ -114,6 +114,14 @@ class BattleMilestoneStaticTests(unittest.TestCase):
             self.assertIn(hook, self.source)
         self.assertIn('"secondary_damage"', self.source)
 
+    def test_rifle_weapon_hooks_are_encoded(self):
+        for hook in [
+            "func _resolve_rifle_attack",
+            "func _volley_part_seed",
+        ]:
+            self.assertIn(hook, self.source)
+        self.assertIn('"shot_count"', self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

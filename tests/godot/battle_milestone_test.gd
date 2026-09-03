@@ -76,6 +76,7 @@ func _run() -> void:
 	_run_part_hp_acceptance(scene)
 	_run_sword_acceptance(scene)
 	_run_spear_acceptance(scene)
+	_run_rifle_acceptance(scene)
 
 	if _failures.is_empty():
 		print("GODOT TESTS PASSED")
@@ -201,6 +202,23 @@ func _run_spear_acceptance(scene: Control) -> void:
 	_test_spear_action_consumes_one_attack(scene)
 
 
+func _run_rifle_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_resolve_rifle_attack",
+		"_volley_part_seed",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "Rifle API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_rifle_uses_configured_shot_count(scene)
+	_test_rifle_missed_shots_do_no_damage(scene)
+	_test_rifle_successes_distribute_across_parts(scene)
+	_test_rifle_seed_reproduces_volley(scene)
+	_test_rifle_destroyed_arm_makes_weapon_unusable(scene)
+
+
 func _reset_turn_fixture(scene: Control) -> void:
 	scene._create_units()
 	scene._initialize_initiative()
@@ -242,6 +260,20 @@ func _set_spear_fixture(scene: Control, tile_one_grid: Vector2i, tile_two_grid: 
 	return {"attacker": arlen, "tile_one": tile_one_target, "tile_two": tile_two_target}
 
 
+func _set_rifle_fixture(scene: Control, target_grid: Vector2i = Vector2i(5, 1)) -> Dictionary:
+	_reset_turn_fixture(scene)
+	var arlen = scene._unit_by_id("arlen")
+	var target = scene._unit_by_id("enemy_blade")
+	arlen["weapon"] = "Rifle"
+	arlen["weapon_mount_part"] = "Right Arm"
+	target["grid"] = target_grid
+	scene._unit_by_id("enemy_rifle")["grid"] = Vector2i(8, 6)
+	scene._unit_by_id("enemy_sniper")["grid"] = Vector2i(8, 5)
+	scene._unit_by_id("commander")["grid"] = Vector2i(9, 6)
+	scene._begin_activation(arlen)
+	return {"attacker": arlen, "target": target}
+
+
 func _part_hp_snapshot(unit) -> Dictionary:
 	var snapshot := {}
 	for part_name in ["Head", "Body", "Left Arm", "Right Arm", "Legs"]:
@@ -255,6 +287,13 @@ func _changed_part_count(before: Dictionary, after: Dictionary) -> int:
 		if before[part_name] != after[part_name]:
 			count += 1
 	return count
+
+
+func _volley_signature(result: Dictionary) -> Array:
+	var signature := []
+	for shot in result["shots"]:
+		signature.append("%s:%s:%s" % [shot["shot_index"], shot["hit"], shot["part_name"]])
+	return signature
 
 
 func _test_move_once_then_second_move_rejected(scene: Control) -> void:
@@ -489,7 +528,7 @@ func _test_part_state_survives_initiative_changes(scene: Control) -> void:
 
 func _test_placeholder_attack_damages_chosen_part(scene: Control) -> void:
 	_reset_turn_fixture(scene)
-	scene._unit_by_id("arlen")["weapon"] = "Rifle"
+	scene._unit_by_id("arlen")["weapon"] = "Commander"
 	var target = scene._unit_by_id("enemy_blade")
 	scene._select_action("Attack")
 	_assert_true(scene._confirm_attack_target(target, "Head"), "confirmed attack damages chosen part")
@@ -595,6 +634,55 @@ func _test_spear_action_consumes_one_attack(scene: Control) -> void:
 	_assert_true(arlen["activation_complete"], "Spear completes activation")
 	_assert_equal(scene.active_unit["id"], "mira", "Spear attack advances initiative once")
 	_assert_false(scene.turn_log.has("arlen:attack:extra"), "Spear does not log an extra attack")
+
+
+func _test_rifle_uses_configured_shot_count(scene: Control) -> void:
+	var fixture := _set_rifle_fixture(scene)
+	var weapon_data: Dictionary = scene._weapon_data_for(fixture["attacker"])
+	scene._select_action("Attack")
+	_assert_true(scene._confirm_attack_target(fixture["target"], "", 11), "Rifle volley resolves")
+	_assert_equal(scene.last_attack_result["shots"].size(), int(weapon_data["shot_count"]), "Rifle produces configured shot attempts")
+	_assert_equal(scene.active_unit["id"], "mira", "Rifle volley consumes one attack activation")
+
+
+func _test_rifle_missed_shots_do_no_damage(scene: Control) -> void:
+	var fixture := _set_rifle_fixture(scene)
+	var before := _part_hp_snapshot(fixture["target"])
+	scene._select_action("Attack")
+	_assert_true(scene._confirm_attack_target(fixture["target"], "", 95), "Rifle all-miss volley still resolves")
+	var after := _part_hp_snapshot(fixture["target"])
+	_assert_equal(_changed_part_count(before, after), 0, "Rifle misses do no damage")
+	for shot in scene.last_attack_result["shots"]:
+		_assert_false(shot["hit"], "high-seed Rifle shot misses")
+
+
+func _test_rifle_successes_distribute_across_parts(scene: Control) -> void:
+	var fixture := _set_rifle_fixture(scene)
+	scene._select_action("Attack")
+	_assert_true(scene._confirm_attack_target(fixture["target"], "", 21), "Rifle hit volley resolves")
+	var hit_parts := {}
+	for shot in scene.last_attack_result["shots"]:
+		if bool(shot["hit"]):
+			hit_parts[shot["part_name"]] = true
+	_assert_true(hit_parts.size() > 1, "Rifle successful shots can distribute across multiple parts")
+
+
+func _test_rifle_seed_reproduces_volley(scene: Control) -> void:
+	var first_fixture := _set_rifle_fixture(scene)
+	scene._select_action("Attack")
+	_assert_true(scene._confirm_attack_target(first_fixture["target"], "", 21), "first Rifle volley resolves")
+	var first_signature := _volley_signature(scene.last_attack_result)
+	var second_fixture := _set_rifle_fixture(scene)
+	scene._select_action("Attack")
+	_assert_true(scene._confirm_attack_target(second_fixture["target"], "", 21), "second Rifle volley resolves")
+	_assert_equal(_volley_signature(scene.last_attack_result), first_signature, "same seed reproduces Rifle volley")
+
+
+func _test_rifle_destroyed_arm_makes_weapon_unusable(scene: Control) -> void:
+	var fixture := _set_rifle_fixture(scene)
+	scene._damage_part(fixture["attacker"], "Right Arm", 999)
+	_assert_true(fixture["attacker"]["weapon_disabled"], "destroyed equipped arm disables Rifle")
+	_assert_false(scene._can_attack(fixture["attacker"]), "Rifle cannot attack with destroyed equipped arm")
 
 
 func _assert_true(actual: bool, message: String) -> void:

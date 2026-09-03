@@ -55,11 +55,12 @@ const WEAPON_DATA := {
 		"name": "Rifle",
 		"range_min": 1,
 		"range_max": 5,
-		"damage": PLACEHOLDER_ATTACK_DAMAGE,
+		"damage": 10,
+		"shot_count": 4,
 		"hit_percent": PLACEHOLDER_HIT_PERCENT,
-		"allow_manual_part": true,
-		"pattern": "single",
-		"part_weights": {"Body": 100},
+		"allow_manual_part": false,
+		"pattern": "volley",
+		"part_weights": {"Head": 20, "Body": 20, "Left Arm": 20, "Right Arm": 20, "Legs": 20},
 	},
 	"Shield": {
 		"name": "Shield",
@@ -613,6 +614,8 @@ func _resolve_attack(attacker, target, preview: Dictionary, part_name := "", see
 	var weapon_data := _weapon_data_for(attacker)
 	if str(weapon_data.get("pattern", "single")) == "line_2":
 		last_attack_result = _resolve_spear_attack(attacker, target, preview, seed)
+	elif str(weapon_data.get("pattern", "single")) == "volley":
+		last_attack_result = _resolve_rifle_attack(attacker, target, preview, seed)
 	else:
 		last_attack_result = _resolve_weapon_attack(attacker, target, preview, part_name, seed)
 	if last_attack_result.has("results"):
@@ -688,13 +691,14 @@ func _damage_part(unit, part_name: String, amount: int) -> Dictionary:
 	}
 
 
-func _resolve_weapon_attack(attacker, target, preview: Dictionary, part_name := "", seed := 0, damage_override := -1) -> Dictionary:
+func _resolve_weapon_attack(attacker, target, preview: Dictionary, part_name := "", seed := 0, damage_override := -1, part_seed := -1) -> Dictionary:
 	var weapon_data := _weapon_data_for(attacker)
 	var resolved_part := part_name
+	var resolved_part_seed: int = seed if part_seed < 0 else part_seed
 	if resolved_part == "" or not bool(weapon_data["allow_manual_part"]):
-		resolved_part = _roll_part_for_weapon(weapon_data, seed)
+		resolved_part = _roll_part_for_weapon(weapon_data, resolved_part_seed)
 	if not PART_NAMES.has(resolved_part):
-		resolved_part = _roll_part_for_weapon(weapon_data, seed)
+		resolved_part = _roll_part_for_weapon(weapon_data, resolved_part_seed)
 
 	var hit_percent := int(preview["hit_percent"])
 	var hit := _roll_hit(hit_percent, seed)
@@ -715,6 +719,8 @@ func _resolve_weapon_attack(attacker, target, preview: Dictionary, part_name := 
 		"destroyed": bool(damage_result["destroyed"]),
 		"hit": hit,
 		"hit_percent": hit_percent,
+		"hit_seed": seed,
+		"part_seed": resolved_part_seed,
 	}
 
 
@@ -727,7 +733,7 @@ func _resolve_spear_attack(attacker, target, preview: Dictionary, seed := 0) -> 
 		var tile_index: int = int(lane_target["tile_index"])
 		var lane_preview := _attack_preview(attacker, lane_target["unit"])
 		var damage: int = int(weapon_data["damage"]) if tile_index == 1 else int(weapon_data["secondary_damage"])
-		var result := _resolve_weapon_attack(attacker, lane_target["unit"], lane_preview, "", seed + tile_index - 1, damage)
+		var result := _resolve_weapon_attack(attacker, lane_target["unit"], lane_preview, "", seed + tile_index - 1, damage, seed + tile_index - 1)
 		result["tile_index"] = tile_index
 		result["grid"] = lane_target["grid"]
 		results.append(result)
@@ -757,6 +763,47 @@ func _resolve_spear_attack(attacker, target, preview: Dictionary, seed := 0) -> 
 		"direction": direction,
 		"results": results,
 	}
+
+
+func _resolve_rifle_attack(attacker, target, preview: Dictionary, seed := 0) -> Dictionary:
+	var weapon_data := _weapon_data_for(attacker)
+	var shots := []
+	var shot_count := int(weapon_data["shot_count"])
+	for shot_index in range(shot_count):
+		var hit_seed: int = seed + shot_index
+		var part_seed: int = _volley_part_seed(seed, shot_index)
+		var shot := _resolve_weapon_attack(attacker, target, preview, "", hit_seed, int(weapon_data["damage"]), part_seed)
+		shot["shot_index"] = shot_index + 1
+		shots.append(shot)
+
+	var total_damage := 0
+	var any_hit := false
+	var primary_result := _miss_damage_result(target, "Body")
+	for shot in shots:
+		total_damage += int(shot["damage_applied"])
+		any_hit = any_hit or bool(shot["hit"])
+		if bool(shot["hit"]) and not bool(primary_result.get("hit_selected", false)):
+			primary_result = shot
+			primary_result["hit_selected"] = true
+
+	return {
+		"attacker_id": str(attacker["id"]),
+		"target_id": str(target["id"]),
+		"weapon": str(weapon_data["name"]),
+		"part_name": str(primary_result["part_name"]),
+		"damage_requested": int(weapon_data["damage"]) * shot_count,
+		"damage_applied": total_damage,
+		"hp_before": int(primary_result["hp_before"]),
+		"hp_after": int(primary_result["hp_after"]),
+		"destroyed": bool(primary_result["destroyed"]),
+		"hit": any_hit,
+		"hit_percent": int(preview["hit_percent"]),
+		"shots": shots,
+	}
+
+
+func _volley_part_seed(seed: int, shot_index: int) -> int:
+	return seed + shot_index * 29
 
 
 func _miss_damage_result(target, part_name: String) -> Dictionary:
