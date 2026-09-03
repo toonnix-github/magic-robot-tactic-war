@@ -11,12 +11,69 @@ const PLACEHOLDER_ATTACK_DAMAGE := 25
 const PLACEHOLDER_HIT_PERCENT := 80
 const HEAD_DESTROYED_HIT_PENALTY := -30
 const PLACEHOLDER_WEAPON_RANGES := {
+	"Sword": 1,
 	"Spear": 6,
 	"Sniper": 6,
 	"Rifle": 5,
 	"Shield": 1,
 	"Blade": 1,
 	"Commander": 5,
+}
+const WEAPON_DATA := {
+	"Sword": {
+		"name": "Sword",
+		"range_min": 1,
+		"range_max": 1,
+		"damage": 45,
+		"hit_percent": 80,
+		"allow_manual_part": false,
+		"part_weights": {"Head": 20, "Body": 20, "Left Arm": 20, "Right Arm": 20, "Legs": 20},
+	},
+	"Spear": {
+		"name": "Spear",
+		"range_min": 1,
+		"range_max": 6,
+		"damage": PLACEHOLDER_ATTACK_DAMAGE,
+		"hit_percent": PLACEHOLDER_HIT_PERCENT,
+		"allow_manual_part": true,
+		"part_weights": {"Body": 100},
+	},
+	"Sniper": {
+		"name": "Sniper",
+		"range_min": 1,
+		"range_max": 6,
+		"damage": PLACEHOLDER_ATTACK_DAMAGE,
+		"hit_percent": PLACEHOLDER_HIT_PERCENT,
+		"allow_manual_part": true,
+		"part_weights": {"Body": 100},
+	},
+	"Rifle": {
+		"name": "Rifle",
+		"range_min": 1,
+		"range_max": 5,
+		"damage": PLACEHOLDER_ATTACK_DAMAGE,
+		"hit_percent": PLACEHOLDER_HIT_PERCENT,
+		"allow_manual_part": true,
+		"part_weights": {"Body": 100},
+	},
+	"Shield": {
+		"name": "Shield",
+		"range_min": 1,
+		"range_max": 1,
+		"damage": PLACEHOLDER_ATTACK_DAMAGE,
+		"hit_percent": PLACEHOLDER_HIT_PERCENT,
+		"allow_manual_part": true,
+		"part_weights": {"Body": 100},
+	},
+	"Commander": {
+		"name": "Commander",
+		"range_min": 1,
+		"range_max": 5,
+		"damage": PLACEHOLDER_ATTACK_DAMAGE,
+		"hit_percent": PLACEHOLDER_HIT_PERCENT,
+		"allow_manual_part": true,
+		"part_weights": {"Body": 100},
+	},
 }
 
 const DESIGN_SIZE := Vector2(1311.0, 603.0)
@@ -160,7 +217,7 @@ func _create_units() -> void:
 			"id": "enemy_blade",
 			"name": "Enemy Blade",
 			"mech": "Rust Frame",
-			"weapon": "Blade",
+			"weapon": "Sword",
 			"team": "enemy",
 			"letter": "E",
 			"grid": Vector2i(7, 2),
@@ -477,25 +534,28 @@ func _try_move_active_unit(grid: Vector2i) -> bool:
 	return true
 
 
-func _try_attack_active_unit(target = null, part_name := "Body") -> bool:
+func _try_attack_active_unit(target = null, part_name := "", seed := 0) -> bool:
 	if not _can_attack(active_unit):
 		return false
 
 	var acting_unit = active_unit
 	var chosen_target = target
 	if chosen_target == null:
-		chosen_target = _valid_attack_targets(acting_unit)[0]
+		var valid_targets := _valid_attack_targets(acting_unit)
+		if valid_targets.is_empty():
+			return false
+		chosen_target = valid_targets[0]
 
 	var preview := _attack_preview(acting_unit, chosen_target)
 	target_preview = preview
 	if not bool(preview["legal"]):
 		return false
 
-	_resolve_attack(acting_unit, chosen_target, preview, part_name)
+	_resolve_attack(acting_unit, chosen_target, preview, part_name, seed)
 	return true
 
 
-func _confirm_attack_target(target, part_name := "Body") -> bool:
+func _confirm_attack_target(target, part_name := "", seed := 0) -> bool:
 	if target == null or active_unit == null:
 		return false
 
@@ -505,7 +565,7 @@ func _confirm_attack_target(target, part_name := "Body") -> bool:
 		queue_redraw()
 		return false
 
-	var resolved := _try_attack_active_unit(target, part_name)
+	var resolved := _try_attack_active_unit(target, part_name, seed)
 	queue_redraw()
 	return resolved
 
@@ -539,24 +599,12 @@ func _preview_attack_target(target) -> Dictionary:
 	return target_preview
 
 
-func _resolve_attack(attacker, target, preview: Dictionary, part_name := "Body") -> Dictionary:
+func _resolve_attack(attacker, target, preview: Dictionary, part_name := "", seed := 0) -> Dictionary:
 	attacker["has_attacked"] = true
 	attacker["activation_complete"] = true
 	turn_log.append("%s:attack" % attacker["id"])
-	var damage_result := _damage_part(target, part_name, PLACEHOLDER_ATTACK_DAMAGE)
-	last_attack_result = {
-		"attacker_id": str(attacker["id"]),
-		"target_id": str(target["id"]),
-		"part_name": str(damage_result["part_name"]),
-		"damage_requested": int(damage_result["damage_requested"]),
-		"damage_applied": int(damage_result["damage_applied"]),
-		"hp_before": int(damage_result["hp_before"]),
-		"hp_after": int(damage_result["hp_after"]),
-		"destroyed": bool(damage_result["destroyed"]),
-		"hit": true,
-		"hit_percent": int(preview["hit_percent"]),
-	}
-	last_action_message = "%s hits %s %s" % [attacker["name"], target["name"], part_name]
+	last_attack_result = _resolve_weapon_attack(attacker, target, preview, part_name, seed)
+	last_action_message = "%s hits %s %s" % [attacker["name"], target["name"], last_attack_result["part_name"]] if bool(last_attack_result["hit"]) else "%s misses %s" % [attacker["name"], target["name"]]
 	_finish_activation(attacker)
 	return last_attack_result
 
@@ -626,6 +674,50 @@ func _damage_part(unit, part_name: String, amount: int) -> Dictionary:
 	}
 
 
+func _resolve_weapon_attack(attacker, target, preview: Dictionary, part_name := "", seed := 0) -> Dictionary:
+	var weapon_data := _weapon_data_for(attacker)
+	var resolved_part := part_name
+	if resolved_part == "" or not bool(weapon_data["allow_manual_part"]):
+		resolved_part = _roll_part_for_weapon(weapon_data, seed)
+	if not PART_NAMES.has(resolved_part):
+		resolved_part = _roll_part_for_weapon(weapon_data, seed)
+
+	var hit_percent := int(preview["hit_percent"])
+	var hit := _roll_hit(hit_percent, seed)
+	var damage_result := _miss_damage_result(target, resolved_part)
+	if hit:
+		damage_result = _damage_part(target, resolved_part, int(weapon_data["damage"]))
+
+	return {
+		"attacker_id": str(attacker["id"]),
+		"target_id": str(target["id"]),
+		"weapon": str(weapon_data["name"]),
+		"part_name": str(damage_result["part_name"]),
+		"damage_requested": int(damage_result["damage_requested"]),
+		"damage_applied": int(damage_result["damage_applied"]),
+		"hp_before": int(damage_result["hp_before"]),
+		"hp_after": int(damage_result["hp_after"]),
+		"destroyed": bool(damage_result["destroyed"]),
+		"hit": hit,
+		"hit_percent": hit_percent,
+	}
+
+
+func _miss_damage_result(target, part_name: String) -> Dictionary:
+	var part: Dictionary = target["parts"][part_name]
+	return {
+		"unit_id": str(target["id"]),
+		"part_name": part_name,
+		"damage_requested": 0,
+		"damage_applied": 0,
+		"hp_before": int(part["hp"]),
+		"hp_after": int(part["hp"]),
+		"destroyed": bool(part["destroyed"]),
+		"destroyed_now": false,
+		"orb_disabled": bool(part["orb_disabled"]),
+	}
+
+
 func _apply_part_consequence(unit, part_name: String) -> void:
 	var part: Dictionary = unit["parts"][part_name]
 	part["destroyed"] = true
@@ -680,6 +772,41 @@ func _weapon_mount_part(unit) -> String:
 	return "Right Arm"
 
 
+func _weapon_data_for(unit) -> Dictionary:
+	if unit != null and WEAPON_DATA.has(str(unit["weapon"])):
+		return WEAPON_DATA[str(unit["weapon"])]
+	return {
+		"name": str(unit["weapon"]) if unit != null else "Unknown",
+		"range_min": 1,
+		"range_max": 4,
+		"damage": PLACEHOLDER_ATTACK_DAMAGE,
+		"hit_percent": PLACEHOLDER_HIT_PERCENT,
+		"allow_manual_part": true,
+		"part_weights": {"Body": 100},
+	}
+
+
+func _roll_part_for_weapon(weapon_data: Dictionary, seed: int) -> String:
+	var weights: Dictionary = weapon_data["part_weights"]
+	var total_weight := 0
+	for part_name in PART_NAMES:
+		total_weight += int(weights.get(part_name, 0))
+	if total_weight <= 0:
+		return "Body"
+
+	var roll: int = absi(seed) % total_weight
+	var cursor := 0
+	for part_name in PART_NAMES:
+		cursor += int(weights.get(part_name, 0))
+		if roll < cursor:
+			return part_name
+	return "Body"
+
+
+func _roll_hit(hit_percent: int, seed: int) -> bool:
+	return absi(seed) % 100 < clamp(hit_percent, 0, 100)
+
+
 func _calculate_targetable_tiles(unit) -> Dictionary:
 	var targetable := {}
 	for target in _valid_attack_targets(unit):
@@ -689,13 +816,17 @@ func _calculate_targetable_tiles(unit) -> Dictionary:
 
 func _attack_preview(attacker, target) -> Dictionary:
 	var distance := _grid_distance(attacker["grid"], target["grid"]) if attacker != null and target != null else 0
+	var weapon_data := _weapon_data_for(attacker)
+	var attack_min_range := int(weapon_data["range_min"])
 	var attack_range := _attack_range_for(attacker)
 	var legal := _is_attack_target_legal(attacker, target)
-	var hit_percent: int = int(clamp(PLACEHOLDER_HIT_PERCENT + int(attacker.get("accuracy_modifier", 0)) if attacker != null else 0, 0, 100))
+	var base_hit := int(weapon_data["hit_percent"]) if attacker != null else 0
+	var hit_percent: int = int(clamp(base_hit + int(attacker.get("accuracy_modifier", 0)) if attacker != null else 0, 0, 100))
 	return {
 		"attacker_id": str(attacker["id"]) if attacker != null else "",
 		"target_id": str(target["id"]) if target != null else "",
 		"distance": distance,
+		"min_range": attack_min_range,
 		"range": attack_range,
 		"hit_percent": hit_percent if legal else 0,
 		"legal": legal,
@@ -711,13 +842,15 @@ func _is_attack_target_legal(attacker, target) -> bool:
 		return false
 	if attacker["team"] == target["team"]:
 		return false
-	return _grid_distance(attacker["grid"], target["grid"]) <= _attack_range_for(attacker)
+	var weapon_data := _weapon_data_for(attacker)
+	var distance := _grid_distance(attacker["grid"], target["grid"])
+	return distance >= int(weapon_data["range_min"]) and distance <= int(weapon_data["range_max"])
 
 
 func _attack_range_for(unit) -> int:
 	if unit == null:
 		return 0
-	return int(PLACEHOLDER_WEAPON_RANGES.get(str(unit["weapon"]), 4))
+	return int(_weapon_data_for(unit)["range_max"])
 
 
 func _grid_distance(a: Vector2i, b: Vector2i) -> int:

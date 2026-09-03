@@ -74,6 +74,7 @@ func _run() -> void:
 	_run_turn_flow_acceptance(scene)
 	_run_attack_pipeline_acceptance(scene)
 	_run_part_hp_acceptance(scene)
+	_run_sword_acceptance(scene)
 
 	if _failures.is_empty():
 		print("GODOT TESTS PASSED")
@@ -161,6 +162,26 @@ func _run_part_hp_acceptance(scene: Control) -> void:
 	_test_placeholder_attack_damages_chosen_part(scene)
 
 
+func _run_sword_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_weapon_data_for",
+		"_roll_part_for_weapon",
+		"_roll_hit",
+		"_resolve_weapon_attack",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "Sword API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_sword_cannot_target_beyond_range_one(scene)
+	_test_sword_success_damages_exactly_one_part(scene)
+	_test_sword_miss_damages_no_parts(scene)
+	_test_sword_destroyed_arm_makes_weapon_unusable(scene)
+	_test_sword_seed_reproduces_rolled_part(scene)
+	_test_sword_ignores_manual_part_choice(scene)
+
+
 func _reset_turn_fixture(scene: Control) -> void:
 	scene._create_units()
 	scene._initialize_initiative()
@@ -174,6 +195,32 @@ func _reset_turn_fixture(scene: Control) -> void:
 	scene._unit_by_id("enemy_sniper")["grid"] = Vector2i(8, 1)
 	scene._unit_by_id("commander")["grid"] = Vector2i(9, 3)
 	scene._begin_activation(scene._unit_by_id("arlen"))
+
+
+func _set_sword_fixture(scene: Control, target_grid: Vector2i) -> Dictionary:
+	_reset_turn_fixture(scene)
+	var arlen = scene._unit_by_id("arlen")
+	var target = scene._unit_by_id("enemy_blade")
+	arlen["weapon"] = "Sword"
+	arlen["weapon_mount_part"] = "Right Arm"
+	target["grid"] = target_grid
+	scene._begin_activation(arlen)
+	return {"attacker": arlen, "target": target}
+
+
+func _part_hp_snapshot(unit) -> Dictionary:
+	var snapshot := {}
+	for part_name in ["Head", "Body", "Left Arm", "Right Arm", "Legs"]:
+		snapshot[part_name] = int(unit["parts"][part_name]["hp"])
+	return snapshot
+
+
+func _changed_part_count(before: Dictionary, after: Dictionary) -> int:
+	var count := 0
+	for part_name in before.keys():
+		if before[part_name] != after[part_name]:
+			count += 1
+	return count
 
 
 func _test_move_once_then_second_move_rejected(scene: Control) -> void:
@@ -407,6 +454,57 @@ func _test_placeholder_attack_damages_chosen_part(scene: Control) -> void:
 	_assert_equal(target["parts"]["Head"]["hp"], 55, "placeholder attack applies deterministic part damage")
 	_assert_equal(scene.last_attack_result["part_name"], "Head", "attack result records damaged part")
 	_assert_equal(scene.last_attack_result["damage_applied"], 25, "attack result records placeholder damage")
+
+
+func _test_sword_cannot_target_beyond_range_one(scene: Control) -> void:
+	var fixture := _set_sword_fixture(scene, Vector2i(3, 1))
+	scene._select_action("Attack")
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["target"])
+	_assert_equal(preview["range"], 1, "Sword range is data-driven as one")
+	_assert_false(preview["legal"], "Sword cannot target beyond range one")
+	_assert_false(scene._confirm_attack_target(fixture["target"], "", 11), "out-of-range Sword target is rejected")
+
+
+func _test_sword_success_damages_exactly_one_part(scene: Control) -> void:
+	var fixture := _set_sword_fixture(scene, Vector2i(2, 1))
+	var before := _part_hp_snapshot(fixture["target"])
+	scene._select_action("Attack")
+	_assert_true(scene._confirm_attack_target(fixture["target"], "", 11), "Sword hit resolves against adjacent target")
+	var after := _part_hp_snapshot(fixture["target"])
+	_assert_equal(_changed_part_count(before, after), 1, "Sword damages exactly one part")
+	_assert_equal(scene.last_attack_result["weapon"], "Sword", "Sword attack result records weapon")
+	_assert_equal(scene.last_attack_result["damage_applied"], 45, "Sword applies strong single-hit damage")
+
+
+func _test_sword_miss_damages_no_parts(scene: Control) -> void:
+	var fixture := _set_sword_fixture(scene, Vector2i(2, 1))
+	var before := _part_hp_snapshot(fixture["target"])
+	scene._select_action("Attack")
+	_assert_true(scene._confirm_attack_target(fixture["target"], "", 95), "Sword miss still consumes the attack")
+	var after := _part_hp_snapshot(fixture["target"])
+	_assert_equal(_changed_part_count(before, after), 0, "miss damages no part")
+	_assert_false(scene.last_attack_result["hit"], "miss result is recorded")
+
+
+func _test_sword_destroyed_arm_makes_weapon_unusable(scene: Control) -> void:
+	var fixture := _set_sword_fixture(scene, Vector2i(2, 1))
+	scene._damage_part(fixture["attacker"], "Right Arm", 999)
+	_assert_true(fixture["attacker"]["weapon_disabled"], "destroyed equipped arm disables Sword")
+	_assert_false(scene._can_attack(fixture["attacker"]), "Sword cannot attack with destroyed equipped arm")
+
+
+func _test_sword_seed_reproduces_rolled_part(scene: Control) -> void:
+	var fixture := _set_sword_fixture(scene, Vector2i(2, 1))
+	var weapon_data: Dictionary = scene._weapon_data_for(fixture["attacker"])
+	_assert_equal(scene._roll_part_for_weapon(weapon_data, 41), scene._roll_part_for_weapon(weapon_data, 41), "same seed reproduces same Sword part roll")
+	_assert_equal(scene._roll_part_for_weapon(weapon_data, 41), "Left Arm", "Sword part roll follows data-driven weights")
+
+
+func _test_sword_ignores_manual_part_choice(scene: Control) -> void:
+	var fixture := _set_sword_fixture(scene, Vector2i(2, 1))
+	scene._select_action("Attack")
+	_assert_true(scene._confirm_attack_target(fixture["target"], "Head", 41), "Sword resolves even when caller passes manual part")
+	_assert_equal(scene.last_attack_result["part_name"], "Left Arm", "normal Sword attack uses rolled part instead of manual part")
 
 
 func _assert_true(actual: bool, message: String) -> void:

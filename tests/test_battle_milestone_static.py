@@ -95,6 +95,16 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         ]:
             self.assertIn(constant, self.source)
 
+    def test_sword_weapon_hooks_are_encoded(self):
+        for hook in [
+            "func _weapon_data_for",
+            "func _roll_part_for_weapon",
+            "func _roll_hit",
+            "func _resolve_weapon_attack",
+        ]:
+            self.assertIn(hook, self.source)
+        self.assertIn('"Sword"', self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
