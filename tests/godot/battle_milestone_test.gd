@@ -111,6 +111,7 @@ func _run_turn_flow_acceptance(scene: Control) -> void:
 	_test_wait_without_moving_advances_to_next_player(scene)
 	_test_selecting_non_active_ally_does_not_transfer_control(scene)
 	_test_full_initiative_cycle_respects_schedule(scene)
+	_test_faster_units_receive_more_future_activations(scene)
 	_test_future_activation_resets_flags(scene)
 
 
@@ -195,6 +196,21 @@ func _test_full_initiative_cycle_respects_schedule(scene: Control) -> void:
 	_assert_true(scene.turn_log.has("enemy_rifle:enemy_wait"), "enemy rifle acts only when scheduled")
 	_assert_true(scene.turn_log.has("commander:enemy_wait"), "commander acts only when scheduled")
 	_assert_true(scene.turn_log.has("enemy_sniper:enemy_wait"), "enemy sniper acts only when scheduled")
+
+
+func _test_faster_units_receive_more_future_activations(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var activation_counts := {}
+	for _index in range(6):
+		var active_id := str(scene.active_unit["id"])
+		activation_counts[active_id] = int(activation_counts.get(active_id, 0)) + 1
+		_assert_equal(scene.initiative_timeline[0], active_id, "front timeline unit owns the activation")
+		_assert_true(scene._try_wait_active_unit(), "advance deterministic activation sample")
+
+	_assert_true(
+		int(activation_counts["arlen"]) > int(activation_counts["brann"]),
+		"higher Speed unit receives more activations than slower unit over time"
+	)
 
 
 func _test_future_activation_resets_flags(scene: Control) -> void:
