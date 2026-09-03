@@ -202,7 +202,17 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn("auto_battle", self.source)
         self.assertIn("simulation_seed", self.source)
 
+    def test_ancient_ruins_mission_and_objective_are_encoded(self):
+        self.assertIn("const MISSIONS_DATA", self.source)
+        self.assertIn('"ancient_ruins"', self.source)
+        self.assertIn('"defeat_commander"', self.source)
+        self.assertIn('"Defeat Commander"', self.source)
+        self.assertIn("func _load_mission", self.source)
+        self.assertIn("current_mission", self.source)
+        self.assertIn('"enemy_spear"', self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

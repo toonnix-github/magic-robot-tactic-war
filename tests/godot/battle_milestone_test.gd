@@ -52,13 +52,15 @@ func _run() -> void:
 	scene._notification(0)
 	_assert_true(scene._is_in_bounds(Vector2i(0, 0)), "origin tile is in bounds")
 	_assert_false(scene._is_in_bounds(Vector2i(10, 7)), "outside tile is out of bounds")
-	_assert_equal(scene._height_at(Vector2i(9, 0)), 4, "rightmost band reaches H4")
+	_assert_equal(scene._height_at(Vector2i(9, 0)), 2, "rightmost band in Ancient Ruins reaches H2")
 	_assert_equal(scene._grid_from_key(scene._grid_key(Vector2i(4, 2))), Vector2i(4, 2), "grid keys round-trip")
+
 	_assert_true(scene._grid_at_position(scene._tile_center(Vector2i(4, 2))) == Vector2i(4, 2), "tile hit-testing works")
 	_assert_true(scene._unit_at_position(scene._tile_center(arlen["grid"])) == arlen, "unit hit-testing works")
 
 	var mouse := InputEventMouseButton.new()
 	mouse.pressed = true
+
 	mouse.button_index = MOUSE_BUTTON_LEFT
 	mouse.position = Vector2(12, 34)
 	_assert_equal(scene._event_press_position(mouse), Vector2(12, 34), "mouse taps are accepted")
@@ -82,8 +84,10 @@ func _run() -> void:
 	_run_terrain_acceptance(scene)
 	_run_orb_acceptance(scene)
 	_run_ai_and_auto_acceptance(scene)
+	_run_ancient_ruins_acceptance(scene)
 
 	if _failures.is_empty():
+
 		print("GODOT TESTS PASSED")
 		quit(0)
 	else:
@@ -312,6 +316,7 @@ func _reset_turn_fixture(scene: Control) -> void:
 	scene._unit_by_id("enemy_blade")["grid"] = Vector2i(6, 1)
 	scene._unit_by_id("enemy_rifle")["grid"] = Vector2i(7, 4)
 	scene._unit_by_id("enemy_sniper")["grid"] = Vector2i(8, 1)
+	scene._unit_by_id("enemy_spear")["grid"] = Vector2i(7, 5)
 	scene._unit_by_id("commander")["grid"] = Vector2i(9, 3)
 	scene._begin_activation(scene._unit_by_id("arlen"))
 
@@ -515,7 +520,9 @@ func _test_full_initiative_cycle_respects_schedule(scene: Control) -> void:
 	_assert_equal(seen_players, expected_players, "players act only in deterministic initiative order")
 	_assert_true(scene.turn_log.has("enemy_blade:enemy_wait") or scene.turn_log.has("enemy_blade:attack"), "enemy blade acts only when scheduled")
 	_assert_true(scene.turn_log.has("enemy_rifle:enemy_wait") or scene.turn_log.has("enemy_rifle:attack"), "enemy rifle acts only when scheduled")
+	_assert_true(scene.turn_log.has("enemy_spear:enemy_wait") or scene.turn_log.has("enemy_spear:attack") or scene.turn_log.has("enemy_spear:enemy_attack"), "enemy spear acts only when scheduled")
 	_assert_true(scene.turn_log.has("commander:enemy_wait") or scene.turn_log.has("commander:attack"), "commander acts only when scheduled")
+
 	_assert_true(scene.turn_log.has("enemy_sniper:enemy_wait") or scene.turn_log.has("enemy_sniper:attack"), "enemy sniper acts only when scheduled")
 
 
@@ -1077,8 +1084,10 @@ func _test_enemy_ai_moves_and_attacks_legally(scene: Control) -> void:
 	_reset_turn_fixture(scene)
 	var enemy = scene._unit_by_id("enemy_blade")
 	var target = scene._unit_by_id("arlen")
+	scene._unit_by_id("mira")["grid"] = Vector2i(0, 6)
 	enemy["grid"] = Vector2i(3, 1)
 	target["grid"] = Vector2i(1, 1)
+
 	scene._begin_activation(enemy)
 	var decision: Dictionary = scene._decide_ai_action(enemy)
 	_assert_equal(decision["action"], "Attack", "AI chooses Attack when in striking distance")
@@ -1143,7 +1152,63 @@ func _test_auto_battle_completes_to_game_over(scene: Control) -> void:
 	_assert_true(scene._is_battle_over(), "_is_battle_over reports true when complete")
 
 
+func _run_ancient_ruins_acceptance(scene: Control) -> void:
+	_test_ancient_ruins_commander_defeat_ends_battle_immediately(scene)
+	_test_ancient_ruins_killing_non_commander_does_not_end_mission(scene)
+	_test_ancient_ruins_terrain_has_no_mandatory_choke_and_modest_height(scene)
+	_test_ancient_ruins_auto_battle_reproducible(scene)
+
+
+func _test_ancient_ruins_commander_defeat_ends_battle_immediately(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var commander = scene._unit_by_id("commander")
+	var blade = scene._unit_by_id("enemy_blade")
+	_assert_true(scene._is_unit_in_battle(blade), "enemy blade alive before commander defeat")
+	_assert_false(scene._is_battle_over(), "battle not over initially")
+	scene._damage_part(commander, "Body", 999)
+	_assert_false(scene._is_unit_in_battle(commander), "commander is defeated")
+	_assert_true(scene._is_battle_over(), "destroying commander ends battle immediately")
+	_assert_equal(scene._battle_winner(), "player", "player wins when commander is defeated")
+	var summary: Dictionary = scene._battle_summary()
+	_assert_true(summary["commander_defeated"], "summary records commander defeated")
+	_assert_equal(summary["mission_id"], "ancient_ruins", "summary records ancient_ruins mission id")
+
+
+func _test_ancient_ruins_killing_non_commander_does_not_end_mission(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var blade = scene._unit_by_id("enemy_blade")
+	var commander = scene._unit_by_id("commander")
+	scene._damage_part(blade, "Body", 999)
+	_assert_false(scene._is_unit_in_battle(blade), "enemy blade is defeated")
+	_assert_true(scene._is_unit_in_battle(commander), "commander is still in battle")
+	_assert_false(scene._is_battle_over(), "killing non-commander enemy does not end mission")
+	_assert_equal(scene._battle_winner(), "", "no winner while commander lives")
+
+
+func _test_ancient_ruins_terrain_has_no_mandatory_choke_and_modest_height(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	for x in range(scene.GRID_COLUMNS):
+		var walkable_in_col := 0
+		for y in range(scene.GRID_ROWS):
+			var grid := Vector2i(x, y)
+			var h: int = scene._height_at(grid)
+			_assert_true(h >= 0 and h <= 2, "Ancient Ruins heights are within modest H0-H2")
+			walkable_in_col += 1
+		_assert_true(walkable_in_col >= 2, "lane width is at least 2 without mandatory 1-tile bottlenecks")
+
+
+func _test_ancient_ruins_auto_battle_reproducible(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var run1: Dictionary = scene.run_auto_battle(60, 1337)
+	scene._load_mission("ancient_ruins")
+	var run2: Dictionary = scene.run_auto_battle(60, 1337)
+	_assert_equal(run1["winner"], run2["winner"], "Ancient Ruins Auto reproducible winner")
+	_assert_equal(run1["turns"], run2["turns"], "Ancient Ruins Auto reproducible turns")
+	_assert_equal(run1["commander_defeated"], run2["commander_defeated"], "Ancient Ruins Auto reproducible commander outcome")
+
+
 func _assert_true(actual: bool, message: String) -> void:
+
 
 	if not actual:
 		_failures.append("Expected true: %s" % message)

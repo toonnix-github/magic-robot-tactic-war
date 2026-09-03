@@ -146,6 +146,17 @@ const ORB_DATA := {
 	},
 }
 
+const MISSIONS_DATA := {
+	"ancient_ruins": {
+		"id": "ancient_ruins",
+		"name": "Ancient Ruins",
+		"objective": "defeat_commander",
+		"objective_label": "Defeat Commander",
+		"commander_id": "commander",
+		"cover_tiles": [Vector2i(3, 2), Vector2i(5, 4), Vector2i(6, 2), Vector2i(8, 1)],
+	},
+}
+
 const DESIGN_SIZE := Vector2(1311.0, 603.0)
 const TILE_SIZE := Vector2(77.0, 41.0)
 const TILE_SPACING := Vector2(80.0, 44.0)
@@ -164,6 +175,7 @@ enum TurnState {
 	TURN_END,
 }
 
+var current_mission := "ancient_ruins"
 var units := []
 var active_unit = null
 var selected_unit = null
@@ -187,17 +199,25 @@ var _is_activating := false
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	_load_mission("ancient_ruins")
+	print("Magic Robot Tactic War combat prototype v%s" % PROTOTYPE_VERSION)
+	print("Graybox battle milestone loaded: 7x10 grid, selection, movement, and Phase 1 HUD.")
+
+
+func _load_mission(mission_id: String) -> void:
+	if not MISSIONS_DATA.has(mission_id):
+		return
+	current_mission = mission_id
 	_create_terrain()
 	_create_units()
 	_initialize_initiative()
 	_begin_next_activation()
-	print("Magic Robot Tactic War combat prototype v%s" % PROTOTYPE_VERSION)
-	print("Graybox battle milestone loaded: 7x10 grid, selection, movement, and Phase 1 HUD.")
 
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
 		queue_redraw()
+
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -326,6 +346,18 @@ func _create_units() -> void:
 			"parts": {"Head": 0.82, "Body": 0.78, "Left Arm": 0.70, "Right Arm": 0.86, "Legs": 0.72},
 		},
 		{
+			"id": "enemy_spear",
+			"name": "Enemy Spear",
+			"mech": "Pike Frame",
+			"weapon": "Spear",
+			"team": "enemy",
+			"letter": "P",
+			"grid": Vector2i(7, 5),
+			"color": Color(0.77, 0.43, 0.43),
+			"hp": 0.82,
+			"parts": {"Head": 0.80, "Body": 0.82, "Left Arm": 0.75, "Right Arm": 0.85, "Legs": 0.80},
+		},
+		{
 			"id": "commander",
 			"name": "Commander Kael",
 			"mech": "High Ridge",
@@ -344,6 +376,7 @@ func _create_units() -> void:
 		"enemy_blade": 8,
 		"mira": 9,
 		"enemy_rifle": 7,
+		"enemy_spear": 7,
 		"sera": 8,
 		"commander": 6,
 		"brann": 5,
@@ -354,6 +387,7 @@ func _create_units() -> void:
 		"enemy_blade": 1.0,
 		"mira": 2.0,
 		"enemy_rifle": 3.0,
+		"enemy_spear": 3.5,
 		"sera": 4.0,
 		"commander": 5.0,
 		"brann": 6.0,
@@ -1614,8 +1648,10 @@ func _is_in_bounds(grid) -> bool:
 
 func _create_terrain() -> void:
 	terrain_tiles.clear()
-	_set_tile_terrain(Vector2i(5, 4), {"cover": true})
-	_set_tile_terrain(Vector2i(8, 1), {"cover": true})
+	var mission_data: Dictionary = MISSIONS_DATA.get(current_mission, {})
+	var covers: Array = mission_data.get("cover_tiles", [Vector2i(3, 2), Vector2i(5, 4), Vector2i(6, 2), Vector2i(8, 1)])
+	for tile in covers:
+		_set_tile_terrain(tile, {"cover": true})
 
 
 func _set_tile_terrain(grid: Vector2i, data: Dictionary) -> void:
@@ -1647,7 +1683,15 @@ func _terrain_at(grid) -> Dictionary:
 func _default_height_at(grid) -> int:
 	if grid == null:
 		return 0
+	if current_mission == "ancient_ruins":
+		if grid.x <= 3:
+			return 0
+		elif grid.x <= 6:
+			return 1
+		else:
+			return 2
 	return int(clamp(floor(float(grid.x) / 2.0), 0.0, 4.0))
+
 
 
 func _height_at(grid) -> int:
@@ -1882,13 +1926,18 @@ func _draw_initiative_strip() -> void:
 
 func _draw_mission_panel() -> void:
 	_draw_panel(_r(1030, 30, 248, 92))
+	var mission_data: Dictionary = MISSIONS_DATA.get(current_mission, {})
+	var objective_label := str(mission_data.get("objective_label", "Defeat Commander"))
 	var detail := last_action_message
 	if not target_preview.is_empty():
 		var state := "LEGAL" if bool(target_preview["legal"]) else "ILLEGAL"
 		detail = "Hit %d%% · %s" % [int(target_preview["hit_percent"]), state]
+	elif _is_battle_over():
+		detail = "VICTORY" if _battle_winner() == "player" else "DEFEAT"
 	draw_string(_font(), _p(1052, 55), "TURN %02d" % turn_number, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.56, 0.63, 0.67))
-	draw_string(_font(), _p(1052, 80), "Defeat Commander", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(15), Color(0.95, 0.97, 0.97))
+	draw_string(_font(), _p(1052, 80), objective_label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(15), Color(0.95, 0.97, 0.97))
 	draw_string(_font(), _p(1052, 101), detail, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(11), Color(0.62, 0.69, 0.73))
+
 
 
 func _draw_part_status_panel() -> void:
@@ -1984,9 +2033,14 @@ func run_auto_battle(max_activations: int = 150, initial_seed: int = 1337) -> Di
 
 
 func _battle_winner() -> String:
-	var commander = _unit_by_id("commander")
-	if commander != null and not _is_unit_in_battle(commander):
-		return "player"
+	var mission_data: Dictionary = MISSIONS_DATA.get(current_mission, {})
+	var objective := str(mission_data.get("objective", "defeat_commander"))
+
+	if objective == "defeat_commander":
+		var commander_id := str(mission_data.get("commander_id", "commander"))
+		var commander = _unit_by_id(commander_id)
+		if commander != null and not _is_unit_in_battle(commander):
+			return "player"
 
 	var player_alive := false
 	var enemy_alive := false
@@ -2021,7 +2075,11 @@ func _battle_summary(activations: int = 0) -> Dictionary:
 			if unit["parts"].has(part_name) and bool(unit["parts"][part_name]["destroyed"]):
 				destroyed_parts += 1
 
+	var commander = _unit_by_id("commander")
+	var commander_defeated: bool = commander != null and not _is_unit_in_battle(commander)
+
 	return {
+		"mission_id": current_mission,
 		"winner": _battle_winner(),
 		"is_over": _is_battle_over(),
 		"turns": turn_number,
@@ -2029,5 +2087,7 @@ func _battle_summary(activations: int = 0) -> Dictionary:
 		"player_survivors": player_survivors,
 		"enemy_survivors": enemy_survivors,
 		"destroyed_parts": destroyed_parts,
+		"commander_defeated": commander_defeated,
 		"turn_log": turn_log.duplicate(),
 	}
+
