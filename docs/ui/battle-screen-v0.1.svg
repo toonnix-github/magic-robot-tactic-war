@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1311" height="603" viewBox="0 0 1311 603" role="img" aria-labelledby="t d">
+<title id="t">Magic Robot Tactic War battle UX reference</title>
+<desc id="d">Wide mobile battle screen with a dominant 7 by 10 stepped battlefield and minimal HUD.</desc>
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#10171c"/><stop offset="1" stop-color="#18242b"/></linearGradient>
+  <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#1c2931"/><stop offset="1" stop-color="#121b21"/></linearGradient>
+  <pattern id="grid" width="80" height="44" patternUnits="userSpaceOnUse"><rect width="77" height="41" rx="5" fill="currentColor" stroke="#566973" stroke-width="1"/></pattern>
+</defs>
+<rect width="1311" height="603" rx="28" fill="url(#bg)"/>
+<rect x="11" y="11" width="1289" height="581" rx="24" fill="none" stroke="#34444d" stroke-width="2"/>
+
+<!-- selected unit: compact, no stat wall -->
+<g>
+  <rect x="30" y="30" width="235" height="92" rx="18" fill="url(#panel)" stroke="#41535d"/>
+  <circle cx="74" cy="76" r="28" fill="#2d3f49" stroke="#6a7f89" stroke-width="2"/>
+  <text x="74" y="82" text-anchor="middle" fill="#dbe6eb" font-family="Arial" font-size="16" font-weight="700">A</text>
+  <text x="115" y="58" fill="#f3f6f7" font-family="Arial" font-size="18" font-weight="700">Arlen</text>
+  <text x="115" y="79" fill="#9fb0b9" font-family="Arial" font-size="12">Aegis-07 · Spear</text>
+  <rect x="115" y="92" width="122" height="8" rx="4" fill="#34444d"/><rect x="115" y="92" width="98" height="8" rx="4" fill="#75a58e"/>
+</g>
+
+<!-- turn order -->
+<g>
+  <rect x="476" y="27" width="360" height="58" rx="17" fill="url(#panel)" stroke="#41535d"/>
+  <text x="494" y="48" fill="#8fa1aa" font-family="Arial" font-size="10" font-weight="700">NEXT</text>
+  <g font-family="Arial" font-size="11" font-weight="700" text-anchor="middle" fill="#fff">
+    <circle cx="532" cy="58" r="16" fill="#75a58e"/><text x="532" y="63">A</text>
+    <circle cx="580" cy="58" r="14" fill="#c46d6d"/><text x="580" y="63">E</text>
+    <circle cx="628" cy="58" r="14" fill="#6f95c2"/><text x="628" y="63">M</text>
+    <circle cx="676" cy="58" r="14" fill="#c46d6d"/><text x="676" y="63">R</text>
+    <circle cx="724" cy="58" r="14" fill="#967cc1"/><text x="724" y="63">S</text>
+    <circle cx="772" cy="58" r="14" fill="#c46d6d"/><text x="772" y="63">K</text>
+  </g>
+</g>
+
+<!-- objective -->
+<g>
+  <rect x="1030" y="30" width="248" height="92" rx="18" fill="url(#panel)" stroke="#41535d"/>
+  <text x="1052" y="55" fill="#8fa1aa" font-family="Arial" font-size="10" font-weight="700">TURN 03</text>
+  <text x="1052" y="80" fill="#f3f6f7" font-family="Arial" font-size="15" font-weight="700">Defeat Commander</text>
+  <text x="1052" y="101" fill="#9fb0b9" font-family="Arial" font-size="11">Kael · high ridge</text>
+</g>
+
+<!-- battlefield: five stepped bands x two columns = 10 columns; seven rows -->
+<rect x="190" y="104" width="930" height="405" rx="20" fill="#162027" stroke="#34444d"/>
+<g transform="translate(228 140)">
+  <g style="color:#263840"><rect x="0" y="0" width="160" height="308" rx="8" fill="url(#grid)"/></g>
+  <g transform="translate(166 -9)" style="color:#2d424a"><rect x="0" y="308" width="160" height="12" rx="4" fill="#18272d"/><rect x="0" y="0" width="160" height="308" rx="8" fill="url(#grid)"/></g>
+  <g transform="translate(332 -18)" style="color:#354b52"><rect x="0" y="308" width="160" height="20" rx="4" fill="#18272d"/><rect x="0" y="0" width="160" height="308" rx="8" fill="url(#grid)"/></g>
+  <g transform="translate(498 -27)" style="color:#40585d"><rect x="0" y="308" width="160" height="28" rx="4" fill="#18272d"/><rect x="0" y="0" width="160" height="308" rx="8" fill="url(#grid)"/></g>
+  <g transform="translate(664 -36)" style="color:#4b6265"><rect x="0" y="308" width="160" height="36" rx="4" fill="#18272d"/><rect x="0" y="0" width="160" height="308" rx="8" fill="url(#grid)"/></g>
+
+  <!-- move area -->
+  <rect x="160" y="132" width="77" height="41" rx="5" fill="#3b6872" stroke="#87b6c0" stroke-width="2"/>
+  <rect x="240" y="132" width="77" height="41" rx="5" fill="#3b6872" stroke="#87b6c0" stroke-width="2"/>
+  <rect x="320" y="123" width="77" height="41" rx="5" fill="#3b6872" stroke="#87b6c0" stroke-width="2"/>
+  <rect x="400" y="123" width="77" height="41" rx="5" fill="#3b6872" stroke="#87b6c0" stroke-width="2"/>
+
+  <!-- cover -->
+  <path d="M427 215 h24 v-16 h12 v29 h-36 z" fill="#7d8c79" stroke="#b0b9a9"/>
+  <path d="M675 78 h24 v-16 h12 v29 h-36 z" fill="#7d8c79" stroke="#b0b9a9"/>
+
+  <!-- units -->
+  <g font-family="Arial" font-size="12" font-weight="700" text-anchor="middle" fill="#fff">
+    <circle cx="201" cy="153" r="27" fill="none" stroke="#87b6c0" stroke-width="2" stroke-dasharray="4 5"/><circle cx="201" cy="153" r="18" fill="#78a78f" stroke="#e8eef0" stroke-width="2"/><text x="201" y="158">A</text>
+    <circle cx="121" cy="241" r="18" fill="#6f95c2" stroke="#e8eef0" stroke-width="2"/><text x="121" y="246">M</text>
+    <circle cx="41" cy="65" r="18" fill="#967cc1" stroke="#e8eef0" stroke-width="2"/><text x="41" y="70">S</text>
+    <circle cx="201" cy="285" r="18" fill="#8ca39b" stroke="#e8eef0" stroke-width="2"/><text x="201" y="290">B</text>
+    <circle cx="616" cy="105" r="18" fill="#c46d6d" stroke="#f0dede" stroke-width="2"/><text x="616" y="110">E</text>
+    <circle cx="696" cy="185" r="18" fill="#c46d6d" stroke="#f0dede" stroke-width="2"/><text x="696" y="190">R</text>
+    <circle cx="696" cy="53" r="18" fill="#c46d6d" stroke="#f0dede" stroke-width="2"/><text x="696" y="58">N</text>
+    <circle cx="776" cy="141" r="18" fill="#b95c5c" stroke="#fff0f0" stroke-width="2"/><text x="776" y="146">K</text>
+  </g>
+</g>
+
+<!-- part status only when selected -->
+<g>
+  <rect x="30" y="410" width="176" height="124" rx="18" fill="url(#panel)" stroke="#41535d"/>
+  <text x="48" y="433" fill="#8fa1aa" font-family="Arial" font-size="10" font-weight="700">PART STATUS</text>
+  <g font-family="Arial" font-size="10" fill="#c6d1d6">
+    <text x="48" y="458">Head</text><rect x="93" y="450" width="86" height="7" rx="3.5" fill="#34444d"/><rect x="93" y="450" width="72" height="7" rx="3.5" fill="#75a58e"/>
+    <text x="48" y="477">Body</text><rect x="93" y="469" width="86" height="7" rx="3.5" fill="#34444d"/><rect x="93" y="469" width="78" height="7" rx="3.5" fill="#75a58e"/>
+    <text x="48" y="496">L Arm</text><rect x="93" y="488" width="86" height="7" rx="3.5" fill="#34444d"/><rect x="93" y="488" width="64" height="7" rx="3.5" fill="#75a58e"/>
+    <text x="48" y="515">Legs</text><rect x="93" y="507" width="86" height="7" rx="3.5" fill="#34444d"/><rect x="93" y="507" width="69" height="7" rx="3.5" fill="#75a58e"/>
+  </g>
+</g>
+
+<!-- only three Phase-1 actions -->
+<g>
+  <rect x="888" y="521" width="390" height="62" rx="20" fill="url(#panel)" stroke="#41535d"/>
+  <rect x="906" y="533" width="104" height="38" rx="12" fill="#29444c" stroke="#688896"/><text x="958" y="557" text-anchor="middle" fill="#eff5f6" font-family="Arial" font-size="13" font-weight="700">MOVE</text>
+  <rect x="1021" y="533" width="104" height="38" rx="12" fill="#6b3d3d" stroke="#a96b6b"/><text x="1073" y="557" text-anchor="middle" fill="#fff3f3" font-family="Arial" font-size="13" font-weight="700">ATTACK</text>
+  <rect x="1136" y="533" width="124" height="38" rx="12" fill="#28343b" stroke="#52636b"/><text x="1198" y="557" text-anchor="middle" fill="#d7e0e4" font-family="Arial" font-size="13" font-weight="700">WAIT</text>
+</g>
+<text x="654" y="551" text-anchor="middle" fill="#aab9c0" font-family="Arial" font-size="12">Tap a highlighted tile to move · height is shown by stepped terrain</text>
+</svg>
