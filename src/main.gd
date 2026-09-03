@@ -178,7 +178,11 @@ var turn_number := 1
 var last_action_message := "Ready"
 var target_preview := {}
 var last_attack_result := {}
+var last_enemy_attack_result := {}
 var terrain_tiles := {}
+var auto_battle := false
+var simulation_seed := 1337
+var _is_activating := false
 
 
 func _ready() -> void:
@@ -447,6 +451,7 @@ func _initialize_initiative() -> void:
 	targetable_tiles.clear()
 	target_preview.clear()
 	last_attack_result.clear()
+	last_enemy_attack_result.clear()
 	turn_state = TurnState.TURN_START
 	for unit in units:
 		unit["has_moved"] = false
@@ -474,20 +479,34 @@ func _rebuild_initiative_timeline() -> void:
 
 
 func _begin_next_activation() -> void:
-	for _index in range(units.size() * 2):
+	if _is_battle_over():
+		return
+
+	_is_activating = true
+	for _index in range(units.size() * 4):
 		_rebuild_initiative_timeline()
 		if initiative_timeline.is_empty():
+			_is_activating = false
 			return
 
 		var next_unit = _unit_by_id(initiative_timeline[0])
 		if next_unit == null:
+			_is_activating = false
 			return
 
 		_begin_activation(next_unit)
 		if next_unit["team"] == "player":
+			if not auto_battle:
+				_is_activating = false
+				return
+			_resolve_ai_activation(next_unit)
+		else:
+			_resolve_enemy_activation(next_unit)
+		if _is_battle_over():
+			_is_activating = false
 			return
 
-		_resolve_enemy_activation(next_unit)
+	_is_activating = false
 
 
 func _begin_activation(unit) -> void:
@@ -517,17 +536,162 @@ func _begin_activation(unit) -> void:
 
 
 func _resolve_enemy_activation(unit) -> void:
-	unit["activation_complete"] = true
-	turn_log.append("%s:enemy_wait" % unit["id"])
-	last_action_message = "%s holds position" % unit["name"]
-	turn_state = TurnState.ACTION_COMPLETE
-	reachable_tiles.clear()
-	targetable_tiles.clear()
-	target_preview.clear()
-	_schedule_future_activation(unit)
-	turn_state = TurnState.TURN_END
-	active_unit = null
-	turn_number += 1
+	_resolve_ai_activation(unit)
+
+
+func _resolve_ai_activation(unit) -> Dictionary:
+	if unit == null or not _is_unit_in_battle(unit):
+		return {}
+
+	var decision := _decide_ai_action(unit)
+	var move_to = decision.get("move_to")
+	if move_to != null and _can_move(unit):
+		_try_move_active_unit(move_to)
+
+	var attacked := false
+	if str(decision.get("action", "")) == "Attack" and decision.get("target") != null and _can_attack(unit):
+		var sim_seed := _next_simulation_seed()
+		attacked = _try_attack_active_unit(decision["target"], "", sim_seed)
+
+	if not attacked:
+		if str(unit.get("team", "")) == "enemy":
+			unit["activation_complete"] = true
+			turn_log.append("%s:enemy_wait" % unit["id"])
+			last_action_message = "%s holds position" % unit["name"]
+			_finish_activation(unit)
+		else:
+			_try_wait_active_unit()
+
+	return decision
+
+
+func _decide_ai_action(unit) -> Dictionary:
+	if unit == null or not _is_unit_in_battle(unit):
+		return {"action": "Wait", "move_to": null, "target": null}
+
+	var opponents := _opponents_of(unit)
+	if opponents.is_empty():
+		return {"action": "Wait", "move_to": null, "target": null}
+
+	var can_move_now := _can_move(unit)
+	var candidate_tiles: Array[Vector2i] = [unit["grid"]]
+	if can_move_now:
+		var reachable := _calculate_reachable_tiles(unit)
+		for key in reachable.keys():
+			candidate_tiles.append(_grid_from_key(key))
+
+	var best_attack_option: Dictionary = {}
+	var original_grid: Vector2i = unit["grid"]
+
+	for tile in candidate_tiles:
+		unit["grid"] = tile
+		var valid_targets := _valid_attack_targets(unit)
+		for target in valid_targets:
+			var preview := _attack_preview(unit, target)
+			if not bool(preview.get("legal", false)):
+				continue
+			var score := _score_attack_option(unit, target, tile, preview)
+			if best_attack_option.is_empty() or score > float(best_attack_option["score"]):
+				best_attack_option = {
+					"score": score,
+					"move_to": tile if tile != original_grid else null,
+					"target": target,
+					"preview": preview,
+					"action": "Attack",
+				}
+
+	unit["grid"] = original_grid
+
+	if not best_attack_option.is_empty():
+		return best_attack_option
+
+	if can_move_now and candidate_tiles.size() > 1:
+		var target_opponent = _primary_objective_target(unit)
+		if target_opponent != null:
+			var best_move_tile: Vector2i = original_grid
+			var best_move_score := -999999.0
+			for tile in candidate_tiles:
+				var score := _score_move_tile(unit, tile, target_opponent["grid"])
+				if score > best_move_score:
+					best_move_score = score
+					best_move_tile = tile
+			if best_move_tile != original_grid:
+				return {"action": "Wait", "move_to": best_move_tile, "target": null}
+
+	return {"action": "Wait", "move_to": null, "target": null}
+
+
+func _score_attack_option(attacker, target, candidate_grid: Vector2i, preview: Dictionary) -> float:
+	var score := 100.0
+	var hit_percent := int(preview.get("hit_percent", 0))
+	score += float(hit_percent) * 1.5
+
+	if str(target.get("id", "")) == "commander":
+		score += 80.0
+
+	var damage := int(preview.get("damage", 0))
+	score += float(damage) * 2.0
+
+	if target.get("parts", {}).has("Body"):
+		var body_hp: int = int(target["parts"]["Body"]["hp"])
+		if damage >= body_hp:
+			score += 150.0
+
+	var weapon_arm: String = _weapon_mount_part(target)
+	if target.get("parts", {}).has(weapon_arm):
+		var arm_hp: int = int(target["parts"][weapon_arm]["hp"])
+		if damage >= arm_hp:
+			score += 35.0
+
+	var weapon_data := _weapon_data_for(attacker)
+	if _intercepting_shield_for(attacker, target, weapon_data) != null:
+		score -= 50.0
+
+	if _has_cover(target["grid"]):
+		score -= 15.0
+
+	if _has_cover(candidate_grid):
+		score += 10.0
+	score += float(_height_at(candidate_grid)) * 3.0
+	score -= float(_grid_distance(attacker["grid"], candidate_grid)) * 0.5
+	return score
+
+
+func _score_move_tile(unit, candidate_grid: Vector2i, target_grid: Vector2i) -> float:
+	var dist := float(_grid_distance(candidate_grid, target_grid))
+	var score: float = 100.0 - dist * 10.0
+	if _has_cover(candidate_grid):
+		score += 5.0
+	score += float(_height_at(candidate_grid)) * 2.0
+	return score
+
+
+func _opponents_of(unit) -> Array:
+	var opps := []
+	if unit == null:
+		return opps
+	for other in units:
+		if _is_unit_in_battle(other) and other["team"] != unit["team"]:
+			opps.append(other)
+	return opps
+
+
+func _primary_objective_target(unit):
+	var opps := _opponents_of(unit)
+	if opps.is_empty():
+		return null
+	if str(unit.get("team", "")) == "player":
+		for opp in opps:
+			if str(opp.get("id", "")) == "commander":
+				return opp
+	var closest = opps[0]
+	var min_dist := _grid_distance(unit["grid"], closest["grid"])
+	for opp in opps:
+		var d := _grid_distance(unit["grid"], opp["grid"])
+		if d < min_dist:
+			min_dist = d
+			closest = opp
+	return closest
 
 
 func _finish_activation(unit) -> void:
@@ -539,7 +703,8 @@ func _finish_activation(unit) -> void:
 	turn_state = TurnState.TURN_END
 	active_unit = null
 	turn_number += 1
-	_begin_next_activation()
+	if not _is_activating and not auto_battle:
+		_begin_next_activation()
 
 
 func _schedule_future_activation(unit) -> void:
@@ -552,7 +717,6 @@ func _can_move(unit) -> bool:
 		unit != null
 		and _is_active_unit(unit)
 		and _is_unit_in_battle(unit)
-		and unit["team"] == "player"
 		and _movement_range_for(unit) > 0
 		and not bool(unit["has_moved"])
 		and not bool(unit["activation_complete"])
@@ -564,7 +728,6 @@ func _can_attack(unit) -> bool:
 		unit != null
 		and _is_active_unit(unit)
 		and _is_unit_in_battle(unit)
-		and unit["team"] == "player"
 		and not bool(unit["weapon_disabled"])
 		and not bool(unit["has_attacked"])
 		and not bool(unit["activation_complete"])
@@ -577,9 +740,9 @@ func _can_wait(unit) -> bool:
 		unit != null
 		and _is_active_unit(unit)
 		and _is_unit_in_battle(unit)
-		and unit["team"] == "player"
 		and not bool(unit["activation_complete"])
 	)
+
 
 
 func _is_action_legal(action: String) -> bool:
@@ -595,6 +758,9 @@ func _is_action_legal(action: String) -> bool:
 func _try_move_active_unit(grid: Vector2i) -> bool:
 	if not _can_move(active_unit):
 		return false
+
+	if reachable_tiles.is_empty():
+		reachable_tiles = _calculate_reachable_tiles(active_unit)
 
 	var key := _grid_key(grid)
 	if not reachable_tiles.has(key) or _occupied_by_any_unit(grid):
@@ -680,26 +846,36 @@ func _resolve_attack(attacker, target, preview: Dictionary, part_name := "", see
 	attacker["has_attacked"] = true
 	attacker["activation_complete"] = true
 	turn_log.append("%s:attack" % attacker["id"])
+	if str(attacker.get("team", "")) == "enemy":
+		turn_log.append("%s:enemy_attack" % attacker["id"])
 	var weapon_data := _weapon_data_for(attacker)
+	var attack_res: Dictionary = {}
 	if str(weapon_data.get("pattern", "single")) == "line_2":
-		last_attack_result = _resolve_spear_attack(attacker, target, preview, seed)
+		attack_res = _resolve_spear_attack(attacker, target, preview, seed)
 	elif str(weapon_data.get("pattern", "single")) == "volley":
-		last_attack_result = _resolve_rifle_attack(attacker, target, preview, seed)
+		attack_res = _resolve_rifle_attack(attacker, target, preview, seed)
 	else:
-		last_attack_result = _resolve_blockable_shot(attacker, target, preview, part_name, seed, int(weapon_data["damage"]), seed)
-	if last_attack_result.has("results"):
-		last_action_message = "%s strikes a line with %s" % [attacker["name"], last_attack_result["weapon"]]
+		attack_res = _resolve_blockable_shot(attacker, target, preview, part_name, seed, int(weapon_data["damage"]), seed)
+
+	if str(attacker.get("team", "")) == "player":
+		last_attack_result = attack_res
 	else:
-		last_action_message = "%s hits %s %s" % [attacker["name"], target["name"], last_attack_result["part_name"]] if bool(last_attack_result["hit"]) else "%s misses %s" % [attacker["name"], target["name"]]
-	if last_attack_result.has("orb_proc") and bool(last_attack_result["orb_proc"].get("triggered", false)):
-		last_action_message += " + %s" % str(last_attack_result["orb_proc"]["status"])
-	elif last_attack_result.has("shots"):
-		for shot in last_attack_result["shots"]:
+		last_enemy_attack_result = attack_res
+
+	if attack_res.has("results"):
+		last_action_message = "%s strikes a line with %s" % [attacker["name"], attack_res["weapon"]]
+	else:
+		last_action_message = "%s hits %s %s" % [attacker["name"], target["name"], attack_res["part_name"]] if bool(attack_res["hit"]) else "%s misses %s" % [attacker["name"], target["name"]]
+	if attack_res.has("orb_proc") and bool(attack_res["orb_proc"].get("triggered", false)):
+		last_action_message += " + %s" % str(attack_res["orb_proc"]["status"])
+	elif attack_res.has("shots"):
+		for shot in attack_res["shots"]:
 			if shot.has("orb_proc") and bool(shot["orb_proc"].get("triggered", false)):
 				last_action_message += " + %s" % str(shot["orb_proc"]["status"])
 				break
 	_finish_activation(attacker)
-	return last_attack_result
+	return attack_res
+
 
 
 func _try_wait_active_unit() -> bool:
@@ -1786,3 +1962,72 @@ func _unit_by_id(id: String):
 		if unit["id"] == id:
 			return unit
 	return null
+
+
+func _next_simulation_seed() -> int:
+	simulation_seed = (simulation_seed * 1103515245 + 12345) & 0x7FFFFFFF
+	return simulation_seed
+
+
+func run_auto_battle(max_activations: int = 150, initial_seed: int = 1337) -> Dictionary:
+	auto_battle = true
+	simulation_seed = initial_seed
+	var activations := 0
+	while not _is_battle_over() and activations < max_activations:
+		_begin_next_activation()
+		if active_unit == null and not _is_battle_over():
+			break
+		activations += 1
+	var summary := _battle_summary(activations)
+	auto_battle = false
+	return summary
+
+
+func _battle_winner() -> String:
+	var commander = _unit_by_id("commander")
+	if commander != null and not _is_unit_in_battle(commander):
+		return "player"
+
+	var player_alive := false
+	var enemy_alive := false
+	for unit in units:
+		if _is_unit_in_battle(unit):
+			if unit["team"] == "player":
+				player_alive = true
+			elif unit["team"] == "enemy":
+				enemy_alive = true
+	if not player_alive:
+		return "enemy"
+	if not enemy_alive:
+		return "player"
+	return ""
+
+
+func _is_battle_over() -> bool:
+	return _battle_winner() != ""
+
+
+func _battle_summary(activations: int = 0) -> Dictionary:
+	var player_survivors := 0
+	var enemy_survivors := 0
+	var destroyed_parts := 0
+	for unit in units:
+		if _is_unit_in_battle(unit):
+			if unit["team"] == "player":
+				player_survivors += 1
+			elif unit["team"] == "enemy":
+				enemy_survivors += 1
+		for part_name in PART_NAMES:
+			if unit["parts"].has(part_name) and bool(unit["parts"][part_name]["destroyed"]):
+				destroyed_parts += 1
+
+	return {
+		"winner": _battle_winner(),
+		"is_over": _is_battle_over(),
+		"turns": turn_number,
+		"activations": activations,
+		"player_survivors": player_survivors,
+		"enemy_survivors": enemy_survivors,
+		"destroyed_parts": destroyed_parts,
+		"turn_log": turn_log.duplicate(),
+	}

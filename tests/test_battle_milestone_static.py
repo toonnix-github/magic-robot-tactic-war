@@ -184,6 +184,25 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         ]:
             self.assertIn(value, self.source)
 
+    def test_ai_and_auto_battle_hooks_are_encoded(self):
+        for hook in [
+            "func _resolve_ai_activation",
+            "func _decide_ai_action",
+            "func _score_attack_option",
+            "func _score_move_tile",
+            "func _opponents_of",
+            "func _primary_objective_target",
+            "func _next_simulation_seed",
+            "func run_auto_battle",
+            "func _is_battle_over",
+            "func _battle_winner",
+            "func _battle_summary",
+        ]:
+            self.assertIn(hook, self.source)
+        self.assertIn("auto_battle", self.source)
+        self.assertIn("simulation_seed", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
+

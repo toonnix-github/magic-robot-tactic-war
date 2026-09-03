@@ -81,6 +81,7 @@ func _run() -> void:
 	_run_shield_acceptance(scene)
 	_run_terrain_acceptance(scene)
 	_run_orb_acceptance(scene)
+	_run_ai_and_auto_acceptance(scene)
 
 	if _failures.is_empty():
 		print("GODOT TESTS PASSED")
@@ -467,7 +468,7 @@ func _test_move_then_attack_advances_to_next_player(scene: Control) -> void:
 	_assert_equal(scene._unit_by_id("arlen")["activation_complete"], true, "attack completes activation")
 	_assert_equal(scene.active_unit["id"], "mira", "enemy auto-resolves and Mira becomes active")
 	_assert_true(scene.turn_log.has("arlen:attack"), "attack is logged")
-	_assert_true(scene.turn_log.has("enemy_blade:enemy_wait"), "enemy between Arlen and Mira resolves")
+	_assert_true(scene.turn_log.has("enemy_blade:enemy_wait") or scene.turn_log.has("enemy_blade:attack"), "enemy between Arlen and Mira resolves")
 
 
 func _test_attack_without_moving_advances_to_next_player(scene: Control) -> void:
@@ -512,10 +513,10 @@ func _test_full_initiative_cycle_respects_schedule(scene: Control) -> void:
 		seen_players.append(str(scene.active_unit["id"]))
 		_assert_true(scene._try_wait_active_unit(), "scheduled unit can wait")
 	_assert_equal(seen_players, expected_players, "players act only in deterministic initiative order")
-	_assert_true(scene.turn_log.has("enemy_blade:enemy_wait"), "enemy blade acts only when scheduled")
-	_assert_true(scene.turn_log.has("enemy_rifle:enemy_wait"), "enemy rifle acts only when scheduled")
-	_assert_true(scene.turn_log.has("commander:enemy_wait"), "commander acts only when scheduled")
-	_assert_true(scene.turn_log.has("enemy_sniper:enemy_wait"), "enemy sniper acts only when scheduled")
+	_assert_true(scene.turn_log.has("enemy_blade:enemy_wait") or scene.turn_log.has("enemy_blade:attack"), "enemy blade acts only when scheduled")
+	_assert_true(scene.turn_log.has("enemy_rifle:enemy_wait") or scene.turn_log.has("enemy_rifle:attack"), "enemy rifle acts only when scheduled")
+	_assert_true(scene.turn_log.has("commander:enemy_wait") or scene.turn_log.has("commander:attack"), "commander acts only when scheduled")
+	_assert_true(scene.turn_log.has("enemy_sniper:enemy_wait") or scene.turn_log.has("enemy_sniper:attack"), "enemy sniper acts only when scheduled")
 
 
 func _test_faster_units_receive_more_future_activations(scene: Control) -> void:
@@ -1046,7 +1047,104 @@ func _test_orbs_do_not_add_action_buttons(scene: Control) -> void:
 	_assert_false(scene.PRIMARY_ACTIONS.has("Orb"), "Orb is not a Phase 1 command")
 
 
+func _run_ai_and_auto_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_resolve_ai_activation",
+		"_decide_ai_action",
+		"_score_attack_option",
+		"_score_move_tile",
+		"_opponents_of",
+		"_primary_objective_target",
+		"_next_simulation_seed",
+		"run_auto_battle",
+		"_is_battle_over",
+		"_battle_winner",
+		"_battle_summary",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "AI / auto API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_enemy_ai_moves_and_attacks_legally(scene)
+	_test_ai_respects_shield_interception(scene)
+	_test_ai_prefers_higher_elevation_when_moving(scene)
+	_test_auto_battle_deterministic_simulation(scene)
+	_test_auto_battle_completes_to_game_over(scene)
+
+
+func _test_enemy_ai_moves_and_attacks_legally(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var enemy = scene._unit_by_id("enemy_blade")
+	var target = scene._unit_by_id("arlen")
+	enemy["grid"] = Vector2i(3, 1)
+	target["grid"] = Vector2i(1, 1)
+	scene._begin_activation(enemy)
+	var decision: Dictionary = scene._decide_ai_action(enemy)
+	_assert_equal(decision["action"], "Attack", "AI chooses Attack when in striking distance")
+	_assert_equal(decision["move_to"], Vector2i(2, 1), "AI steps into range 1 to attack Arlen")
+	_assert_equal(decision["target"]["id"], "arlen", "AI targets Arlen")
+	var hp_before := _part_hp_snapshot(target)
+	scene._resolve_enemy_activation(enemy)
+	_assert_equal(enemy["grid"], Vector2i(2, 1), "AI moved legally to planned tile")
+	_assert_true(enemy["has_moved"], "AI move consumed movement")
+	_assert_true(enemy["has_attacked"], "AI attack consumed attack action")
+	var hp_after := _part_hp_snapshot(target)
+	_assert_true(_changed_part_count(hp_before, hp_after) > 0, "target took damage from legal AI attack")
+
+
+func _test_ai_respects_shield_interception(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var enemy = scene._unit_by_id("enemy_rifle")
+	var shield = scene._unit_by_id("brann")
+	var protected = scene._unit_by_id("arlen")
+	var open_target = scene._unit_by_id("sera")
+	enemy["grid"] = Vector2i(1, 3)
+	shield["grid"] = Vector2i(3, 3)
+	protected["grid"] = Vector2i(4, 3)
+	open_target["grid"] = Vector2i(1, 5)
+	scene._begin_activation(enemy)
+	var decision: Dictionary = scene._decide_ai_action(enemy)
+	_assert_equal(decision["action"], "Attack", "AI chooses Attack")
+	_assert_equal(decision["target"]["id"], "sera", "AI avoids shielded target and attacks unshielded target")
+
+
+func _test_ai_prefers_higher_elevation_when_moving(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var enemy = scene._unit_by_id("enemy_sniper")
+	var target = scene._unit_by_id("arlen")
+	enemy["grid"] = Vector2i(7, 3)
+	target["grid"] = Vector2i(1, 3)
+	scene._set_tile_terrain(Vector2i(6, 3), {"height": 2})
+	scene._set_tile_terrain(Vector2i(7, 3), {"height": 1})
+	scene._begin_activation(enemy)
+	var score_high: float = scene._score_move_tile(enemy, Vector2i(6, 3), target["grid"])
+	var score_low: float = scene._score_move_tile(enemy, Vector2i(7, 4), target["grid"])
+	_assert_true(score_high > score_low, "AI scores high ground move higher than low ground")
+
+
+func _test_auto_battle_deterministic_simulation(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var result_one: Dictionary = scene.run_auto_battle(40, 42)
+	_reset_turn_fixture(scene)
+	var result_two: Dictionary = scene.run_auto_battle(40, 42)
+	_assert_equal(result_one["winner"], result_two["winner"], "deterministic auto battle produces same winner")
+	_assert_equal(result_one["turns"], result_two["turns"], "deterministic auto battle produces same turn count")
+	_assert_equal(result_one["player_survivors"], result_two["player_survivors"], "deterministic auto battle produces same player survivors")
+	_assert_equal(result_one["enemy_survivors"], result_two["enemy_survivors"], "deterministic auto battle produces same enemy survivors")
+	_assert_equal(result_one["turn_log"], result_two["turn_log"], "deterministic auto battle produces identical log")
+
+
+func _test_auto_battle_completes_to_game_over(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var summary: Dictionary = scene.run_auto_battle(120, 1337)
+	_assert_true(summary["is_over"], "auto battle runs to completion")
+	_assert_true(summary["winner"] == "player" or summary["winner"] == "enemy", "auto battle declares winner")
+	_assert_true(scene._is_battle_over(), "_is_battle_over reports true when complete")
+
+
 func _assert_true(actual: bool, message: String) -> void:
+
 	if not actual:
 		_failures.append("Expected true: %s" % message)
 
