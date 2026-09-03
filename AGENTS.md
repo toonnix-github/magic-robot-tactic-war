@@ -16,11 +16,24 @@ Build ONLY the Phase 1 graybox combat prototype. Do not add town building, story
 ## Design Source of Truth
 Read these before implementing or changing combat behavior or battle presentation:
 1. `docs/combat-rulebook.md`
-2. `docs/prototype-scope.md`
-3. `docs/ui/battle-screen-v0.1.md`
-4. `docs/ui/battle-screen-v0.1.svg`
+2. `docs/combat-turn-flow-v0.1.md`
+3. `docs/prototype-scope.md`
+4. `docs/ui/battle-screen-v0.1.md`
+5. `docs/ui/battle-screen-v0.1.svg`
 
 If implementation conflicts with those files, the docs win unless they are intentionally updated in the same change.
+
+## Turn Flow Source of Truth
+`docs/combat-turn-flow-v0.1.md` is mandatory for Phase 1 turn behavior.
+
+Key rules:
+- only the unit currently at the front of initiative is controllable
+- one activation allows Move once + Attack once, Attack only, Move once + Wait, or Wait
+- after a committed Move, Move cannot be used again until that unit receives a future activation
+- Attack ends the activation immediately
+- Wait ends the activation immediately
+- selecting another ally never transfers control outside initiative order
+- turn/action legality must be enforced in simulation state, not only by hiding/disabling UI buttons
 
 ## UX Source of Truth
 The Phase 1 battle composition must follow `docs/ui/battle-screen-v0.1.svg` and its companion Markdown guidance.
