@@ -1,0 +1,37 @@
+name: Regression
+
+on:
+  push:
+    branches:
+      - prototype/combat-v01
+  pull_request:
+    branches:
+      - prototype/combat-v01
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Godot
+        run: |
+          curl -L -o godot.zip https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip
+          unzip godot.zip -d godot
+          chmod +x godot/Godot_v4.7.2-stable_linux.x86_64
+          echo "GODOT_BIN=$PWD/godot/Godot_v4.7.2-stable_linux.x86_64" >> "$GITHUB_ENV"
+
+      - name: Run Python regression tests
+        run: python -m unittest discover
+
+      - name: Run Godot headless tests
+        run: "$GODOT_BIN" --headless --path . -s res://tests/godot/battle_milestone_test.gd
+
+      - name: Enforce GDScript coverage
+        run: python tools/gdscript_function_coverage.py --godot "$GODOT_BIN" --fail-under 80

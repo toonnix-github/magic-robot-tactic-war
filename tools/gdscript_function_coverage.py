@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Run Godot headless tests with lightweight GDScript function coverage.
+
+This intentionally avoids modifying the working tree. It copies the project to a
+temporary directory, instruments GDScript function entries with coverage prints,
+runs the Godot milestone test, then reports function coverage for src/main.gd.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE_SCRIPT = Path("src/main.gd")
+GODOT_TEST_SCRIPT = "res://tests/godot/battle_milestone_test.gd"
+COVERAGE_PREFIX = "__GDSCRIPT_COVERAGE__"
+FUNCTION_RE = re.compile(r"^(?P<indent>\s*)func\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run Godot tests and enforce GDScript function coverage.")
+    parser.add_argument("--fail-under", type=float, default=80.0, help="Minimum allowed coverage percentage.")
+    parser.add_argument("--godot", help="Path to a Godot executable. Defaults to GODOT_BIN or PATH lookup.")
+    parser.add_argument("--keep-temp", action="store_true", help="Keep the instrumented temp project for debugging.")
+    return parser.parse_args()
+
+
+def find_godot(explicit_path: str | None) -> str:
+    candidates: list[str] = []
+    if explicit_path:
+        candidates.append(explicit_path)
+    if os.environ.get("GODOT_BIN"):
+        candidates.append(os.environ["GODOT_BIN"])
+
+    for name in ["godot", "godot4", "godot4-headless"]:
+        found = shutil.which(name)
+        if found:
+            candidates.append(found)
+
+    portable_root = Path(tempfile.gettempdir()) / "codex-godot-portable"
+    if portable_root.exists():
+        candidates.extend(str(path) for path in portable_root.rglob("Godot*_console.exe"))
+        candidates.extend(str(path) for path in portable_root.rglob("Godot*.exe"))
+
+    for candidate in candidates:
+        path = Path(candidate)
+        if path.exists() or shutil.which(candidate):
+            return str(path if path.exists() else candidate)
+
+    raise FileNotFoundError(
+        "Godot executable not found. Set GODOT_BIN or pass --godot with a Godot 4 executable path."
+    )
+
+
+def copy_project(destination: Path) -> None:
+    def ignore(_directory: str, names: list[str]) -> set[str]:
+        ignored = {".git", ".godot", "__pycache__", ".pytest_cache"}
+        return {name for name in names if name in ignored or name.endswith(".pyc")}
+
+    shutil.copytree(ROOT, destination, ignore=ignore, dirs_exist_ok=True)
+
+
+def instrument_script(project_root: Path, relative_path: Path) -> list[str]:
+    script_path = project_root / relative_path
+    original_lines = script_path.read_text(encoding="utf-8").splitlines()
+    instrumented_lines: list[str] = []
+    functions: list[str] = []
+
+    for line in original_lines:
+        instrumented_lines.append(line)
+        match = FUNCTION_RE.match(line)
+        if not match:
+            continue
+
+        function_name = match.group("name")
+        functions.append(function_name)
+        indent = match.group("indent") + "\t"
+        marker = f"{COVERAGE_PREFIX}:{relative_path.as_posix()}:{function_name}"
+        instrumented_lines.append(f'{indent}print("{marker}")')
+
+    script_path.write_text("\n".join(instrumented_lines) + "\n", encoding="utf-8")
+    return functions
+
+
+def run_godot(godot: str, project_root: Path) -> subprocess.CompletedProcess[str]:
+    command = [godot, "--headless", "--path", str(project_root), "-s", GODOT_TEST_SCRIPT]
+    return subprocess.run(command, text=True, capture_output=True, check=False)
+
+
+def covered_functions(output: str, relative_path: Path) -> set[str]:
+    prefix = f"{COVERAGE_PREFIX}:{relative_path.as_posix()}:"
+    covered: set[str] = set()
+    for line in output.splitlines():
+        if line.startswith(prefix):
+            covered.add(line.removeprefix(prefix).strip())
+    return covered
+
+
+def visible_output(output: str) -> str:
+    return "\n".join(
+        line for line in output.splitlines()
+        if not line.startswith(COVERAGE_PREFIX)
+    )
+
+
+def main() -> int:
+    args = parse_args()
+    godot = find_godot(args.godot)
+    temp_root = Path(tempfile.mkdtemp(prefix="mrtw-gdscript-coverage-"))
+
+    try:
+        copy_project(temp_root)
+        functions = instrument_script(temp_root, SOURCE_SCRIPT)
+        result = run_godot(godot, temp_root)
+        output = result.stdout + result.stderr
+        filtered_output = visible_output(output)
+        if filtered_output:
+            print(filtered_output)
+
+        if result.returncode != 0:
+            print(f"Godot test command failed with exit code {result.returncode}", file=sys.stderr)
+            return result.returncode
+
+        covered = covered_functions(output, SOURCE_SCRIPT)
+        total = len(functions)
+        covered_count = len(covered)
+        percent = 100.0 if total == 0 else covered_count / total * 100.0
+        missed = [name for name in functions if name not in covered]
+
+        print(f"GDScript function coverage: {covered_count}/{total} ({percent:.1f}%)")
+        if missed:
+            print("Missed functions: " + ", ".join(missed))
+
+        if percent < args.fail_under:
+            print(f"Coverage failure: {percent:.1f}% is below {args.fail_under:.1f}%", file=sys.stderr)
+            return 1
+
+        return 0
+    finally:
+        if args.keep_temp:
+            print(f"Kept instrumented project at {temp_root}")
+        else:
+            shutil.rmtree(temp_root, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
