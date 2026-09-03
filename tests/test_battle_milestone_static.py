@@ -67,6 +67,18 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         ]:
             self.assertIn(hook, self.source)
 
+    def test_attack_pipeline_hooks_are_encoded(self):
+        for hook in [
+            "func _calculate_targetable_tiles",
+            "func _attack_preview",
+            "func _confirm_attack_target",
+            "func _cancel_attack_selection",
+            "func _resolve_attack",
+        ]:
+            self.assertIn(hook, self.source)
+        self.assertIn("PLACEHOLDER_HIT_PERCENT", self.source)
+        self.assertIn("PLACEHOLDER_WEAPON_RANGES", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

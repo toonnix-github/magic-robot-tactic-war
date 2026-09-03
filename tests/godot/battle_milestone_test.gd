@@ -44,9 +44,10 @@ func _run() -> void:
 	_assert_false(reachable.has("3,1"), "opponents block movement routes")
 
 	scene._select_action("Attack")
-	_assert_equal(scene.active_unit["id"], "mira", "attack action resolves and advances initiative")
-	_assert_equal(scene.selected_action, "Move", "next active unit receives fresh command state")
-	_assert_false(scene._can_move(arlen), "previous attacker is no longer controllable")
+	_assert_equal(scene.turn_state, scene.TurnState.SELECTING_ATTACK, "attack action enters target selection")
+	_assert_true(scene.targetable_tiles.has(scene._grid_key(enemy["grid"])), "attack action highlights legal targets")
+	_assert_true(scene._confirm_attack_target(enemy), "confirming highlighted target resolves attack")
+	_assert_equal(scene.active_unit["id"], "mira", "confirmed attack advances initiative")
 
 	scene._notification(0)
 	_assert_true(scene._is_in_bounds(Vector2i(0, 0)), "origin tile is in bounds")
@@ -71,6 +72,7 @@ func _run() -> void:
 	_assert_equal(scene._short_part_name("Right Arm"), "R Arm", "right arm short label")
 	_assert_equal(scene._short_part_name("Legs"), "Legs", "plain part label")
 	_run_turn_flow_acceptance(scene)
+	_run_attack_pipeline_acceptance(scene)
 
 	if _failures.is_empty():
 		print("GODOT TESTS PASSED")
@@ -113,6 +115,26 @@ func _run_turn_flow_acceptance(scene: Control) -> void:
 	_test_full_initiative_cycle_respects_schedule(scene)
 	_test_faster_units_receive_more_future_activations(scene)
 	_test_future_activation_resets_flags(scene)
+
+
+func _run_attack_pipeline_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_calculate_targetable_tiles",
+		"_attack_preview",
+		"_confirm_attack_target",
+		"_cancel_attack_selection",
+		"_try_attack_active_unit",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "attack pipeline API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_out_of_range_targets_cannot_be_confirmed(scene)
+	_test_legal_target_can_be_selected_and_resolved_once(scene)
+	_test_attack_cannot_be_used_twice_in_one_activation(scene)
+	_test_cancel_target_selection_does_not_consume_attack(scene)
+	_test_confirmed_attack_advances_initiative(scene)
 
 
 func _reset_turn_fixture(scene: Control) -> void:
@@ -223,6 +245,64 @@ func _test_future_activation_resets_flags(scene: Control) -> void:
 	_assert_equal(scene.active_unit["has_moved"], false, "future activation resets has_moved")
 	_assert_equal(scene.active_unit["has_attacked"], false, "future activation resets has_attacked")
 	_assert_equal(scene.active_unit["activation_complete"], false, "future activation resets activation_complete")
+
+
+func _test_out_of_range_targets_cannot_be_confirmed(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var arlen = scene._unit_by_id("arlen")
+	var target = scene._unit_by_id("enemy_blade")
+	target["grid"] = Vector2i(9, 6)
+	scene._select_action("Attack")
+	var preview: Dictionary = scene._attack_preview(arlen, target)
+	_assert_false(preview["legal"], "out-of-range target preview is illegal")
+	_assert_false(scene._confirm_attack_target(target), "out-of-range target confirmation is rejected")
+	_assert_equal(scene.active_unit["id"], "arlen", "illegal target does not advance initiative")
+	_assert_false(arlen["has_attacked"], "illegal target does not consume attack")
+
+
+func _test_legal_target_can_be_selected_and_resolved_once(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var arlen = scene._unit_by_id("arlen")
+	var target = scene._unit_by_id("enemy_blade")
+	scene._select_action("Attack")
+	var preview: Dictionary = scene._attack_preview(arlen, target)
+	_assert_true(preview["legal"], "legal target preview is marked legal")
+	_assert_equal(preview["hit_percent"], 80, "placeholder hit preview exposes deterministic Hit percent")
+	_assert_true(scene._confirm_attack_target(target), "legal target confirmation resolves once")
+	_assert_true(arlen["has_attacked"], "resolved attack marks has_attacked")
+	_assert_true(arlen["activation_complete"], "resolved attack completes activation")
+
+
+func _test_attack_cannot_be_used_twice_in_one_activation(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var arlen = scene._unit_by_id("arlen")
+	var target = scene._unit_by_id("enemy_blade")
+	arlen["has_attacked"] = true
+	scene._select_action("Attack")
+	_assert_false(scene._try_attack_active_unit(target), "already-consumed attack is rejected")
+	_assert_equal(scene.active_unit["id"], "arlen", "rejected second attack does not advance initiative")
+
+
+func _test_cancel_target_selection_does_not_consume_attack(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var arlen = scene._unit_by_id("arlen")
+	scene._select_action("Attack")
+	_assert_equal(scene.turn_state, scene.TurnState.SELECTING_ATTACK, "attack enters target-selection before cancel")
+	_assert_equal(scene._preview_attack_target(arlen)["legal"], false, "previewing an ally marks target illegal")
+	scene._cancel_attack_selection()
+	_assert_equal(scene.active_unit["id"], "arlen", "cancel keeps current active unit")
+	_assert_false(arlen["has_attacked"], "cancel does not consume attack")
+	_assert_false(arlen["activation_complete"], "cancel does not complete activation")
+	_assert_true(scene._can_attack(arlen), "attack remains legal after cancel")
+
+
+func _test_confirmed_attack_advances_initiative(scene: Control) -> void:
+	_reset_turn_fixture(scene)
+	var target = scene._unit_by_id("enemy_blade")
+	scene._select_action("Attack")
+	_assert_true(scene._confirm_attack_target(target), "confirmed attack resolves")
+	_assert_equal(scene.active_unit["id"], "mira", "confirmed attack advances to next player activation")
+	_assert_true(scene.turn_log.has("arlen:attack"), "confirmed attack is logged")
 
 
 func _assert_true(actual: bool, message: String) -> void:
