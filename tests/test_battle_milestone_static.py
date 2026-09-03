@@ -211,8 +211,21 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn("current_mission", self.source)
         self.assertIn('"enemy_spear"', self.source)
 
+    def test_crystal_quarry_mission_and_loot_are_encoded(self):
+        self.assertIn('"crystal_quarry"', self.source)
+        self.assertIn('"defeat_all"', self.source)
+        self.assertIn('"Defeat All Enemies"', self.source)
+        self.assertIn('"loot_table"', self.source)
+        self.assertIn('"credits"', self.source)
+        self.assertIn('"arcane_ore"', self.source)
+        self.assertIn('"orb_fragments"', self.source)
+        self.assertIn("func _roll_mission_loot", self.source)
+        self.assertIn("reward_seed", self.source)
+        self.assertIn('"scavenger_alpha"', self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

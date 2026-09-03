@@ -155,7 +155,26 @@ const MISSIONS_DATA := {
 		"commander_id": "commander",
 		"cover_tiles": [Vector2i(3, 2), Vector2i(5, 4), Vector2i(6, 2), Vector2i(8, 1)],
 	},
+	"crystal_quarry": {
+		"id": "crystal_quarry",
+		"name": "Crystal Quarry",
+		"objective": "defeat_all",
+		"objective_label": "Defeat All Enemies",
+		"cover_tiles": [Vector2i(3, 1), Vector2i(3, 5), Vector2i(5, 3), Vector2i(7, 2)],
+		"loot_table": {
+			"credits": 500,
+			"arcane_ore": 15,
+			"orb_fragments": 8,
+			"orb_drops": [
+				{"orb": "Fire Orb", "weight": 35},
+				{"orb": "Water Orb", "weight": 25},
+				{"orb": "Electric Orb", "weight": 25},
+				{"orb": "Earth Orb", "weight": 15},
+			],
+		},
+	},
 }
+
 
 const DESIGN_SIZE := Vector2(1311.0, 603.0)
 const TILE_SIZE := Vector2(77.0, 41.0)
@@ -194,7 +213,9 @@ var last_enemy_attack_result := {}
 var terrain_tiles := {}
 var auto_battle := false
 var simulation_seed := 1337
+var reward_seed := 4242
 var _is_activating := false
+
 
 
 func _ready() -> void:
@@ -260,7 +281,7 @@ func _draw() -> void:
 
 
 func _create_units() -> void:
-	units = [
+	var player_units := [
 		{
 			"id": "arlen",
 			"name": "Arlen",
@@ -309,90 +330,157 @@ func _create_units() -> void:
 			"hp": 0.92,
 			"parts": {"Head": 0.89, "Body": 0.96, "Left Arm": 0.87, "Right Arm": 0.86, "Legs": 0.91},
 		},
-		{
-			"id": "enemy_blade",
-			"name": "Enemy Blade",
-			"mech": "Rust Frame",
-			"weapon": "Sword",
-			"team": "enemy",
-			"letter": "E",
-			"grid": Vector2i(7, 2),
-			"color": Color(0.77, 0.43, 0.43),
-			"hp": 0.85,
-			"parts": {"Head": 0.80, "Body": 0.85, "Left Arm": 0.78, "Right Arm": 0.76, "Legs": 0.82},
-		},
-		{
-			"id": "enemy_rifle",
-			"name": "Enemy Rifle",
-			"mech": "Range Frame",
-			"weapon": "Rifle",
-			"team": "enemy",
-			"letter": "R",
-			"grid": Vector2i(8, 4),
-			"color": Color(0.77, 0.43, 0.43),
-			"hp": 0.83,
-			"parts": {"Head": 0.77, "Body": 0.83, "Left Arm": 0.81, "Right Arm": 0.79, "Legs": 0.84},
-		},
-		{
-			"id": "enemy_sniper",
-			"name": "Enemy Sniper",
-			"mech": "Needle Frame",
-			"weapon": "Sniper",
-			"team": "enemy",
-			"letter": "N",
-			"grid": Vector2i(8, 1),
-			"color": Color(0.77, 0.43, 0.43),
-			"hp": 0.78,
-			"parts": {"Head": 0.82, "Body": 0.78, "Left Arm": 0.70, "Right Arm": 0.86, "Legs": 0.72},
-		},
-		{
-			"id": "enemy_spear",
-			"name": "Enemy Spear",
-			"mech": "Pike Frame",
-			"weapon": "Spear",
-			"team": "enemy",
-			"letter": "P",
-			"grid": Vector2i(7, 5),
-			"color": Color(0.77, 0.43, 0.43),
-			"hp": 0.82,
-			"parts": {"Head": 0.80, "Body": 0.82, "Left Arm": 0.75, "Right Arm": 0.85, "Legs": 0.80},
-		},
-		{
-			"id": "commander",
-			"name": "Commander Kael",
-			"mech": "High Ridge",
-			"weapon": "Commander",
-			"team": "enemy",
-			"letter": "K",
-			"grid": Vector2i(9, 3),
-			"color": Color(0.72, 0.36, 0.36),
-			"hp": 0.95,
-			"parts": {"Head": 0.92, "Body": 0.95, "Left Arm": 0.90, "Right Arm": 0.90, "Legs": 0.86},
-		},
 	]
 
+	var enemy_units := []
 	var speed_by_id := {
 		"arlen": 10,
-		"enemy_blade": 8,
 		"mira": 9,
-		"enemy_rifle": 7,
-		"enemy_spear": 7,
 		"sera": 8,
-		"commander": 6,
 		"brann": 5,
-		"enemy_sniper": 4,
 	}
 	var initial_time_by_id := {
 		"arlen": 0.0,
-		"enemy_blade": 1.0,
 		"mira": 2.0,
-		"enemy_rifle": 3.0,
-		"enemy_spear": 3.5,
 		"sera": 4.0,
-		"commander": 5.0,
 		"brann": 6.0,
-		"enemy_sniper": 7.0,
 	}
+
+	if current_mission == "crystal_quarry":
+		enemy_units = [
+			{
+				"id": "scavenger_alpha",
+				"name": "Scavenger Alpha",
+				"mech": "Scav-01",
+				"weapon": "Sword",
+				"team": "enemy",
+				"letter": "A",
+				"grid": Vector2i(6, 2),
+				"color": Color(0.77, 0.43, 0.43),
+				"hp": 0.80,
+				"parts": {"Head": 0.80, "Body": 0.80, "Left Arm": 0.75, "Right Arm": 0.75, "Legs": 0.80},
+			},
+			{
+				"id": "scavenger_beta",
+				"name": "Scavenger Beta",
+				"mech": "Scav-02",
+				"weapon": "Spear",
+				"team": "enemy",
+				"letter": "B",
+				"grid": Vector2i(7, 4),
+				"color": Color(0.77, 0.43, 0.43),
+				"hp": 0.80,
+				"parts": {"Head": 0.80, "Body": 0.80, "Left Arm": 0.75, "Right Arm": 0.75, "Legs": 0.80},
+			},
+			{
+				"id": "scavenger_gamma",
+				"name": "Scavenger Gamma",
+				"mech": "Scav-03",
+				"weapon": "Rifle",
+				"team": "enemy",
+				"letter": "G",
+				"grid": Vector2i(6, 5),
+				"color": Color(0.77, 0.43, 0.43),
+				"hp": 0.80,
+				"parts": {"Head": 0.80, "Body": 0.80, "Left Arm": 0.75, "Right Arm": 0.75, "Legs": 0.80},
+			},
+			{
+				"id": "scavenger_delta",
+				"name": "Scavenger Delta",
+				"mech": "Scav-04",
+				"weapon": "Sniper",
+				"team": "enemy",
+				"letter": "D",
+				"grid": Vector2i(8, 3),
+				"color": Color(0.77, 0.43, 0.43),
+				"hp": 0.75,
+				"parts": {"Head": 0.75, "Body": 0.75, "Left Arm": 0.70, "Right Arm": 0.80, "Legs": 0.70},
+			},
+		]
+		speed_by_id["scavenger_alpha"] = 8
+		speed_by_id["scavenger_beta"] = 7
+		speed_by_id["scavenger_gamma"] = 7
+		speed_by_id["scavenger_delta"] = 5
+		initial_time_by_id["scavenger_alpha"] = 1.0
+		initial_time_by_id["scavenger_beta"] = 3.0
+		initial_time_by_id["scavenger_gamma"] = 3.5
+		initial_time_by_id["scavenger_delta"] = 5.0
+	else:
+		enemy_units = [
+			{
+				"id": "enemy_blade",
+				"name": "Enemy Blade",
+				"mech": "Rust Frame",
+				"weapon": "Sword",
+				"team": "enemy",
+				"letter": "E",
+				"grid": Vector2i(7, 2),
+				"color": Color(0.77, 0.43, 0.43),
+				"hp": 0.85,
+				"parts": {"Head": 0.80, "Body": 0.85, "Left Arm": 0.78, "Right Arm": 0.76, "Legs": 0.82},
+			},
+			{
+				"id": "enemy_rifle",
+				"name": "Enemy Rifle",
+				"mech": "Range Frame",
+				"weapon": "Rifle",
+				"team": "enemy",
+				"letter": "R",
+				"grid": Vector2i(8, 4),
+				"color": Color(0.77, 0.43, 0.43),
+				"hp": 0.83,
+				"parts": {"Head": 0.77, "Body": 0.83, "Left Arm": 0.81, "Right Arm": 0.79, "Legs": 0.84},
+			},
+			{
+				"id": "enemy_sniper",
+				"name": "Enemy Sniper",
+				"mech": "Needle Frame",
+				"weapon": "Sniper",
+				"team": "enemy",
+				"letter": "N",
+				"grid": Vector2i(8, 1),
+				"color": Color(0.77, 0.43, 0.43),
+				"hp": 0.78,
+				"parts": {"Head": 0.82, "Body": 0.78, "Left Arm": 0.70, "Right Arm": 0.86, "Legs": 0.72},
+			},
+			{
+				"id": "enemy_spear",
+				"name": "Enemy Spear",
+				"mech": "Pike Frame",
+				"weapon": "Spear",
+				"team": "enemy",
+				"letter": "P",
+				"grid": Vector2i(7, 5),
+				"color": Color(0.77, 0.43, 0.43),
+				"hp": 0.82,
+				"parts": {"Head": 0.80, "Body": 0.82, "Left Arm": 0.75, "Right Arm": 0.85, "Legs": 0.80},
+			},
+			{
+				"id": "commander",
+				"name": "Commander Kael",
+				"mech": "High Ridge",
+				"weapon": "Commander",
+				"team": "enemy",
+				"letter": "K",
+				"grid": Vector2i(9, 3),
+				"color": Color(0.72, 0.36, 0.36),
+				"hp": 0.95,
+				"parts": {"Head": 0.92, "Body": 0.95, "Left Arm": 0.90, "Right Arm": 0.90, "Legs": 0.86},
+			},
+		]
+		speed_by_id["enemy_blade"] = 8
+		speed_by_id["enemy_rifle"] = 7
+		speed_by_id["enemy_spear"] = 7
+		speed_by_id["commander"] = 6
+		speed_by_id["enemy_sniper"] = 4
+		initial_time_by_id["enemy_blade"] = 1.0
+		initial_time_by_id["enemy_rifle"] = 3.0
+		initial_time_by_id["enemy_spear"] = 3.5
+		initial_time_by_id["commander"] = 5.0
+		initial_time_by_id["enemy_sniper"] = 7.0
+
+	units = player_units + enemy_units
+
 	for unit in units:
 		unit["speed"] = speed_by_id[unit["id"]]
 		unit["initiative_time"] = initial_time_by_id[unit["id"]]
@@ -1690,7 +1778,12 @@ func _default_height_at(grid) -> int:
 			return 1
 		else:
 			return 2
+	elif current_mission == "crystal_quarry":
+		if grid.x >= 3 and grid.x <= 7:
+			return 0
+		return 1
 	return int(clamp(floor(float(grid.x) / 2.0), 0.0, 4.0))
+
 
 
 
@@ -1933,10 +2026,18 @@ func _draw_mission_panel() -> void:
 		var state := "LEGAL" if bool(target_preview["legal"]) else "ILLEGAL"
 		detail = "Hit %d%% · %s" % [int(target_preview["hit_percent"]), state]
 	elif _is_battle_over():
-		detail = "VICTORY" if _battle_winner() == "player" else "DEFEAT"
+		if _battle_winner() == "player":
+			var loot: Dictionary = _roll_mission_loot(current_mission, reward_seed)
+			if not loot.is_empty():
+				detail = "VICTORY · +%d Cr · %s" % [int(loot.get("credits", 0)), str(loot.get("orb_drop", ""))]
+			else:
+				detail = "VICTORY"
+		else:
+			detail = "DEFEAT"
 	draw_string(_font(), _p(1052, 55), "TURN %02d" % turn_number, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.56, 0.63, 0.67))
 	draw_string(_font(), _p(1052, 80), objective_label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(15), Color(0.95, 0.97, 0.97))
 	draw_string(_font(), _p(1052, 101), detail, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(11), Color(0.62, 0.69, 0.73))
+
 
 
 
@@ -2023,13 +2124,23 @@ func run_auto_battle(max_activations: int = 150, initial_seed: int = 1337) -> Di
 	simulation_seed = initial_seed
 	var activations := 0
 	while not _is_battle_over() and activations < max_activations:
-		_begin_next_activation()
-		if active_unit == null and not _is_battle_over():
+		_rebuild_initiative_timeline()
+		if initiative_timeline.is_empty():
 			break
+		var next_unit = _unit_by_id(initiative_timeline[0])
+		if next_unit == null:
+			break
+		_begin_activation(next_unit)
+		if str(next_unit.get("team", "")) == "player":
+			_resolve_ai_activation(next_unit)
+		else:
+			_resolve_enemy_activation(next_unit)
+
 		activations += 1
 	var summary := _battle_summary(activations)
 	auto_battle = false
 	return summary
+
 
 
 func _battle_winner() -> String:
@@ -2077,6 +2188,9 @@ func _battle_summary(activations: int = 0) -> Dictionary:
 
 	var commander = _unit_by_id("commander")
 	var commander_defeated: bool = commander != null and not _is_unit_in_battle(commander)
+	var loot := {}
+	if _battle_winner() == "player":
+		loot = _roll_mission_loot(current_mission, reward_seed)
 
 	return {
 		"mission_id": current_mission,
@@ -2088,6 +2202,42 @@ func _battle_summary(activations: int = 0) -> Dictionary:
 		"enemy_survivors": enemy_survivors,
 		"destroyed_parts": destroyed_parts,
 		"commander_defeated": commander_defeated,
+		"loot": loot,
 		"turn_log": turn_log.duplicate(),
 	}
+
+
+func _roll_mission_loot(mission_id: String, loot_seed: int = 4242) -> Dictionary:
+	var mission_data: Dictionary = MISSIONS_DATA.get(mission_id, {})
+	var loot_table: Dictionary = mission_data.get("loot_table", {})
+	if loot_table.is_empty():
+		return {}
+
+	var credits: int = int(loot_table.get("credits", 0))
+	var arcane_ore: int = int(loot_table.get("arcane_ore", 0))
+	var orb_fragments: int = int(loot_table.get("orb_fragments", 0))
+	var orb_drops: Array = loot_table.get("orb_drops", [])
+
+	var awarded_orb := ""
+	if not orb_drops.is_empty():
+		var total_weight := 0
+		for drop in orb_drops:
+			total_weight += int(drop.get("weight", 0))
+		if total_weight > 0:
+			var roll := (loot_seed * 1103515245 + 12345) & 0x7fffffff
+			var pick := roll % total_weight
+			var running := 0
+			for drop in orb_drops:
+				running += int(drop.get("weight", 0))
+				if pick < running:
+					awarded_orb = str(drop.get("orb", ""))
+					break
+
+	return {
+		"credits": credits,
+		"arcane_ore": arcane_ore,
+		"orb_fragments": orb_fragments,
+		"orb_drop": awarded_orb,
+	}
+
 

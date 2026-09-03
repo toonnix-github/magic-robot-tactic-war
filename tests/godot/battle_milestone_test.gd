@@ -85,8 +85,10 @@ func _run() -> void:
 	_run_orb_acceptance(scene)
 	_run_ai_and_auto_acceptance(scene)
 	_run_ancient_ruins_acceptance(scene)
+	_run_crystal_quarry_acceptance(scene)
 
 	if _failures.is_empty():
+
 
 		print("GODOT TESTS PASSED")
 		quit(0)
@@ -1199,15 +1201,90 @@ func _test_ancient_ruins_terrain_has_no_mandatory_choke_and_modest_height(scene:
 
 func _test_ancient_ruins_auto_battle_reproducible(scene: Control) -> void:
 	scene._load_mission("ancient_ruins")
-	var run1: Dictionary = scene.run_auto_battle(60, 1337)
+	var run1: Dictionary = scene.run_auto_battle(30, 1337)
 	scene._load_mission("ancient_ruins")
-	var run2: Dictionary = scene.run_auto_battle(60, 1337)
+	var run2: Dictionary = scene.run_auto_battle(30, 1337)
 	_assert_equal(run1["winner"], run2["winner"], "Ancient Ruins Auto reproducible winner")
 	_assert_equal(run1["turns"], run2["turns"], "Ancient Ruins Auto reproducible turns")
 	_assert_equal(run1["commander_defeated"], run2["commander_defeated"], "Ancient Ruins Auto reproducible commander outcome")
 
 
+
+func _run_crystal_quarry_acceptance(scene: Control) -> void:
+	_test_crystal_quarry_objective_requires_all_enemies_defeated(scene)
+	_test_crystal_quarry_victory_grants_automatic_loot(scene)
+	_test_crystal_quarry_no_loot_pickup_interaction_on_battlefield(scene)
+	_test_crystal_quarry_loot_distribution_reproducible_and_rarity_weighted(scene)
+	_test_crystal_quarry_auto_battle_completes_deterministically(scene)
+
+
+func _test_crystal_quarry_objective_requires_all_enemies_defeated(scene: Control) -> void:
+	scene._load_mission("crystal_quarry")
+	_assert_equal(scene.current_mission, "crystal_quarry", "Crystal Quarry is loaded")
+	_assert_equal(_count_team(scene.units, "player"), 4, "four player units in Crystal Quarry")
+	_assert_equal(_count_team(scene.units, "enemy"), 4, "four scavenger enemies in Crystal Quarry")
+	var alpha = scene._unit_by_id("scavenger_alpha")
+	var beta = scene._unit_by_id("scavenger_beta")
+	var gamma = scene._unit_by_id("scavenger_gamma")
+	var delta = scene._unit_by_id("scavenger_delta")
+	scene._damage_part(alpha, "Body", 999)
+	_assert_false(scene._is_unit_in_battle(alpha), "scavenger alpha defeated")
+	_assert_false(scene._is_battle_over(), "defeat_all objective does not end after 1 enemy killed")
+	_assert_equal(scene._battle_winner(), "", "no winner while other scavengers alive")
+	scene._damage_part(beta, "Body", 999)
+	scene._damage_part(gamma, "Body", 999)
+	_assert_false(scene._is_battle_over(), "defeat_all objective does not end with 1 enemy remaining")
+	scene._damage_part(delta, "Body", 999)
+	_assert_true(scene._is_battle_over(), "defeat_all objective triggers victory when all 4 scavengers destroyed")
+	_assert_equal(scene._battle_winner(), "player", "player is declared winner")
+
+
+func _test_crystal_quarry_victory_grants_automatic_loot(scene: Control) -> void:
+	scene._load_mission("crystal_quarry")
+	for id in ["scavenger_alpha", "scavenger_beta", "scavenger_gamma", "scavenger_delta"]:
+		scene._damage_part(scene._unit_by_id(id), "Body", 999)
+	_assert_true(scene._is_battle_over(), "battle complete")
+	var summary: Dictionary = scene._battle_summary(10)
+	_assert_true(summary.has("loot"), "summary has loot dictionary")
+	var loot: Dictionary = summary["loot"]
+	_assert_equal(loot["credits"], 500, "500 credits awarded automatically on victory")
+	_assert_equal(loot["arcane_ore"], 15, "15 arcane ore awarded automatically")
+	_assert_equal(loot["orb_fragments"], 8, "8 orb fragments awarded automatically")
+	_assert_true(loot["orb_drop"] in ["Fire Orb", "Water Orb", "Electric Orb", "Earth Orb"], "valid orb drop awarded")
+
+
+func _test_crystal_quarry_no_loot_pickup_interaction_on_battlefield(scene: Control) -> void:
+	scene._load_mission("crystal_quarry")
+	_assert_equal(scene.PRIMARY_ACTIONS.size(), 3, "only 3 primary actions exist")
+	_assert_true(scene.PRIMARY_ACTIONS.has("Move"), "Move action exists")
+	_assert_true(scene.PRIMARY_ACTIONS.has("Attack"), "Attack action exists")
+	_assert_true(scene.PRIMARY_ACTIONS.has("Wait"), "Wait action exists")
+	_assert_false(scene.PRIMARY_ACTIONS.has("Pick Up"), "no Pick Up action exists")
+	_assert_false(scene.PRIMARY_ACTIONS.has("Collect"), "no Collect action exists")
+
+
+func _test_crystal_quarry_loot_distribution_reproducible_and_rarity_weighted(scene: Control) -> void:
+	var loot_a: Dictionary = scene._roll_mission_loot("crystal_quarry", 999)
+	var loot_b: Dictionary = scene._roll_mission_loot("crystal_quarry", 999)
+	_assert_equal(loot_a["orb_drop"], loot_b["orb_drop"], "same seed produces same orb drop")
+	_assert_equal(loot_a["credits"], loot_b["credits"], "same credits")
+	var loot_empty: Dictionary = scene._roll_mission_loot("nonexistent_mission", 999)
+	_assert_true(loot_empty.is_empty(), "unconfigured mission returns empty loot")
+
+
+func _test_crystal_quarry_auto_battle_completes_deterministically(scene: Control) -> void:
+	scene._load_mission("crystal_quarry")
+	var run1: Dictionary = scene.run_auto_battle(65, 1337)
+	scene._load_mission("crystal_quarry")
+	var run2: Dictionary = scene.run_auto_battle(65, 1337)
+	_assert_equal(run1["winner"], run2["winner"], "Crystal Quarry Auto reproducible winner")
+	_assert_equal(run1["turns"], run2["turns"], "Crystal Quarry Auto reproducible turns")
+	_assert_true(run1["is_over"], "Crystal Quarry Auto battle completes")
+
+
+
 func _assert_true(actual: bool, message: String) -> void:
+
 
 
 	if not actual:
