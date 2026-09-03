@@ -105,6 +105,15 @@ class BattleMilestoneStaticTests(unittest.TestCase):
             self.assertIn(hook, self.source)
         self.assertIn('"Sword"', self.source)
 
+    def test_spear_weapon_hooks_are_encoded(self):
+        for hook in [
+            "func _spear_direction",
+            "func _line_attack_targets",
+            "func _resolve_spear_attack",
+        ]:
+            self.assertIn(hook, self.source)
+        self.assertIn('"secondary_damage"', self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

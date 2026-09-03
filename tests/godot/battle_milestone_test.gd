@@ -75,6 +75,7 @@ func _run() -> void:
 	_run_attack_pipeline_acceptance(scene)
 	_run_part_hp_acceptance(scene)
 	_run_sword_acceptance(scene)
+	_run_spear_acceptance(scene)
 
 	if _failures.is_empty():
 		print("GODOT TESTS PASSED")
@@ -182,6 +183,24 @@ func _run_sword_acceptance(scene: Control) -> void:
 	_test_sword_ignores_manual_part_choice(scene)
 
 
+func _run_spear_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_spear_direction",
+		"_line_attack_targets",
+		"_resolve_spear_attack",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "Spear API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_spear_hits_tile_one_only_when_tile_two_empty(scene)
+	_test_spear_hits_tile_one_and_two_enemies(scene)
+	_test_spear_tile_two_receives_reduced_damage(scene)
+	_test_spear_cannot_attack_diagonal_line(scene)
+	_test_spear_action_consumes_one_attack(scene)
+
+
 func _reset_turn_fixture(scene: Control) -> void:
 	scene._create_units()
 	scene._initialize_initiative()
@@ -206,6 +225,21 @@ func _set_sword_fixture(scene: Control, target_grid: Vector2i) -> Dictionary:
 	target["grid"] = target_grid
 	scene._begin_activation(arlen)
 	return {"attacker": arlen, "target": target}
+
+
+func _set_spear_fixture(scene: Control, tile_one_grid: Vector2i, tile_two_grid: Vector2i = Vector2i(8, 6)) -> Dictionary:
+	_reset_turn_fixture(scene)
+	var arlen = scene._unit_by_id("arlen")
+	var tile_one_target = scene._unit_by_id("enemy_blade")
+	var tile_two_target = scene._unit_by_id("enemy_rifle")
+	arlen["weapon"] = "Spear"
+	arlen["weapon_mount_part"] = "Right Arm"
+	tile_one_target["grid"] = tile_one_grid
+	tile_two_target["grid"] = tile_two_grid
+	scene._unit_by_id("enemy_sniper")["grid"] = Vector2i(8, 5)
+	scene._unit_by_id("commander")["grid"] = Vector2i(9, 6)
+	scene._begin_activation(arlen)
+	return {"attacker": arlen, "tile_one": tile_one_target, "tile_two": tile_two_target}
 
 
 func _part_hp_snapshot(unit) -> Dictionary:
@@ -236,6 +270,7 @@ func _test_move_once_then_second_move_rejected(scene: Control) -> void:
 
 func _test_move_then_attack_advances_to_next_player(scene: Control) -> void:
 	_reset_turn_fixture(scene)
+	scene._unit_by_id("enemy_blade")["grid"] = Vector2i(3, 1)
 	_assert_true(scene._try_move_active_unit(Vector2i(2, 1)), "move before attack succeeds")
 	_assert_true(scene._try_attack_active_unit(), "attack after move succeeds")
 	_assert_equal(scene._unit_by_id("arlen")["activation_complete"], true, "attack completes activation")
@@ -246,6 +281,7 @@ func _test_move_then_attack_advances_to_next_player(scene: Control) -> void:
 
 func _test_attack_without_moving_advances_to_next_player(scene: Control) -> void:
 	_reset_turn_fixture(scene)
+	scene._unit_by_id("enemy_blade")["grid"] = Vector2i(2, 1)
 	_assert_true(scene._try_attack_active_unit(), "attack without moving succeeds")
 	_assert_equal(scene._unit_by_id("arlen")["has_moved"], false, "attack-only activation does not mark moved")
 	_assert_equal(scene.active_unit["id"], "mira", "attack-only advances initiative")
@@ -308,6 +344,7 @@ func _test_faster_units_receive_more_future_activations(scene: Control) -> void:
 
 func _test_future_activation_resets_flags(scene: Control) -> void:
 	_reset_turn_fixture(scene)
+	scene._unit_by_id("enemy_blade")["grid"] = Vector2i(3, 1)
 	_assert_true(scene._try_move_active_unit(Vector2i(2, 1)), "Arlen first activation move succeeds")
 	_assert_true(scene._try_attack_active_unit(), "Arlen first activation attack succeeds")
 	for _i in range(3):
@@ -335,6 +372,7 @@ func _test_legal_target_can_be_selected_and_resolved_once(scene: Control) -> voi
 	_reset_turn_fixture(scene)
 	var arlen = scene._unit_by_id("arlen")
 	var target = scene._unit_by_id("enemy_blade")
+	target["grid"] = Vector2i(2, 1)
 	scene._select_action("Attack")
 	var preview: Dictionary = scene._attack_preview(arlen, target)
 	_assert_true(preview["legal"], "legal target preview is marked legal")
@@ -357,6 +395,7 @@ func _test_attack_cannot_be_used_twice_in_one_activation(scene: Control) -> void
 func _test_cancel_target_selection_does_not_consume_attack(scene: Control) -> void:
 	_reset_turn_fixture(scene)
 	var arlen = scene._unit_by_id("arlen")
+	scene._unit_by_id("enemy_blade")["grid"] = Vector2i(2, 1)
 	scene._select_action("Attack")
 	_assert_equal(scene.turn_state, scene.TurnState.SELECTING_ATTACK, "attack enters target-selection before cancel")
 	_assert_equal(scene._preview_attack_target(arlen)["legal"], false, "previewing an ally marks target illegal")
@@ -370,6 +409,7 @@ func _test_cancel_target_selection_does_not_consume_attack(scene: Control) -> vo
 func _test_confirmed_attack_advances_initiative(scene: Control) -> void:
 	_reset_turn_fixture(scene)
 	var target = scene._unit_by_id("enemy_blade")
+	target["grid"] = Vector2i(2, 1)
 	scene._select_action("Attack")
 	_assert_true(scene._confirm_attack_target(target), "confirmed attack resolves")
 	_assert_equal(scene.active_unit["id"], "mira", "confirmed attack advances to next player activation")
@@ -401,6 +441,7 @@ func _test_head_destroyed_reduces_hit_preview(scene: Control) -> void:
 	_reset_turn_fixture(scene)
 	var arlen = scene._unit_by_id("arlen")
 	var target = scene._unit_by_id("enemy_blade")
+	target["grid"] = Vector2i(2, 1)
 	scene._damage_part(arlen, "Head", 999)
 	var preview: Dictionary = scene._attack_preview(arlen, target)
 	_assert_equal(preview["hit_percent"], 50, "Head destruction applies prototype accuracy penalty")
@@ -448,6 +489,7 @@ func _test_part_state_survives_initiative_changes(scene: Control) -> void:
 
 func _test_placeholder_attack_damages_chosen_part(scene: Control) -> void:
 	_reset_turn_fixture(scene)
+	scene._unit_by_id("arlen")["weapon"] = "Rifle"
 	var target = scene._unit_by_id("enemy_blade")
 	scene._select_action("Attack")
 	_assert_true(scene._confirm_attack_target(target, "Head"), "confirmed attack damages chosen part")
@@ -505,6 +547,54 @@ func _test_sword_ignores_manual_part_choice(scene: Control) -> void:
 	scene._select_action("Attack")
 	_assert_true(scene._confirm_attack_target(fixture["target"], "Head", 41), "Sword resolves even when caller passes manual part")
 	_assert_equal(scene.last_attack_result["part_name"], "Left Arm", "normal Sword attack uses rolled part instead of manual part")
+
+
+func _test_spear_hits_tile_one_only_when_tile_two_empty(scene: Control) -> void:
+	var fixture := _set_spear_fixture(scene, Vector2i(2, 1))
+	var tile_one_before := _part_hp_snapshot(fixture["tile_one"])
+	var tile_two_before := _part_hp_snapshot(fixture["tile_two"])
+	scene._select_action("Attack")
+	_assert_true(scene._confirm_attack_target(fixture["tile_one"], "", 11), "Spear resolves against orthogonal tile-one target")
+	_assert_equal(scene.last_attack_result["results"].size(), 1, "Spear hits only tile one when tile two is empty")
+	_assert_equal(_changed_part_count(tile_one_before, _part_hp_snapshot(fixture["tile_one"])), 1, "tile-one enemy takes one part hit")
+	_assert_equal(_changed_part_count(tile_two_before, _part_hp_snapshot(fixture["tile_two"])), 0, "empty tile-two lane target remains untouched")
+
+
+func _test_spear_hits_tile_one_and_two_enemies(scene: Control) -> void:
+	var fixture := _set_spear_fixture(scene, Vector2i(2, 1), Vector2i(3, 1))
+	scene._select_action("Attack")
+	_assert_true(scene._confirm_attack_target(fixture["tile_one"], "", 11), "Spear resolves through two occupied line tiles")
+	_assert_equal(scene.last_attack_result["results"].size(), 2, "Spear can hit enemies on tile one and tile two in one action")
+	_assert_equal(scene.last_attack_result["results"][0]["target_id"], "enemy_blade", "first Spear result is tile-one enemy")
+	_assert_equal(scene.last_attack_result["results"][1]["target_id"], "enemy_rifle", "second Spear result is tile-two enemy")
+
+
+func _test_spear_tile_two_receives_reduced_damage(scene: Control) -> void:
+	var fixture := _set_spear_fixture(scene, Vector2i(2, 1), Vector2i(3, 1))
+	scene._select_action("Attack")
+	_assert_true(scene._confirm_attack_target(fixture["tile_one"], "", 11), "Spear resolves for damage comparison")
+	_assert_equal(scene.last_attack_result["results"][0]["damage_applied"], 30, "tile-one Spear damage uses full base value")
+	_assert_equal(scene.last_attack_result["results"][1]["damage_applied"], 22, "tile-two Spear damage uses reduced prototype value")
+
+
+func _test_spear_cannot_attack_diagonal_line(scene: Control) -> void:
+	var fixture := _set_spear_fixture(scene, Vector2i(2, 2), Vector2i(8, 6))
+	scene._select_action("Attack")
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["tile_one"])
+	_assert_false(preview["legal"], "Spear cannot attack diagonally")
+	_assert_equal(scene._spear_direction(fixture["attacker"], fixture["tile_one"]), Vector2i.ZERO, "diagonal target has no Spear direction")
+	_assert_false(scene._confirm_attack_target(fixture["tile_one"], "", 11), "diagonal Spear target is rejected")
+
+
+func _test_spear_action_consumes_one_attack(scene: Control) -> void:
+	var fixture := _set_spear_fixture(scene, Vector2i(2, 1), Vector2i(3, 1))
+	var arlen = fixture["attacker"]
+	scene._select_action("Attack")
+	_assert_true(scene._confirm_attack_target(fixture["tile_one"], "", 11), "Spear action resolves")
+	_assert_true(arlen["has_attacked"], "Spear marks has_attacked")
+	_assert_true(arlen["activation_complete"], "Spear completes activation")
+	_assert_equal(scene.active_unit["id"], "mira", "Spear attack advances initiative once")
+	_assert_false(scene.turn_log.has("arlen:attack:extra"), "Spear does not log an extra attack")
 
 
 func _assert_true(actual: bool, message: String) -> void:
