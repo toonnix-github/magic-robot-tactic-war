@@ -13,6 +13,20 @@ Build ONLY the Phase 1 graybox combat prototype. Do not add town building, story
 - Standard battle map: 7 rows x 10 columns.
 - Prefer data-driven definitions for maps, weapons, units, Orbs, and missions.
 
+## Ticket Execution Order
+`docs/phase1-ticket-roadmap.md` is the implementation roadmap for the remainder of Phase 1.
+
+Codex must work the Phase 1 issues in order from #2 through #16 unless the user explicitly changes priority.
+
+For each ticket:
+1. Read this file, the ticket body, `docs/phase1-ticket-roadmap.md`, and all referenced design docs before coding.
+2. Implement only the current ticket scope. Do not pull future-ticket gameplay into the current change unless a tiny shared abstraction is strictly necessary.
+3. Add/update deterministic tests covering the ticket acceptance criteria.
+4. Run the Godot project/tests and fix regressions.
+5. Commit with the issue number in the commit message.
+6. Push the completed work to `prototype/combat-v01` before starting the next ticket.
+7. Do not silently invent a new game rule when requirements conflict; preserve the source-of-truth design and surface the conflict.
+
 ## Design Source of Truth
 Read these before implementing or changing combat behavior or battle presentation:
 1. `docs/combat-rulebook.md`
@@ -20,6 +34,7 @@ Read these before implementing or changing combat behavior or battle presentatio
 3. `docs/prototype-scope.md`
 4. `docs/ui/battle-screen-v0.1.md`
 5. `docs/ui/battle-screen-v0.1.svg`
+6. `docs/phase1-ticket-roadmap.md`
 
 If implementation conflicts with those files, the docs win unless they are intentionally updated in the same change.
 
