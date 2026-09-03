@@ -919,8 +919,14 @@ func _finish_activation(unit) -> void:
 	turn_state = TurnState.TURN_END
 	active_unit = null
 	turn_number += 1
+	if _is_battle_over():
+		var winner := _battle_winner()
+		var res_marker := "mission_result:%s:%s" % [current_mission, winner]
+		if not turn_log.has(res_marker):
+			turn_log.append(res_marker)
 	if not _is_activating and not auto_battle:
 		_begin_next_activation()
+
 
 
 func _schedule_future_activation(unit) -> void:
@@ -984,6 +990,7 @@ func _try_move_active_unit(grid: Vector2i) -> bool:
 
 	active_unit["grid"] = grid
 	active_unit["has_moved"] = true
+	turn_log.append("%s:move:(%d,%d)" % [active_unit["id"], grid.x, grid.y])
 	reachable_tiles.clear()
 	targetable_tiles.clear()
 	target_preview.clear()
@@ -991,6 +998,7 @@ func _try_move_active_unit(grid: Vector2i) -> bool:
 	selected_action = "Attack" if _can_attack(active_unit) else "Wait"
 	last_action_message = "%s moved" % active_unit["name"]
 	return true
+
 
 
 func _try_attack_active_unit(target = null, part_name := "", seed := 0) -> bool:
@@ -1073,6 +1081,43 @@ func _resolve_attack(attacker, target, preview: Dictionary, part_name := "", see
 	else:
 		attack_res = _resolve_blockable_shot(attacker, target, preview, part_name, seed, int(weapon_data["damage"]), seed)
 
+	if attack_res.get("intercepted", false):
+		var shield_u = attack_res.get("shield_unit")
+		var s_id: String = str(shield_u["id"]) if shield_u != null else "shield"
+		turn_log.append("%s:shield_intercept:%s" % [s_id, target["id"]])
+
+	if attack_res.has("hit"):
+		if bool(attack_res["hit"]):
+			turn_log.append("%s:hit:%s" % [attacker["id"], target["id"]])
+		else:
+			turn_log.append("%s:miss:%s" % [attacker["id"], target["id"]])
+	elif attack_res.has("shots"):
+		var any_hit := false
+		for shot in attack_res["shots"]:
+			if bool(shot.get("hit", false)):
+				any_hit = true
+				break
+		if any_hit:
+			turn_log.append("%s:hit:%s" % [attacker["id"], target["id"]])
+		else:
+			turn_log.append("%s:miss:%s" % [attacker["id"], target["id"]])
+	elif attack_res.has("results"):
+		for res in attack_res["results"]:
+			var sub_t = res.get("target")
+			if sub_t != null:
+				if bool(res.get("hit", false)):
+					turn_log.append("%s:hit:%s" % [attacker["id"], sub_t["id"]])
+				else:
+					turn_log.append("%s:miss:%s" % [attacker["id"], sub_t["id"]])
+
+	if attack_res.has("orb_proc") and bool(attack_res["orb_proc"].get("triggered", false)):
+		turn_log.append("%s:orb_proc:%s" % [attacker["id"], str(attack_res["orb_proc"].get("orb_id", "orb"))])
+	elif attack_res.has("shots"):
+		for shot in attack_res["shots"]:
+			if shot.has("orb_proc") and bool(shot["orb_proc"].get("triggered", false)):
+				turn_log.append("%s:orb_proc:%s" % [attacker["id"], str(shot["orb_proc"].get("orb_id", "orb"))])
+				break
+
 	if str(attacker.get("team", "")) == "player":
 		last_attack_result = attack_res
 	else:
@@ -1091,6 +1136,7 @@ func _resolve_attack(attacker, target, preview: Dictionary, part_name := "", see
 				break
 	_finish_activation(attacker)
 	return attack_res
+
 
 
 
@@ -1142,6 +1188,10 @@ func _damage_part(unit, part_name: String, amount: int) -> Dictionary:
 	var hp_after: int = max(0, hp_before - max(0, amount))
 	part["hp"] = hp_after
 	var destroyed_now := hp_before > 0 and hp_after == 0
+	if hp_before > hp_after:
+		turn_log.append("%s:damage:%s:%d" % [unit["id"], part_name, hp_before - hp_after])
+	if destroyed_now:
+		turn_log.append("%s:destroy:%s" % [unit["id"], part_name])
 	if hp_after == 0:
 		_apply_part_consequence(unit, part_name)
 
@@ -1166,6 +1216,10 @@ func _damage_shield(unit, amount: int) -> Dictionary:
 	var hp_before := int(unit["shield_hp"])
 	var hp_after: int = max(0, hp_before - max(0, amount))
 	unit["shield_hp"] = hp_after
+	if hp_before > hp_after:
+		turn_log.append("%s:damage:Shield:%d" % [unit["id"], hp_before - hp_after])
+	if hp_before > 0 and hp_after == 0:
+		turn_log.append("%s:destroy:Shield" % unit["id"])
 	if hp_after == 0:
 		unit["shield_disabled"] = true
 	return {
@@ -1179,6 +1233,7 @@ func _damage_shield(unit, amount: int) -> Dictionary:
 		"destroyed_now": hp_before > 0 and hp_after == 0,
 		"orb_disabled": false,
 	}
+
 
 
 func _resolve_blockable_shot(attacker, target, preview: Dictionary, part_name := "", hit_seed := 0, damage := 0, part_seed := 0) -> Dictionary:
@@ -1379,8 +1434,10 @@ func _apply_part_consequence(unit, part_name: String) -> void:
 	elif part_name == "Body":
 		unit["defeated"] = true
 		unit["in_battle"] = false
+		turn_log.append("%s:defeated" % unit["id"])
 		if active_unit != null and active_unit["id"] == unit["id"]:
 			active_unit = null
+
 	elif part_name == unit["weapon_mount_part"]:
 		unit["weapon_disabled"] = true
 
@@ -2130,7 +2187,13 @@ func _draw_mission_panel() -> void:
 	var detail := last_action_message
 	if not target_preview.is_empty():
 		var state := "LEGAL" if bool(target_preview["legal"]) else "ILLEGAL"
-		detail = "Hit %d%% · %s" % [int(target_preview["hit_percent"]), state]
+		var h_mod := int(target_preview.get("height_hit_modifier", 0))
+		var pattern := str(target_preview.get("weapon_pattern", "single"))
+		var mod_str := ""
+		if h_mod != 0:
+			mod_str = " (H%+d%%)" % h_mod
+		detail = "Hit %d%%%s · %s · %s" % [int(target_preview["hit_percent"]), mod_str, pattern.to_upper(), state]
+
 	elif _is_battle_over():
 		if _battle_winner() == "player":
 			var loot: Dictionary = _roll_mission_loot(current_mission, reward_seed)
@@ -2248,8 +2311,27 @@ func run_auto_battle(max_activations: int = 150, initial_seed: int = 1337) -> Di
 	return summary
 
 
+func set_debug_seed(seed_val: int) -> void:
+	simulation_seed = seed_val
+
+
+func configure_player_loadouts(loadouts: Dictionary) -> void:
+	for unit_id in loadouts.keys():
+		var unit: Dictionary = _unit_by_id(str(unit_id)) if _unit_by_id(str(unit_id)) is Dictionary else {}
+		if not unit.is_empty() and str(unit.get("team", "")) == "player":
+			var cfg: Dictionary = loadouts[unit_id]
+			if cfg.has("weapon"):
+				unit["weapon"] = cfg["weapon"]
+				unit["weapon_mount_part"] = _weapon_mount_part(unit)
+				var weapon_data := _weapon_data_for(unit)
+				unit["shield_max_hp"] = int(weapon_data.get("shield_max_hp", 0))
+				unit["shield_hp"] = int(unit["shield_max_hp"])
+				unit["shield_disabled"] = int(unit["shield_max_hp"]) <= 0
+
+
 
 func _battle_winner() -> String:
+
 	var mission_data: Dictionary = MISSIONS_DATA.get(current_mission, {})
 	var objective := str(mission_data.get("objective", "defeat_commander"))
 

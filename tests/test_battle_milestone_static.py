@@ -229,9 +229,24 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn('"enemy_ridge_guard"', self.source)
         self.assertIn("swapped_sides", self.source)
 
+    def test_phase1_stabilization_and_debug_tools_are_encoded(self):
+        self.assertIn("func set_debug_seed", self.source)
+        self.assertIn("func configure_player_loadouts", self.source)
+        self.assertIn(":move:(", self.source)
+        self.assertIn(":hit:", self.source)
+        self.assertIn(":miss:", self.source)
+        self.assertIn(":shield_intercept:", self.source)
+        self.assertIn(":damage:", self.source)
+        self.assertIn(":destroy:", self.source)
+        self.assertIn(":orb_proc:", self.source)
+        self.assertIn(":defeated", self.source)
+        self.assertIn("mission_result:", self.source)
+
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

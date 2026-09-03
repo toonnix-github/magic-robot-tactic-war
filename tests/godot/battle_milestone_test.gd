@@ -87,8 +87,10 @@ func _run() -> void:
 	_run_ancient_ruins_acceptance(scene)
 	_run_crystal_quarry_acceptance(scene)
 	_run_ascending_ridge_acceptance(scene)
+	_run_phase1_stabilization_acceptance(scene)
 
 	if _failures.is_empty():
+
 
 
 
@@ -1363,7 +1365,80 @@ func _test_ascending_ridge_shield_protects_uphill_advancing_formation(scene: Con
 	_assert_equal(interceptor["id"], "brann", "shield formation intercepts downhill sniper shot targeting ally behind shield")
 
 
+func _run_phase1_stabilization_acceptance(scene: Control) -> void:
+	_test_phase1_compact_battle_log_captures_all_event_types(scene)
+	_test_phase1_debug_seed_is_selectable_and_reproducible(scene)
+	_test_phase1_ancient_ruins_different_loadouts(scene)
+	_test_phase1_attack_preview_contains_terrain_and_pattern(scene)
+	_test_phase1_strict_turn_rules_enforced(scene)
+
+
+func _test_phase1_compact_battle_log_captures_all_event_types(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var summary: Dictionary = scene.run_auto_battle(30, 1337)
+	var log_str: String = " ".join(summary["turn_log"])
+	_assert_true(log_str.contains(":move:"), "log captures move events")
+	_assert_true(log_str.contains(":attack"), "log captures attack events")
+	_assert_true(log_str.contains(":hit:") or log_str.contains(":miss:"), "log captures hit/miss events")
+	_assert_true(log_str.contains(":damage:"), "log captures part damage events")
+
+
+func _test_phase1_debug_seed_is_selectable_and_reproducible(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	scene.set_debug_seed(9999)
+	var run1: Dictionary = scene.run_auto_battle(15, 9999)
+	scene._load_mission("ancient_ruins")
+	scene.set_debug_seed(9999)
+	var run2: Dictionary = scene.run_auto_battle(15, 9999)
+	_assert_equal(run1["winner"], run2["winner"], "debug seed reproduces same winner")
+	_assert_equal(run1["turns"], run2["turns"], "debug seed reproduces same turns")
+	_assert_equal(run1["turn_log"], run2["turn_log"], "debug seed reproduces identical turn log")
+
+
+func _test_phase1_ancient_ruins_different_loadouts(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var default_run: Dictionary = scene.run_auto_battle(15, 1337)
+
+	scene._load_mission("ancient_ruins")
+	scene.configure_player_loadouts({
+		"arlen": {"weapon": "Sword"},
+		"mira": {"weapon": "Spear"},
+		"sera": {"weapon": "Shield"},
+	})
+	var alt_run: Dictionary = scene.run_auto_battle(15, 1337)
+	_assert_true(default_run["turn_log"] != alt_run["turn_log"], "different weapon loadouts produce distinct tactical combat flows")
+
+
+
+func _test_phase1_attack_preview_contains_terrain_and_pattern(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var arlen = scene._unit_by_id("arlen")
+	var target = scene._unit_by_id("enemy_blade")
+	target["grid"] = Vector2i(3, 3)
+	arlen["grid"] = Vector2i(2, 3)
+	scene._set_tile_terrain(Vector2i(2, 3), {"height": 0})
+	scene._set_tile_terrain(Vector2i(3, 3), {"height": 1, "cover": true, "cover_dodge_bonus": 10})
+	var preview: Dictionary = scene._attack_preview(arlen, target)
+	_assert_true(preview.has("height_hit_modifier"), "preview has height modifier")
+	_assert_true(preview.has("cover_dodge_modifier"), "preview has cover modifier")
+	_assert_true(preview.has("weapon_pattern"), "preview has weapon pattern")
+	_assert_equal(preview["weapon_pattern"], "line_2", "Spear has line_2 pattern")
+
+
+func _test_phase1_strict_turn_rules_enforced(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var arlen = scene._unit_by_id("arlen")
+	var mira = scene._unit_by_id("mira")
+	scene._begin_activation(arlen)
+	_assert_true(scene._is_active_unit(arlen), "Arlen is active")
+	_assert_false(scene._is_active_unit(mira), "Mira is not active")
+	_assert_false(scene._can_move(mira), "non-active unit cannot move")
+	_assert_false(scene._can_attack(mira), "non-active unit cannot attack")
+	_assert_false(scene._can_wait(mira), "non-active unit cannot wait")
+
+
 func _assert_true(actual: bool, message: String) -> void:
+
 
 
 
