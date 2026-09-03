@@ -159,6 +159,31 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         ]:
             self.assertIn(constant, self.source)
 
+    def test_orb_framework_hooks_and_data_are_encoded(self):
+        self.assertIn("const ORB_DATA", self.source)
+        for hook in [
+            "func _install_orb",
+            "func _orb_data_for",
+            "func _active_orbs",
+            "func _orb_effects",
+            "func _orb_adjusted_damage",
+            "func _resolve_orb_proc",
+            "func _apply_status",
+            "func _has_status",
+        ]:
+            self.assertIn(hook, self.source)
+        for value in [
+            '"element": "Fire"',
+            '"element": "Water"',
+            '"element": "Lightning"',
+            '"element": "Earth"',
+            '"rarity": "N"',
+            '"rarity": "R"',
+            '"rarity": "SR"',
+            '"rarity": "SSR"',
+        ]:
+            self.assertIn(value, self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

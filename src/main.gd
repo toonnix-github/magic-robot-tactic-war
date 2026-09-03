@@ -95,6 +95,56 @@ const WEAPON_DATA := {
 		"part_weights": {"Body": 100},
 	},
 }
+const ORB_DATA := {
+	"fire_n": {
+		"name": "Fire Spark",
+		"element": "Fire",
+		"rarity": "N",
+		"effects": [
+			{"type": "damage_percent", "percent": 10},
+		],
+	},
+	"water_r": {
+		"name": "Water Veil",
+		"element": "Water",
+		"rarity": "R",
+		"effects": [
+			{"type": "hit_bonus", "amount": 5},
+			{"type": "proc_status", "status": "Chill", "chance_percent": 25},
+		],
+	},
+	"lightning_r": {
+		"name": "Lightning Fork",
+		"element": "Lightning",
+		"rarity": "R",
+		"effects": [
+			{"type": "hit_bonus", "amount": 5},
+			{"type": "proc_status", "status": "Shock", "chance_percent": 50},
+		],
+	},
+	"fire_sr": {
+		"name": "Fire Brand",
+		"element": "Fire",
+		"rarity": "SR",
+		"effects": [
+			{"type": "damage_percent", "percent": 10},
+			{"type": "hit_bonus", "amount": 5},
+			{"type": "proc_status", "status": "Burn", "chance_percent": 35},
+		],
+	},
+	"earth_ssr": {
+		"name": "Earth Bulwark",
+		"element": "Earth",
+		"rarity": "SSR",
+		"effects": [
+			{"type": "damage_percent", "percent": 5},
+			{"type": "hit_bonus", "amount": 5},
+			{"type": "dodge_bonus", "amount": 5},
+			{"type": "defense_bonus", "amount": 5},
+			{"type": "proc_status", "status": "Rooted", "chance_percent": 20},
+		],
+	},
+}
 
 const DESIGN_SIZE := Vector2(1311.0, 603.0)
 const TILE_SIZE := Vector2(77.0, 41.0)
@@ -320,6 +370,7 @@ func _create_units() -> void:
 		unit["shield_disabled"] = int(unit["shield_max_hp"]) <= 0
 		unit["defeated"] = false
 		unit["in_battle"] = true
+		unit["statuses"] = []
 		unit["has_moved"] = false
 		unit["has_attacked"] = false
 		unit["activation_complete"] = false
@@ -640,6 +691,13 @@ func _resolve_attack(attacker, target, preview: Dictionary, part_name := "", see
 		last_action_message = "%s strikes a line with %s" % [attacker["name"], last_attack_result["weapon"]]
 	else:
 		last_action_message = "%s hits %s %s" % [attacker["name"], target["name"], last_attack_result["part_name"]] if bool(last_attack_result["hit"]) else "%s misses %s" % [attacker["name"], target["name"]]
+	if last_attack_result.has("orb_proc") and bool(last_attack_result["orb_proc"].get("triggered", false)):
+		last_action_message += " + %s" % str(last_attack_result["orb_proc"]["status"])
+	elif last_attack_result.has("shots"):
+		for shot in last_attack_result["shots"]:
+			if shot.has("orb_proc") and bool(shot["orb_proc"].get("triggered", false)):
+				last_action_message += " + %s" % str(shot["orb_proc"]["status"])
+				break
 	_finish_activation(attacker)
 	return last_attack_result
 
@@ -745,8 +803,10 @@ func _resolve_shield_damage(attacker, shield_unit, original_target, preview: Dic
 	var hit_percent := int(preview["hit_percent"])
 	var hit := _roll_hit(hit_percent, hit_seed)
 	var damage_result := _shield_damage_result(shield_unit)
+	var orb_proc := _empty_orb_proc()
 	if hit:
-		damage_result = _damage_shield(shield_unit, _terrain_adjusted_damage(shield_unit, damage))
+		damage_result = _damage_shield(shield_unit, _terrain_adjusted_damage(shield_unit, _orb_adjusted_damage(attacker, damage)))
+		orb_proc = _resolve_orb_proc(attacker, shield_unit, hit_seed)
 	return {
 		"attacker_id": str(attacker["id"]),
 		"target_id": str(shield_unit["id"]),
@@ -763,6 +823,7 @@ func _resolve_shield_damage(attacker, shield_unit, original_target, preview: Dic
 		"intercepted": intercepted,
 		"shield_hp_before": int(damage_result["hp_before"]),
 		"shield_hp_after": int(damage_result["hp_after"]),
+		"orb_proc": orb_proc,
 	}
 
 
@@ -792,9 +853,11 @@ func _resolve_weapon_attack(attacker, target, preview: Dictionary, part_name := 
 	var hit_percent := int(preview["hit_percent"])
 	var hit := _roll_hit(hit_percent, seed)
 	var damage_result := _miss_damage_result(target, resolved_part)
+	var orb_proc := _empty_orb_proc()
 	if hit:
 		var damage: int = damage_override if damage_override >= 0 else int(weapon_data["damage"])
-		damage_result = _damage_part(target, resolved_part, _terrain_adjusted_damage(target, damage))
+		damage_result = _damage_part(target, resolved_part, _terrain_adjusted_damage(target, _orb_adjusted_damage(attacker, damage)))
+		orb_proc = _resolve_orb_proc(attacker, target, seed)
 
 	return {
 		"attacker_id": str(attacker["id"]),
@@ -810,6 +873,7 @@ func _resolve_weapon_attack(attacker, target, preview: Dictionary, part_name := 
 		"hit_percent": hit_percent,
 		"hit_seed": seed,
 		"part_seed": resolved_part_seed,
+		"orb_proc": orb_proc,
 	}
 
 
@@ -927,6 +991,113 @@ func _apply_part_consequence(unit, part_name: String) -> void:
 			active_unit = null
 	elif part_name == unit["weapon_mount_part"]:
 		unit["weapon_disabled"] = true
+
+
+func _install_orb(unit, part_name: String, orb_id: String) -> bool:
+	if unit == null or not unit["parts"].has(part_name) or not ORB_DATA.has(orb_id):
+		return false
+	var part: Dictionary = unit["parts"][part_name]
+	part["orb"] = orb_id
+	part["orb_disabled"] = bool(part["destroyed"])
+	return true
+
+
+func _orb_data_for(orb_ref) -> Dictionary:
+	if orb_ref is Dictionary:
+		return orb_ref
+	if ORB_DATA.has(str(orb_ref)):
+		return ORB_DATA[str(orb_ref)]
+	return {}
+
+
+func _active_orbs(unit) -> Array:
+	var active := []
+	if unit == null:
+		return active
+	for part_name in PART_NAMES:
+		var part: Dictionary = unit["parts"][part_name]
+		if part["orb"] == null or bool(part["orb_disabled"]) or bool(part["destroyed"]):
+			continue
+		var orb := _orb_data_for(part["orb"])
+		if orb.is_empty():
+			continue
+		var active_orb: Dictionary = orb.duplicate(true)
+		active_orb["id"] = str(part["orb"])
+		active_orb["host_part"] = part_name
+		active.append(active_orb)
+	return active
+
+
+func _orb_effects(unit, effect_type := "") -> Array:
+	var effects := []
+	for orb in _active_orbs(unit):
+		for effect in orb["effects"]:
+			if effect_type == "" or str(effect.get("type", "")) == effect_type:
+				var active_effect: Dictionary = effect.duplicate(true)
+				active_effect["orb_id"] = str(orb["id"])
+				active_effect["element"] = str(orb["element"])
+				active_effect["rarity"] = str(orb["rarity"])
+				effects.append(active_effect)
+	return effects
+
+
+func _orb_damage_modifier_percent(unit) -> int:
+	var modifier := 0
+	for effect in _orb_effects(unit, "damage_percent"):
+		modifier += int(effect.get("percent", 0))
+	return modifier
+
+
+func _orb_hit_modifier(unit) -> int:
+	var modifier := 0
+	for effect in _orb_effects(unit, "hit_bonus"):
+		modifier += int(effect.get("amount", 0))
+	return modifier
+
+
+func _orb_adjusted_damage(unit, damage: int) -> int:
+	var modifier := _orb_damage_modifier_percent(unit)
+	return int(round(float(max(0, damage)) * (100.0 + float(modifier)) / 100.0))
+
+
+func _resolve_orb_proc(attacker, target, seed: int) -> Dictionary:
+	var proc_effects := _orb_effects(attacker, "proc_status")
+	for index in range(proc_effects.size()):
+		var effect: Dictionary = proc_effects[index]
+		var chance := int(effect.get("chance_percent", 0))
+		if absi(seed + index * 37) % 100 < chance:
+			var status := str(effect.get("status", ""))
+			_apply_status(target, status)
+			return {
+				"triggered": true,
+				"status": status,
+				"orb_id": str(effect["orb_id"]),
+				"seed": seed,
+			}
+	return _empty_orb_proc(seed)
+
+
+func _empty_orb_proc(seed := 0) -> Dictionary:
+	return {
+		"triggered": false,
+		"status": "",
+		"orb_id": "",
+		"seed": seed,
+	}
+
+
+func _apply_status(unit, status: String) -> bool:
+	if unit == null or status == "":
+		return false
+	if not unit.has("statuses"):
+		unit["statuses"] = []
+	if not unit["statuses"].has(status):
+		unit["statuses"].append(status)
+	return true
+
+
+func _has_status(unit, status: String) -> bool:
+	return unit != null and unit.has("statuses") and unit["statuses"].has(status)
 
 
 func _part_hp_ratio(unit, part_name: String) -> float:
@@ -1076,8 +1247,10 @@ func _attack_preview(attacker, target) -> Dictionary:
 	var accuracy_modifier := int(attacker.get("accuracy_modifier", 0)) if attacker != null else 0
 	var height_modifier := _height_hit_modifier(attacker, target)
 	var cover_dodge_modifier := -int(_terrain_at(target["grid"]).get("cover_dodge_bonus", 0)) if target != null and _has_cover(target["grid"]) else 0
-	var hit_percent: int = int(clamp(base_hit + accuracy_modifier + height_modifier + cover_dodge_modifier, 0, 100))
+	var orb_hit_modifier := _orb_hit_modifier(attacker)
+	var hit_percent: int = int(clamp(base_hit + accuracy_modifier + height_modifier + cover_dodge_modifier + orb_hit_modifier, 0, 100))
 	var base_damage := int(weapon_data.get("damage", 0))
+	var orb_damage_modifier_percent := _orb_damage_modifier_percent(attacker)
 	var preview := {
 		"attacker_id": str(attacker["id"]) if attacker != null else "",
 		"target_id": str(target["id"]) if target != null else "",
@@ -1088,7 +1261,9 @@ func _attack_preview(attacker, target) -> Dictionary:
 		"base_hit_percent": base_hit,
 		"height_hit_modifier": height_modifier,
 		"cover_dodge_modifier": cover_dodge_modifier,
-		"damage": _terrain_adjusted_damage(target, base_damage) if legal else 0,
+		"orb_hit_modifier": orb_hit_modifier,
+		"orb_damage_modifier_percent": orb_damage_modifier_percent,
+		"damage": _terrain_adjusted_damage(target, _orb_adjusted_damage(attacker, base_damage)) if legal else 0,
 		"base_damage": base_damage,
 		"legal": legal,
 		"weapon_pattern": str(weapon_data.get("pattern", "single")),

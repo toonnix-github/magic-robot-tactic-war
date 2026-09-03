@@ -80,6 +80,7 @@ func _run() -> void:
 	_run_sniper_acceptance(scene)
 	_run_shield_acceptance(scene)
 	_run_terrain_acceptance(scene)
+	_run_orb_acceptance(scene)
 
 	if _failures.is_empty():
 		print("GODOT TESTS PASSED")
@@ -274,6 +275,30 @@ func _run_terrain_acceptance(scene: Control) -> void:
 	_test_los_blocker_prevents_target_selection(scene)
 
 
+func _run_orb_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_install_orb",
+		"_orb_data_for",
+		"_active_orbs",
+		"_orb_effects",
+		"_orb_adjusted_damage",
+		"_resolve_orb_proc",
+		"_apply_status",
+		"_has_status",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "Orb API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_orb_data_includes_phase_one_elements_and_rarities(scene)
+	_test_orb_passive_changes_combat_damage(scene)
+	_test_orb_proc_is_seeded_and_applies_status(scene)
+	_test_destroyed_host_part_disables_orb_effects(scene)
+	_test_ssr_orb_supports_five_effects(scene)
+	_test_orbs_do_not_add_action_buttons(scene)
+
+
 func _reset_turn_fixture(scene: Control) -> void:
 	scene._create_terrain()
 	scene._create_units()
@@ -393,6 +418,12 @@ func _set_terrain_attack_fixture(scene: Control, attacker_height: int, target_he
 	if blocker_grid != null:
 		scene._set_tile_terrain(blocker_grid, {"blocks_los": true})
 	return {"attacker": attacker, "target": target}
+
+
+func _set_orb_attack_fixture(scene: Control) -> Dictionary:
+	var fixture := _set_terrain_attack_fixture(scene, 1, 1)
+	fixture["attacker"]["weapon"] = "Sniper"
+	return fixture
 
 
 func _part_hp_snapshot(unit) -> Dictionary:
@@ -953,6 +984,66 @@ func _test_los_blocker_prevents_target_selection(scene: Control) -> void:
 	_assert_false(scene._has_line_of_sight(fixture["attacker"]["grid"], fixture["target"]["grid"]), "terrain blocker breaks grid-ray LOS")
 	_assert_false(preview["legal"], "LOS blocker makes attack preview illegal")
 	_assert_false(targetable.has(scene._grid_key(fixture["target"]["grid"])), "LOS-blocked target is not selectable")
+
+
+func _test_orb_data_includes_phase_one_elements_and_rarities(scene: Control) -> void:
+	var elements := []
+	var rarities := []
+	for orb_id in scene.ORB_DATA.keys():
+		var orb: Dictionary = scene.ORB_DATA[orb_id]
+		if not elements.has(str(orb["element"])):
+			elements.append(str(orb["element"]))
+		if not rarities.has(str(orb["rarity"])):
+			rarities.append(str(orb["rarity"]))
+	for element in ["Fire", "Water", "Lightning", "Earth"]:
+		_assert_true(elements.has(element), "Orb data includes %s element" % element)
+	for rarity in ["N", "R", "SR", "SSR"]:
+		_assert_true(rarities.has(rarity), "Orb data includes %s rarity" % rarity)
+
+
+func _test_orb_passive_changes_combat_damage(scene: Control) -> void:
+	var fixture := _set_orb_attack_fixture(scene)
+	_assert_true(scene._install_orb(fixture["attacker"], "Right Arm", "fire_n"), "Fire N Orb installs into one part slot")
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["target"])
+	_assert_equal(preview["orb_damage_modifier_percent"], 10, "Fire passive contributes damage modifier")
+	_assert_true(int(preview["damage"]) > 35, "Orb passive increases preview damage")
+	var result: Dictionary = scene._resolve_weapon_attack(fixture["attacker"], fixture["target"], preview, "", 11, 35, 11)
+	_assert_equal(result["damage_requested"], preview["damage"], "resolved attack uses Orb-adjusted damage")
+
+
+func _test_orb_proc_is_seeded_and_applies_status(scene: Control) -> void:
+	var fixture := _set_orb_attack_fixture(scene)
+	_assert_true(scene._install_orb(fixture["attacker"], "Left Arm", "lightning_r"), "Lightning R Orb installs")
+	var first: Dictionary = scene._resolve_orb_proc(fixture["attacker"], fixture["target"], 12)
+	var second: Dictionary = scene._resolve_orb_proc(fixture["attacker"], fixture["target"], 12)
+	_assert_equal(first, second, "Orb proc result is reproduced by deterministic seed")
+	_assert_true(first["triggered"], "seeded proc can trigger")
+	_assert_equal(first["status"], "Shock", "Lightning proc applies configured status")
+	_assert_true(scene._has_status(fixture["target"], "Shock"), "target status list records proc result")
+
+
+func _test_destroyed_host_part_disables_orb_effects(scene: Control) -> void:
+	var fixture := _set_orb_attack_fixture(scene)
+	var attacker = fixture["attacker"]
+	_assert_true(scene._install_orb(attacker, "Head", "fire_n"), "Orb installs on Head slot")
+	var boosted_preview: Dictionary = scene._attack_preview(attacker, fixture["target"])
+	_assert_true(int(boosted_preview["damage"]) > 35, "installed Orb affects damage before host part destruction")
+	scene._damage_part(attacker, "Head", 999)
+	var disabled_preview: Dictionary = scene._attack_preview(attacker, fixture["target"])
+	_assert_true(attacker["parts"]["Head"]["orb_disabled"], "destroyed host part marks Orb disabled")
+	_assert_equal(disabled_preview["orb_damage_modifier_percent"], 0, "destroyed host part disables Orb passive effects")
+	_assert_equal(disabled_preview["damage"], 35, "disabled Orb no longer changes damage")
+
+
+func _test_ssr_orb_supports_five_effects(scene: Control) -> void:
+	var orb: Dictionary = scene._orb_data_for("earth_ssr")
+	_assert_equal(str(orb["rarity"]), "SSR", "SSR Orb data resolves")
+	_assert_equal(orb["effects"].size(), 5, "SSR Orb data supports five simultaneous effects")
+
+
+func _test_orbs_do_not_add_action_buttons(scene: Control) -> void:
+	_assert_equal(scene.PRIMARY_ACTIONS, ["Move", "Attack", "Wait"], "Orb framework does not add active skill buttons")
+	_assert_false(scene.PRIMARY_ACTIONS.has("Orb"), "Orb is not a Phase 1 command")
 
 
 func _assert_true(actual: bool, message: String) -> void:
