@@ -5,6 +5,7 @@ const GRID_COLUMNS := 10
 const GRID_ROWS := 7
 const MOVE_RANGE := 3
 const PRIMARY_ACTIONS := ["Move", "Attack", "Wait"]
+const INITIATIVE_ROUND := 100.0
 
 const DESIGN_SIZE := Vector2(1311.0, 603.0)
 const TILE_SIZE := Vector2(77.0, 41.0)
@@ -14,17 +15,34 @@ const GRID_ORIGIN := Vector2(228.0, 140.0)
 const PART_NAMES := ["Head", "Body", "Left Arm", "Right Arm", "Legs"]
 const DIRECTIONS := [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]
 
+enum TurnState {
+	TURN_START,
+	AWAITING_COMMAND,
+	SELECTING_MOVE,
+	MOVE_COMPLETE,
+	SELECTING_ATTACK,
+	ACTION_COMPLETE,
+	TURN_END,
+}
+
 var units := []
+var active_unit = null
 var selected_unit = null
 var selected_action := "Move"
 var reachable_tiles := {}
 var action_rects := {}
+var turn_state: int = TurnState.TURN_START
+var initiative_timeline: Array[String] = []
+var turn_log: Array[String] = []
+var turn_number := 1
+var last_action_message := "Ready"
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_create_units()
-	_select_unit(units[0])
+	_initialize_initiative()
+	_begin_next_activation()
 	print("Magic Robot Tactic War combat prototype v%s" % PROTOTYPE_VERSION)
 	print("Graybox battle milestone loaded: 7x10 grid, selection, movement, and Phase 1 HUD.")
 
@@ -165,42 +183,277 @@ func _create_units() -> void:
 		},
 	]
 
+	var speed_by_id := {
+		"arlen": 10,
+		"enemy_blade": 8,
+		"mira": 9,
+		"enemy_rifle": 7,
+		"sera": 8,
+		"commander": 6,
+		"brann": 5,
+		"enemy_sniper": 4,
+	}
+	var initial_time_by_id := {
+		"arlen": 0.0,
+		"enemy_blade": 1.0,
+		"mira": 2.0,
+		"enemy_rifle": 3.0,
+		"sera": 4.0,
+		"commander": 5.0,
+		"brann": 6.0,
+		"enemy_sniper": 7.0,
+	}
+	for unit in units:
+		unit["speed"] = speed_by_id[unit["id"]]
+		unit["initiative_time"] = initial_time_by_id[unit["id"]]
+		unit["has_moved"] = false
+		unit["has_attacked"] = false
+		unit["activation_complete"] = false
+
 
 func _select_unit(unit) -> void:
 	selected_unit = unit
-	selected_action = "Move"
-	if selected_unit["team"] == "player":
-		reachable_tiles = _calculate_reachable_tiles(selected_unit)
+	if _is_active_unit(unit):
+		if _can_move(unit):
+			selected_action = "Move"
+			turn_state = TurnState.SELECTING_MOVE
+			reachable_tiles = _calculate_reachable_tiles(unit)
+		else:
+			selected_action = "Attack" if _can_attack(unit) else "Wait"
+			reachable_tiles.clear()
 	else:
 		reachable_tiles.clear()
 	queue_redraw()
 
 
 func _select_action(action: String) -> void:
-	selected_action = action
-	if selected_unit != null and selected_unit["team"] == "player" and selected_action == "Move":
-		reachable_tiles = _calculate_reachable_tiles(selected_unit)
-	else:
+	if not PRIMARY_ACTIONS.has(action):
+		return
+
+	if action == "Move":
+		if _can_move(active_unit):
+			selected_action = action
+			turn_state = TurnState.SELECTING_MOVE
+			selected_unit = active_unit
+			reachable_tiles = _calculate_reachable_tiles(active_unit)
+	elif action == "Attack":
+		selected_action = action
 		reachable_tiles.clear()
+		if _can_attack(active_unit):
+			turn_state = TurnState.SELECTING_ATTACK
+			_try_attack_active_unit()
+	elif action == "Wait":
+		selected_action = action
+		reachable_tiles.clear()
+		if _can_wait(active_unit):
+			_try_wait_active_unit()
 	queue_redraw()
 
 
 func _handle_grid_tap(position: Vector2) -> void:
 	var grid = _grid_at_position(position)
 	if grid == null:
-		if selected_action == "Attack" and selected_unit != null:
-			_select_unit(selected_unit)
 		return
 
-	if selected_unit == null or selected_unit["team"] != "player":
+	if active_unit == null or active_unit["team"] != "player":
 		return
 
 	if selected_action == "Move":
-		var key := _grid_key(grid)
-		if reachable_tiles.has(key) and not _occupied_by_any_unit(grid):
-			selected_unit["grid"] = grid
-			reachable_tiles = _calculate_reachable_tiles(selected_unit)
-			queue_redraw()
+		_try_move_active_unit(grid)
+		queue_redraw()
+
+
+func _initialize_initiative() -> void:
+	turn_log.clear()
+	turn_number = 1
+	active_unit = null
+	selected_unit = null
+	selected_action = "Move"
+	reachable_tiles.clear()
+	turn_state = TurnState.TURN_START
+	for unit in units:
+		unit["has_moved"] = false
+		unit["has_attacked"] = false
+		unit["activation_complete"] = false
+	_rebuild_initiative_timeline()
+
+
+func _rebuild_initiative_timeline() -> void:
+	var ordered_units := units.duplicate()
+	ordered_units.sort_custom(func(a, b):
+		var a_time := float(a["initiative_time"])
+		var b_time := float(b["initiative_time"])
+		if is_equal_approx(a_time, b_time):
+			return str(a["id"]) < str(b["id"])
+		return a_time < b_time
+	)
+
+	initiative_timeline.clear()
+	for unit in ordered_units:
+		initiative_timeline.append(str(unit["id"]))
+
+
+func _begin_next_activation() -> void:
+	for _index in range(units.size() * 2):
+		_rebuild_initiative_timeline()
+		if initiative_timeline.is_empty():
+			return
+
+		var next_unit = _unit_by_id(initiative_timeline[0])
+		if next_unit == null:
+			return
+
+		_begin_activation(next_unit)
+		if next_unit["team"] == "player":
+			return
+
+		_resolve_enemy_activation(next_unit)
+
+
+func _begin_activation(unit) -> void:
+	active_unit = unit
+	selected_unit = unit
+	unit["has_moved"] = false
+	unit["has_attacked"] = false
+	unit["activation_complete"] = false
+	turn_state = TurnState.TURN_START
+	reachable_tiles.clear()
+
+	if unit["team"] == "player":
+		turn_state = TurnState.AWAITING_COMMAND
+		selected_action = "Move" if _can_move(unit) else "Wait"
+		if selected_action == "Move":
+			turn_state = TurnState.SELECTING_MOVE
+			reachable_tiles = _calculate_reachable_tiles(unit)
+	else:
+		selected_action = "Wait"
+
+	queue_redraw()
+
+
+func _resolve_enemy_activation(unit) -> void:
+	unit["activation_complete"] = true
+	turn_log.append("%s:enemy_wait" % unit["id"])
+	last_action_message = "%s holds position" % unit["name"]
+	turn_state = TurnState.ACTION_COMPLETE
+	reachable_tiles.clear()
+	_schedule_future_activation(unit)
+	turn_state = TurnState.TURN_END
+	active_unit = null
+	turn_number += 1
+
+
+func _finish_activation(unit) -> void:
+	turn_state = TurnState.ACTION_COMPLETE
+	reachable_tiles.clear()
+	_schedule_future_activation(unit)
+	turn_state = TurnState.TURN_END
+	active_unit = null
+	turn_number += 1
+	_begin_next_activation()
+
+
+func _schedule_future_activation(unit) -> void:
+	unit["initiative_time"] = float(unit["initiative_time"]) + ceil(INITIATIVE_ROUND / float(unit["speed"]))
+	_rebuild_initiative_timeline()
+
+
+func _can_move(unit) -> bool:
+	return (
+		unit != null
+		and _is_active_unit(unit)
+		and unit["team"] == "player"
+		and not bool(unit["has_moved"])
+		and not bool(unit["activation_complete"])
+	)
+
+
+func _can_attack(unit) -> bool:
+	return (
+		unit != null
+		and _is_active_unit(unit)
+		and unit["team"] == "player"
+		and not bool(unit["has_attacked"])
+		and not bool(unit["activation_complete"])
+		and not _valid_attack_targets(unit).is_empty()
+	)
+
+
+func _can_wait(unit) -> bool:
+	return (
+		unit != null
+		and _is_active_unit(unit)
+		and unit["team"] == "player"
+		and not bool(unit["activation_complete"])
+	)
+
+
+func _is_action_legal(action: String) -> bool:
+	if action == "Move":
+		return _can_move(active_unit)
+	if action == "Attack":
+		return _can_attack(active_unit)
+	if action == "Wait":
+		return _can_wait(active_unit)
+	return false
+
+
+func _try_move_active_unit(grid: Vector2i) -> bool:
+	if not _can_move(active_unit):
+		return false
+
+	var key := _grid_key(grid)
+	if not reachable_tiles.has(key) or _occupied_by_any_unit(grid):
+		return false
+
+	active_unit["grid"] = grid
+	active_unit["has_moved"] = true
+	reachable_tiles.clear()
+	turn_state = TurnState.MOVE_COMPLETE
+	selected_action = "Attack" if _can_attack(active_unit) else "Wait"
+	last_action_message = "%s moved" % active_unit["name"]
+	return true
+
+
+func _try_attack_active_unit() -> bool:
+	if not _can_attack(active_unit):
+		return false
+
+	var acting_unit = active_unit
+	var target = _valid_attack_targets(acting_unit)[0]
+	acting_unit["has_attacked"] = true
+	acting_unit["activation_complete"] = true
+	turn_log.append("%s:attack" % acting_unit["id"])
+	last_action_message = "%s attacks %s" % [acting_unit["name"], target["name"]]
+	_finish_activation(acting_unit)
+	return true
+
+
+func _try_wait_active_unit() -> bool:
+	if not _can_wait(active_unit):
+		return false
+
+	var acting_unit = active_unit
+	acting_unit["activation_complete"] = true
+	turn_log.append("%s:wait" % acting_unit["id"])
+	last_action_message = "%s waits" % acting_unit["name"]
+	_finish_activation(acting_unit)
+	return true
+
+
+func _valid_attack_targets(unit) -> Array:
+	var targets := []
+	if unit == null:
+		return targets
+
+	for other in units:
+		if other["team"] != unit["team"]:
+			targets.append(other)
+	return targets
+
+
+func _is_active_unit(unit) -> bool:
+	return active_unit != null and unit != null and active_unit["id"] == unit["id"]
 
 
 func _calculate_reachable_tiles(unit) -> Dictionary:
@@ -219,7 +472,7 @@ func _calculate_reachable_tiles(unit) -> Dictionary:
 				continue
 			if abs(_height_at(next_grid) - _height_at(current["grid"])) > 1:
 				continue
-			if _occupied_by_opponent(next_grid, str(selected_unit["team"])):
+			if _occupied_by_opponent(next_grid, str(unit["team"])):
 				continue
 
 			var next_distance = current["distance"] + 1
@@ -388,6 +641,9 @@ func _draw_unit(unit) -> void:
 	var center := _tile_center(unit["grid"])
 	var radius := _unit_radius()
 
+	if _is_active_unit(unit):
+		draw_arc(center, radius * 1.78, 0.0, TAU, 40, Color(0.96, 0.86, 0.48), 3.0, true)
+
 	if selected_unit != null and selected_unit["id"] == unit["id"]:
 		draw_arc(center, radius * 1.48, 0.0, TAU, 40, Color(0.53, 0.71, 0.75), 2.5, true)
 
@@ -414,28 +670,32 @@ func _draw_selected_unit_panel() -> void:
 
 	draw_string(_font(), _p(115, 58), str(selected_unit["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(18), Color(0.95, 0.97, 0.97))
 	draw_string(_font(), _p(115, 79), "%s / %s" % [selected_unit["mech"], selected_unit["weapon"]], HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(12), Color(0.62, 0.69, 0.73))
+	if _is_active_unit(selected_unit):
+		draw_string(_font(), _p(222, 55), "ACTIVE", HORIZONTAL_ALIGNMENT_RIGHT, 25.0 * _scale().x, _font_size(9), Color(0.96, 0.86, 0.48))
 	_draw_bar(_r(115, 92, 122, 8), float(selected_unit["hp"]), Color(0.46, 0.65, 0.56))
 
 
 func _draw_initiative_strip() -> void:
 	_draw_panel(_r(476, 27, 360, 58))
 	draw_string(_font(), _p(494, 48), "NEXT", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.56, 0.63, 0.67))
-	var order := ["arlen", "enemy_blade", "mira", "enemy_rifle", "sera", "commander"]
-	for index in range(order.size()):
-		var unit = _unit_by_id(order[index])
+	var count: int = min(initiative_timeline.size(), 6)
+	for index in range(count):
+		var unit = _unit_by_id(initiative_timeline[index])
 		if unit == null:
 			continue
 		var center := _p(532 + index * 48, 58)
 		var radius: float = min((16.0 if index == 0 else 14.0) * _scale().x, (16.0 if index == 0 else 14.0) * _scale().y)
 		draw_circle(center, radius, unit["color"])
+		if index == 0:
+			draw_arc(center, radius * 1.30, 0.0, TAU, 40, Color(0.96, 0.86, 0.48), 2.0, true)
 		_draw_centered_text(Rect2(center - Vector2(radius, radius), Vector2(radius * 2.0, radius * 2.0)), str(unit["letter"]), 11, Color.WHITE)
 
 
 func _draw_mission_panel() -> void:
 	_draw_panel(_r(1030, 30, 248, 92))
-	draw_string(_font(), _p(1052, 55), "TURN 01", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.56, 0.63, 0.67))
+	draw_string(_font(), _p(1052, 55), "TURN %02d" % turn_number, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.56, 0.63, 0.67))
 	draw_string(_font(), _p(1052, 80), "Defeat Commander", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(15), Color(0.95, 0.97, 0.97))
-	draw_string(_font(), _p(1052, 101), "Ancient Ruins graybox", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(11), Color(0.62, 0.69, 0.73))
+	draw_string(_font(), _p(1052, 101), last_action_message, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(11), Color(0.62, 0.69, 0.73))
 
 
 func _draw_part_status_panel() -> void:
@@ -462,12 +722,15 @@ func _draw_action_bar() -> void:
 		var rect := _r(x, 533, widths[index], 38)
 		action_rects[action] = rect
 		var active: bool = action == selected_action
+		var legal := _is_action_legal(action)
 		var color := Color(0.16, 0.27, 0.30) if action == "Move" else Color(0.42, 0.24, 0.24) if action == "Attack" else Color(0.16, 0.20, 0.23)
 		if active:
 			color = color.lightened(0.18)
+		if not legal:
+			color = Color(0.12, 0.15, 0.16)
 		draw_rect(rect, color, true)
-		draw_rect(rect, Color(0.41, 0.53, 0.58) if active else Color(0.32, 0.39, 0.42), false, 1.5)
-		_draw_centered_text(rect, action.to_upper(), 13, Color(0.93, 0.96, 0.96))
+		draw_rect(rect, Color(0.41, 0.53, 0.58) if active and legal else Color(0.32, 0.39, 0.42), false, 1.5)
+		_draw_centered_text(rect, action.to_upper(), 13, Color(0.93, 0.96, 0.96) if legal else Color(0.48, 0.54, 0.56))
 		x += widths[index] + 11.0
 
 

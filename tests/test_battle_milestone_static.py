@@ -41,8 +41,31 @@ class BattleMilestoneStaticTests(unittest.TestCase):
 
     def test_movement_rules_are_encoded(self):
         self.assertIn("allies may be traversed", self.source)
-        self.assertIn('_occupied_by_opponent(next_grid, str(selected_unit["team"]))', self.source)
+        self.assertIn('_occupied_by_opponent(next_grid, str(unit["team"]))', self.source)
         self.assertIn("not _occupied_by_any_unit(grid)", self.source)
+
+    def test_turn_flow_state_machine_is_encoded(self):
+        for state in [
+            "TURN_START",
+            "AWAITING_COMMAND",
+            "SELECTING_MOVE",
+            "MOVE_COMPLETE",
+            "SELECTING_ATTACK",
+            "ACTION_COMPLETE",
+            "TURN_END",
+        ]:
+            self.assertIn(state, self.source)
+        for hook in [
+            "func _initialize_initiative",
+            "func _begin_next_activation",
+            "func _begin_activation",
+            "func _can_move",
+            "func _can_attack",
+            "func _try_move_active_unit",
+            "func _try_attack_active_unit",
+            "func _try_wait_active_unit",
+        ]:
+            self.assertIn(hook, self.source)
 
 
 if __name__ == "__main__":
