@@ -78,6 +78,7 @@ func _run() -> void:
 	_run_spear_acceptance(scene)
 	_run_rifle_acceptance(scene)
 	_run_sniper_acceptance(scene)
+	_run_shield_acceptance(scene)
 
 	if _failures.is_empty():
 		print("GODOT TESTS PASSED")
@@ -228,6 +229,26 @@ func _run_sniper_acceptance(scene: Control) -> void:
 	_test_sniper_missed_shot_ends_attack(scene)
 
 
+func _run_shield_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_shield_is_active",
+		"_can_shield_intercept",
+		"_intercepting_shield_for",
+		"_damage_shield",
+		"_resolve_blockable_shot",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "Shield API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_shield_valid_geometry_intercepts_protected_ally(scene)
+	_test_shield_invalid_angle_does_not_intercept(scene)
+	_test_shield_breaks_mid_rifle_volley_then_damage_continues(scene)
+	_test_destroyed_shield_never_intercepts(scene)
+	_test_shield_interception_works_for_enemy_team(scene)
+
+
 func _reset_turn_fixture(scene: Control) -> void:
 	scene._create_units()
 	scene._initialize_initiative()
@@ -295,6 +316,40 @@ func _set_sniper_fixture(scene: Control, target_grid: Vector2i = Vector2i(6, 1))
 	scene._unit_by_id("commander")["grid"] = Vector2i(9, 6)
 	scene._begin_activation(arlen)
 	return {"attacker": arlen, "target": target}
+
+
+func _set_player_shield_fixture(scene: Control, weapon := "Sniper", shield_grid := Vector2i(3, 3)) -> Dictionary:
+	_reset_turn_fixture(scene)
+	var attacker = scene._unit_by_id("enemy_rifle")
+	var shield = scene._unit_by_id("brann")
+	var protected = scene._unit_by_id("arlen")
+	attacker["weapon"] = weapon
+	attacker["grid"] = Vector2i(1, 3)
+	shield["grid"] = shield_grid
+	protected["grid"] = Vector2i(4, 3)
+	scene._unit_by_id("enemy_blade")["grid"] = Vector2i(8, 6)
+	scene._unit_by_id("enemy_sniper")["grid"] = Vector2i(8, 5)
+	scene._unit_by_id("commander")["grid"] = Vector2i(9, 6)
+	return {"attacker": attacker, "shield": shield, "protected": protected}
+
+
+func _set_enemy_shield_fixture(scene: Control) -> Dictionary:
+	_reset_turn_fixture(scene)
+	var attacker = scene._unit_by_id("sera")
+	var shield = scene._unit_by_id("enemy_rifle")
+	var protected = scene._unit_by_id("commander")
+	attacker["weapon"] = "Rifle"
+	attacker["grid"] = Vector2i(6, 3)
+	shield["weapon"] = "Shield"
+	shield["weapon_mount_part"] = "Left Arm"
+	shield["shield_max_hp"] = 25
+	shield["shield_hp"] = 25
+	shield["shield_disabled"] = false
+	shield["grid"] = Vector2i(4, 3)
+	protected["grid"] = Vector2i(3, 3)
+	scene._unit_by_id("enemy_blade")["grid"] = Vector2i(8, 6)
+	scene._unit_by_id("enemy_sniper")["grid"] = Vector2i(8, 5)
+	return {"attacker": attacker, "shield": shield, "protected": protected}
 
 
 func _part_hp_snapshot(unit) -> Dictionary:
@@ -749,6 +804,58 @@ func _test_sniper_missed_shot_ends_attack(scene: Control) -> void:
 	_assert_true(fixture["attacker"]["has_attacked"], "Sniper miss marks has_attacked")
 	_assert_true(fixture["attacker"]["activation_complete"], "Sniper miss completes activation")
 	_assert_equal(scene.active_unit["id"], "mira", "Sniper miss advances initiative")
+
+
+func _test_shield_valid_geometry_intercepts_protected_ally(scene: Control) -> void:
+	var fixture := _set_player_shield_fixture(scene)
+	var protected_before := _part_hp_snapshot(fixture["protected"])
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["protected"])
+	var result: Dictionary = scene._resolve_blockable_shot(fixture["attacker"], fixture["protected"], preview, "", 11, 35, 11)
+	_assert_true(result["intercepted"], "valid shield geometry intercepts protected ally")
+	_assert_equal(result["target_id"], "brann", "intercept redirects damage to shield bearer")
+	_assert_equal(result["part_name"], "Shield", "intercepted damage lands on Shield HP")
+	_assert_equal(_changed_part_count(protected_before, _part_hp_snapshot(fixture["protected"])), 0, "protected ally takes no damage from intercepted shot")
+
+
+func _test_shield_invalid_angle_does_not_intercept(scene: Control) -> void:
+	var fixture := _set_player_shield_fixture(scene, "Sniper", Vector2i(4, 4))
+	var protected_before := _part_hp_snapshot(fixture["protected"])
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["protected"])
+	var result: Dictionary = scene._resolve_blockable_shot(fixture["attacker"], fixture["protected"], preview, "", 11, 35, 11)
+	_assert_false(result.get("intercepted", false), "off-angle shield does not intercept")
+	_assert_true(_changed_part_count(protected_before, _part_hp_snapshot(fixture["protected"])) > 0, "invalid angle lets target take normal damage")
+
+
+func _test_shield_breaks_mid_rifle_volley_then_damage_continues(scene: Control) -> void:
+	var fixture := _set_player_shield_fixture(scene, "Rifle")
+	var protected_before := _part_hp_snapshot(fixture["protected"])
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["protected"])
+	var result: Dictionary = scene._resolve_rifle_attack(fixture["attacker"], fixture["protected"], preview, 11)
+	_assert_equal(fixture["shield"]["shield_hp"], 0, "Rifle volley breaks Shield HP")
+	_assert_true(fixture["shield"]["shield_disabled"], "broken Shield disables interception")
+	_assert_true(result["shots"][0]["intercepted"], "first Rifle shot is intercepted")
+	_assert_false(result["shots"][3].get("intercepted", false), "post-break Rifle shot continues to protected target")
+	_assert_true(_changed_part_count(protected_before, _part_hp_snapshot(fixture["protected"])) > 0, "remaining volley damage reaches protected ally after shield break")
+
+
+func _test_destroyed_shield_never_intercepts(scene: Control) -> void:
+	var fixture := _set_player_shield_fixture(scene)
+	scene._damage_shield(fixture["shield"], 999)
+	var protected_before := _part_hp_snapshot(fixture["protected"])
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["protected"])
+	var result: Dictionary = scene._resolve_blockable_shot(fixture["attacker"], fixture["protected"], preview, "", 11, 35, 11)
+	_assert_false(result.get("intercepted", false), "destroyed shield does not intercept")
+	_assert_true(_changed_part_count(protected_before, _part_hp_snapshot(fixture["protected"])) > 0, "destroyed shield lets damage hit protected target")
+
+
+func _test_shield_interception_works_for_enemy_team(scene: Control) -> void:
+	var fixture := _set_enemy_shield_fixture(scene)
+	var protected_before := _part_hp_snapshot(fixture["protected"])
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["protected"])
+	var result: Dictionary = scene._resolve_blockable_shot(fixture["attacker"], fixture["protected"], preview, "", 11, 10, 11)
+	_assert_true(result["intercepted"], "enemy shield can intercept for enemy ally")
+	_assert_equal(result["target_id"], "enemy_rifle", "enemy shield bearer receives intercepted hit")
+	_assert_equal(_changed_part_count(protected_before, _part_hp_snapshot(fixture["protected"])), 0, "enemy protected unit takes no damage from intercepted shot")
 
 
 func _assert_true(actual: bool, message: String) -> void:

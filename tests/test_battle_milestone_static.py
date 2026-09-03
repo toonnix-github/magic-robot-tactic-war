@@ -128,6 +128,17 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn('"damage": 35', self.source)
         self.assertIn('"Body": 10', self.source)
 
+    def test_shield_interception_hooks_are_encoded(self):
+        for hook in [
+            "func _shield_is_active",
+            "func _can_shield_intercept",
+            "func _intercepting_shield_for",
+            "func _damage_shield",
+            "func _resolve_blockable_shot",
+        ]:
+            self.assertIn(hook, self.source)
+        self.assertIn('"shield_hit_weight"', self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

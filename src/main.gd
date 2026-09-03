@@ -28,6 +28,7 @@ const WEAPON_DATA := {
 		"hit_percent": 80,
 		"allow_manual_part": false,
 		"pattern": "single",
+		"blockable": false,
 		"part_weights": {"Head": 20, "Body": 20, "Left Arm": 20, "Right Arm": 20, "Legs": 20},
 	},
 	"Spear": {
@@ -39,6 +40,7 @@ const WEAPON_DATA := {
 		"hit_percent": PLACEHOLDER_HIT_PERCENT,
 		"allow_manual_part": false,
 		"pattern": "line_2",
+		"blockable": false,
 		"part_weights": {"Body": 100},
 	},
 	"Sniper": {
@@ -49,6 +51,7 @@ const WEAPON_DATA := {
 		"hit_percent": PLACEHOLDER_HIT_PERCENT,
 		"allow_manual_part": false,
 		"pattern": "single",
+		"blockable": true,
 		"part_weights": {"Head": 30, "Body": 10, "Left Arm": 20, "Right Arm": 20, "Legs": 20},
 	},
 	"Rifle": {
@@ -60,6 +63,7 @@ const WEAPON_DATA := {
 		"hit_percent": PLACEHOLDER_HIT_PERCENT,
 		"allow_manual_part": false,
 		"pattern": "volley",
+		"blockable": true,
 		"part_weights": {"Head": 20, "Body": 20, "Left Arm": 20, "Right Arm": 20, "Legs": 20},
 	},
 	"Shield": {
@@ -70,6 +74,9 @@ const WEAPON_DATA := {
 		"hit_percent": PLACEHOLDER_HIT_PERCENT,
 		"allow_manual_part": true,
 		"pattern": "single",
+		"blockable": false,
+		"shield_max_hp": 25,
+		"shield_hit_weight": 55,
 		"part_weights": {"Body": 100},
 	},
 	"Commander": {
@@ -80,6 +87,7 @@ const WEAPON_DATA := {
 		"hit_percent": PLACEHOLDER_HIT_PERCENT,
 		"allow_manual_part": true,
 		"pattern": "single",
+		"blockable": true,
 		"part_weights": {"Body": 100},
 	},
 }
@@ -300,6 +308,10 @@ func _create_units() -> void:
 		unit["dodge"] = 10
 		unit["weapon_mount_part"] = _weapon_mount_part(unit)
 		unit["weapon_disabled"] = false
+		var weapon_data := _weapon_data_for(unit)
+		unit["shield_max_hp"] = int(weapon_data.get("shield_max_hp", 0))
+		unit["shield_hp"] = int(unit["shield_max_hp"])
+		unit["shield_disabled"] = int(unit["shield_max_hp"]) <= 0
 		unit["defeated"] = false
 		unit["in_battle"] = true
 		unit["has_moved"] = false
@@ -617,7 +629,7 @@ func _resolve_attack(attacker, target, preview: Dictionary, part_name := "", see
 	elif str(weapon_data.get("pattern", "single")) == "volley":
 		last_attack_result = _resolve_rifle_attack(attacker, target, preview, seed)
 	else:
-		last_attack_result = _resolve_weapon_attack(attacker, target, preview, part_name, seed)
+		last_attack_result = _resolve_blockable_shot(attacker, target, preview, part_name, seed, int(weapon_data["damage"]), seed)
 	if last_attack_result.has("results"):
 		last_action_message = "%s strikes a line with %s" % [attacker["name"], last_attack_result["weapon"]]
 	else:
@@ -688,6 +700,77 @@ func _damage_part(unit, part_name: String, amount: int) -> Dictionary:
 		"destroyed": bool(part["destroyed"]),
 		"destroyed_now": destroyed_now,
 		"orb_disabled": bool(part["orb_disabled"]),
+	}
+
+
+func _damage_shield(unit, amount: int) -> Dictionary:
+	if unit == null or int(unit.get("shield_max_hp", 0)) <= 0:
+		return {}
+
+	var hp_before := int(unit["shield_hp"])
+	var hp_after: int = max(0, hp_before - max(0, amount))
+	unit["shield_hp"] = hp_after
+	if hp_after == 0:
+		unit["shield_disabled"] = true
+	return {
+		"unit_id": str(unit["id"]),
+		"part_name": "Shield",
+		"damage_requested": amount,
+		"damage_applied": hp_before - hp_after,
+		"hp_before": hp_before,
+		"hp_after": hp_after,
+		"destroyed": hp_after == 0,
+		"destroyed_now": hp_before > 0 and hp_after == 0,
+		"orb_disabled": false,
+	}
+
+
+func _resolve_blockable_shot(attacker, target, preview: Dictionary, part_name := "", hit_seed := 0, damage := 0, part_seed := 0) -> Dictionary:
+	var weapon_data := _weapon_data_for(attacker)
+	var shield_unit = _intercepting_shield_for(attacker, target, weapon_data)
+	if shield_unit != null:
+		return _resolve_shield_damage(attacker, shield_unit, target, preview, hit_seed, damage, true)
+	if _should_hit_shield(target, weapon_data, part_seed):
+		return _resolve_shield_damage(attacker, target, target, preview, hit_seed, damage, false)
+	return _resolve_weapon_attack(attacker, target, preview, part_name, hit_seed, damage, part_seed)
+
+
+func _resolve_shield_damage(attacker, shield_unit, original_target, preview: Dictionary, hit_seed: int, damage: int, intercepted: bool) -> Dictionary:
+	var hit_percent := int(preview["hit_percent"])
+	var hit := _roll_hit(hit_percent, hit_seed)
+	var damage_result := _shield_damage_result(shield_unit)
+	if hit:
+		damage_result = _damage_shield(shield_unit, damage)
+	return {
+		"attacker_id": str(attacker["id"]),
+		"target_id": str(shield_unit["id"]),
+		"original_target_id": str(original_target["id"]),
+		"weapon": str(_weapon_data_for(attacker)["name"]),
+		"part_name": "Shield",
+		"damage_requested": int(damage_result["damage_requested"]),
+		"damage_applied": int(damage_result["damage_applied"]),
+		"hp_before": int(damage_result["hp_before"]),
+		"hp_after": int(damage_result["hp_after"]),
+		"destroyed": bool(damage_result["destroyed"]),
+		"hit": hit,
+		"hit_percent": hit_percent,
+		"intercepted": intercepted,
+		"shield_hp_before": int(damage_result["hp_before"]),
+		"shield_hp_after": int(damage_result["hp_after"]),
+	}
+
+
+func _shield_damage_result(unit) -> Dictionary:
+	return {
+		"unit_id": str(unit["id"]),
+		"part_name": "Shield",
+		"damage_requested": 0,
+		"damage_applied": 0,
+		"hp_before": int(unit.get("shield_hp", 0)),
+		"hp_after": int(unit.get("shield_hp", 0)),
+		"destroyed": not _shield_is_active(unit),
+		"destroyed_now": false,
+		"orb_disabled": false,
 	}
 
 
@@ -772,7 +855,7 @@ func _resolve_rifle_attack(attacker, target, preview: Dictionary, seed := 0) -> 
 	for shot_index in range(shot_count):
 		var hit_seed: int = seed + shot_index
 		var part_seed: int = _volley_part_seed(seed, shot_index)
-		var shot := _resolve_weapon_attack(attacker, target, preview, "", hit_seed, int(weapon_data["damage"]), part_seed)
+		var shot := _resolve_blockable_shot(attacker, target, preview, "", hit_seed, int(weapon_data["damage"]), part_seed)
 		shot["shot_index"] = shot_index + 1
 		shots.append(shot)
 
@@ -886,6 +969,7 @@ func _weapon_data_for(unit) -> Dictionary:
 		"hit_percent": PLACEHOLDER_HIT_PERCENT,
 		"allow_manual_part": true,
 		"pattern": "single",
+		"blockable": false,
 		"part_weights": {"Body": 100},
 	}
 
@@ -909,6 +993,64 @@ func _roll_part_for_weapon(weapon_data: Dictionary, seed: int) -> String:
 
 func _roll_hit(hit_percent: int, seed: int) -> bool:
 	return absi(seed) % 100 < clamp(hit_percent, 0, 100)
+
+
+func _shield_is_active(unit) -> bool:
+	return (
+		unit != null
+		and _is_unit_in_battle(unit)
+		and int(unit.get("shield_max_hp", 0)) > 0
+		and int(unit.get("shield_hp", 0)) > 0
+		and not bool(unit.get("shield_disabled", false))
+	)
+
+
+func _should_hit_shield(target, weapon_data: Dictionary, seed: int) -> bool:
+	if not _shield_is_active(target) or not bool(weapon_data.get("blockable", false)):
+		return false
+	var shield_data := _weapon_data_for(target)
+	return absi(seed) % 100 < int(shield_data.get("shield_hit_weight", 0))
+
+
+func _can_shield_intercept(shield_unit, attacker, target, weapon_data: Dictionary = {}) -> bool:
+	if attacker == null or target == null or shield_unit == null:
+		return false
+	var attack_data := weapon_data if not weapon_data.is_empty() else _weapon_data_for(attacker)
+	if not bool(attack_data.get("blockable", false)):
+		return false
+	if not _shield_is_active(shield_unit):
+		return false
+	if shield_unit["team"] != target["team"] or shield_unit["team"] == attacker["team"]:
+		return false
+
+	var shield_to_target: Vector2i = target["grid"] - shield_unit["grid"]
+	if abs(shield_to_target.x) + abs(shield_to_target.y) != 1:
+		return false
+
+	var attacker_to_shield: Vector2i = shield_unit["grid"] - attacker["grid"]
+	if attacker_to_shield == Vector2i.ZERO:
+		return false
+	if attacker_to_shield.x != 0 and attacker_to_shield.y != 0:
+		return false
+
+	var x_step: int = 0
+	var y_step: int = 0
+	if attacker_to_shield.x > 0:
+		x_step = 1
+	elif attacker_to_shield.x < 0:
+		x_step = -1
+	if attacker_to_shield.y > 0:
+		y_step = 1
+	elif attacker_to_shield.y < 0:
+		y_step = -1
+	return Vector2i(x_step, y_step) == shield_to_target
+
+
+func _intercepting_shield_for(attacker, target, weapon_data: Dictionary = {}):
+	for unit in units:
+		if unit["id"] != target["id"] and _can_shield_intercept(unit, attacker, target, weapon_data):
+			return unit
+	return null
 
 
 func _calculate_targetable_tiles(unit) -> Dictionary:
