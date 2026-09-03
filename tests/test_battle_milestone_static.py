@@ -122,6 +122,12 @@ class BattleMilestoneStaticTests(unittest.TestCase):
             self.assertIn(hook, self.source)
         self.assertIn('"shot_count"', self.source)
 
+    def test_sniper_weapon_defaults_are_encoded(self):
+        self.assertIn('"Sniper"', self.source)
+        self.assertIn('"range_min": 2', self.source)
+        self.assertIn('"damage": 35', self.source)
+        self.assertIn('"Body": 10', self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

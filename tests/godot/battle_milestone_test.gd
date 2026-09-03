@@ -77,6 +77,7 @@ func _run() -> void:
 	_run_sword_acceptance(scene)
 	_run_spear_acceptance(scene)
 	_run_rifle_acceptance(scene)
+	_run_sniper_acceptance(scene)
 
 	if _failures.is_empty():
 		print("GODOT TESTS PASSED")
@@ -219,6 +220,14 @@ func _run_rifle_acceptance(scene: Control) -> void:
 	_test_rifle_destroyed_arm_makes_weapon_unusable(scene)
 
 
+func _run_sniper_acceptance(scene: Control) -> void:
+	_test_sniper_cannot_target_inside_minimum_range(scene)
+	_test_sniper_cannot_target_beyond_maximum_range(scene)
+	_test_sniper_default_body_weight_is_ten_percent(scene)
+	_test_sniper_seed_reproduces_precision_part_roll(scene)
+	_test_sniper_missed_shot_ends_attack(scene)
+
+
 func _reset_turn_fixture(scene: Control) -> void:
 	scene._create_units()
 	scene._initialize_initiative()
@@ -265,6 +274,20 @@ func _set_rifle_fixture(scene: Control, target_grid: Vector2i = Vector2i(5, 1)) 
 	var arlen = scene._unit_by_id("arlen")
 	var target = scene._unit_by_id("enemy_blade")
 	arlen["weapon"] = "Rifle"
+	arlen["weapon_mount_part"] = "Right Arm"
+	target["grid"] = target_grid
+	scene._unit_by_id("enemy_rifle")["grid"] = Vector2i(8, 6)
+	scene._unit_by_id("enemy_sniper")["grid"] = Vector2i(8, 5)
+	scene._unit_by_id("commander")["grid"] = Vector2i(9, 6)
+	scene._begin_activation(arlen)
+	return {"attacker": arlen, "target": target}
+
+
+func _set_sniper_fixture(scene: Control, target_grid: Vector2i = Vector2i(6, 1)) -> Dictionary:
+	_reset_turn_fixture(scene)
+	var arlen = scene._unit_by_id("arlen")
+	var target = scene._unit_by_id("enemy_blade")
+	arlen["weapon"] = "Sniper"
 	arlen["weapon_mount_part"] = "Right Arm"
 	target["grid"] = target_grid
 	scene._unit_by_id("enemy_rifle")["grid"] = Vector2i(8, 6)
@@ -683,6 +706,49 @@ func _test_rifle_destroyed_arm_makes_weapon_unusable(scene: Control) -> void:
 	scene._damage_part(fixture["attacker"], "Right Arm", 999)
 	_assert_true(fixture["attacker"]["weapon_disabled"], "destroyed equipped arm disables Rifle")
 	_assert_false(scene._can_attack(fixture["attacker"]), "Rifle cannot attack with destroyed equipped arm")
+
+
+func _test_sniper_cannot_target_inside_minimum_range(scene: Control) -> void:
+	var fixture := _set_sniper_fixture(scene, Vector2i(2, 1))
+	scene._select_action("Attack")
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["target"])
+	_assert_equal(preview["min_range"], 2, "Sniper exposes data-driven minimum range")
+	_assert_false(preview["legal"], "Sniper cannot target adjacent enemies")
+	_assert_false(scene._confirm_attack_target(fixture["target"], "", 11), "inside-minimum Sniper target is rejected")
+
+
+func _test_sniper_cannot_target_beyond_maximum_range(scene: Control) -> void:
+	var fixture := _set_sniper_fixture(scene, Vector2i(8, 1))
+	scene._select_action("Attack")
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["target"])
+	_assert_equal(preview["range"], 6, "Sniper exposes data-driven maximum range")
+	_assert_false(preview["legal"], "Sniper cannot target beyond maximum range")
+
+
+func _test_sniper_default_body_weight_is_ten_percent(scene: Control) -> void:
+	var fixture := _set_sniper_fixture(scene)
+	var weapon_data: Dictionary = scene._weapon_data_for(fixture["attacker"])
+	_assert_equal(int(weapon_data["damage"]), 35, "Sniper damage stays below Sword burst")
+	_assert_equal(int(weapon_data["part_weights"]["Body"]), 10, "Sniper Body weight is exactly 10 percent")
+
+
+func _test_sniper_seed_reproduces_precision_part_roll(scene: Control) -> void:
+	var fixture := _set_sniper_fixture(scene)
+	var weapon_data: Dictionary = scene._weapon_data_for(fixture["attacker"])
+	_assert_equal(scene._roll_part_for_weapon(weapon_data, 35), scene._roll_part_for_weapon(weapon_data, 35), "same seed reproduces Sniper part roll")
+	_assert_equal(scene._roll_part_for_weapon(weapon_data, 35), "Body", "Sniper seed follows weighted Body slot")
+
+
+func _test_sniper_missed_shot_ends_attack(scene: Control) -> void:
+	var fixture := _set_sniper_fixture(scene)
+	var before := _part_hp_snapshot(fixture["target"])
+	scene._select_action("Attack")
+	_assert_true(scene._confirm_attack_target(fixture["target"], "", 95), "Sniper miss resolves and consumes Attack")
+	_assert_false(scene.last_attack_result["hit"], "Sniper miss records miss result")
+	_assert_equal(_changed_part_count(before, _part_hp_snapshot(fixture["target"])), 0, "Sniper miss deals no damage")
+	_assert_true(fixture["attacker"]["has_attacked"], "Sniper miss marks has_attacked")
+	_assert_true(fixture["attacker"]["activation_complete"], "Sniper miss completes activation")
+	_assert_equal(scene.active_unit["id"], "mira", "Sniper miss advances initiative")
 
 
 func _assert_true(actual: bool, message: String) -> void:

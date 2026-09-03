@@ -43,13 +43,13 @@ const WEAPON_DATA := {
 	},
 	"Sniper": {
 		"name": "Sniper",
-		"range_min": 1,
+		"range_min": 2,
 		"range_max": 6,
-		"damage": PLACEHOLDER_ATTACK_DAMAGE,
+		"damage": 35,
 		"hit_percent": PLACEHOLDER_HIT_PERCENT,
-		"allow_manual_part": true,
+		"allow_manual_part": false,
 		"pattern": "single",
-		"part_weights": {"Body": 100},
+		"part_weights": {"Head": 30, "Body": 10, "Left Arm": 20, "Right Arm": 20, "Legs": 20},
 	},
 	"Rifle": {
 		"name": "Rifle",
