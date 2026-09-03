@@ -173,6 +173,14 @@ const MISSIONS_DATA := {
 			],
 		},
 	},
+	"ascending_ridge": {
+		"id": "ascending_ridge",
+		"name": "Ascending Ridge",
+		"objective": "defeat_commander",
+		"objective_label": "Defeat Commander",
+		"commander_id": "commander",
+		"cover_tiles": [Vector2i(3, 2), Vector2i(5, 4), Vector2i(7, 1), Vector2i(7, 5)],
+	},
 }
 
 
@@ -195,7 +203,9 @@ enum TurnState {
 }
 
 var current_mission := "ancient_ruins"
+var mission_swapped_sides := false
 var units := []
+
 var active_unit = null
 var selected_unit = null
 var selected_action := "Move"
@@ -225,14 +235,20 @@ func _ready() -> void:
 	print("Graybox battle milestone loaded: 7x10 grid, selection, movement, and Phase 1 HUD.")
 
 
-func _load_mission(mission_id: String) -> void:
+func _load_mission(mission_id: String, swapped_sides: bool = false) -> void:
 	if not MISSIONS_DATA.has(mission_id):
 		return
 	current_mission = mission_id
+	mission_swapped_sides = swapped_sides
+	turn_number = 1
+	turn_log.clear()
+	last_action_message = "Ready"
 	_create_terrain()
 	_create_units()
 	_initialize_initiative()
 	_begin_next_activation()
+
+
 
 
 func _notification(what: int) -> void:
@@ -405,6 +421,79 @@ func _create_units() -> void:
 		initial_time_by_id["scavenger_beta"] = 3.0
 		initial_time_by_id["scavenger_gamma"] = 3.5
 		initial_time_by_id["scavenger_delta"] = 5.0
+	elif current_mission == "ascending_ridge":
+		enemy_units = [
+			{
+				"id": "enemy_blade",
+				"name": "Enemy Blade",
+				"mech": "Rust Frame",
+				"weapon": "Sword",
+				"team": "enemy",
+				"letter": "E",
+				"grid": Vector2i(6, 5),
+				"color": Color(0.77, 0.43, 0.43),
+				"hp": 0.85,
+				"parts": {"Head": 0.80, "Body": 0.85, "Left Arm": 0.78, "Right Arm": 0.76, "Legs": 0.82},
+			},
+			{
+				"id": "enemy_ridge_guard",
+				"name": "Ridge Guard",
+				"mech": "Bulwark Frame",
+				"weapon": "Shield",
+				"team": "enemy",
+				"letter": "G",
+				"grid": Vector2i(6, 3),
+				"color": Color(0.77, 0.43, 0.43),
+				"hp": 0.90,
+				"parts": {"Head": 0.85, "Body": 0.90, "Left Arm": 0.85, "Right Arm": 0.85, "Legs": 0.85},
+			},
+			{
+				"id": "enemy_rifle",
+				"name": "Enemy Rifle",
+				"mech": "Range Frame",
+				"weapon": "Rifle",
+				"team": "enemy",
+				"letter": "R",
+				"grid": Vector2i(7, 4),
+				"color": Color(0.77, 0.43, 0.43),
+				"hp": 0.83,
+				"parts": {"Head": 0.77, "Body": 0.83, "Left Arm": 0.81, "Right Arm": 0.79, "Legs": 0.84},
+			},
+			{
+				"id": "enemy_sniper",
+				"name": "Enemy Sniper",
+				"mech": "Needle Frame",
+				"weapon": "Sniper",
+				"team": "enemy",
+				"letter": "N",
+				"grid": Vector2i(8, 1),
+				"color": Color(0.77, 0.43, 0.43),
+				"hp": 0.78,
+				"parts": {"Head": 0.82, "Body": 0.78, "Left Arm": 0.70, "Right Arm": 0.86, "Legs": 0.72},
+			},
+			{
+				"id": "commander",
+				"name": "Commander Kael",
+				"mech": "High Ridge",
+				"weapon": "Commander",
+				"team": "enemy",
+				"letter": "K",
+				"grid": Vector2i(9, 3),
+				"color": Color(0.72, 0.36, 0.36),
+				"hp": 0.95,
+				"parts": {"Head": 0.92, "Body": 0.95, "Left Arm": 0.90, "Right Arm": 0.90, "Legs": 0.86},
+			},
+		]
+		speed_by_id["enemy_blade"] = 8
+		speed_by_id["enemy_ridge_guard"] = 5
+		speed_by_id["enemy_rifle"] = 7
+		speed_by_id["commander"] = 6
+		speed_by_id["enemy_sniper"] = 4
+		initial_time_by_id["enemy_blade"] = 1.0
+		initial_time_by_id["enemy_ridge_guard"] = 2.5
+		initial_time_by_id["enemy_rifle"] = 3.0
+		initial_time_by_id["commander"] = 5.0
+		initial_time_by_id["enemy_sniper"] = 7.0
 	else:
 		enemy_units = [
 			{
@@ -480,6 +569,11 @@ func _create_units() -> void:
 		initial_time_by_id["enemy_sniper"] = 7.0
 
 	units = player_units + enemy_units
+
+	if mission_swapped_sides:
+		for unit in units:
+			unit["grid"] = Vector2i(GRID_COLUMNS - 1 - unit["grid"].x, unit["grid"].y)
+
 
 	for unit in units:
 		unit["speed"] = speed_by_id[unit["id"]]
@@ -1782,7 +1876,19 @@ func _default_height_at(grid) -> int:
 		if grid.x >= 3 and grid.x <= 7:
 			return 0
 		return 1
+	elif current_mission == "ascending_ridge":
+		if grid.x <= 1:
+			return 0
+		elif grid.x <= 3:
+			return 1
+		elif grid.x <= 5:
+			return 2
+		elif grid.x <= 7:
+			return 3
+		else:
+			return 4
 	return int(clamp(floor(float(grid.x) / 2.0), 0.0, 4.0))
+
 
 
 
@@ -2194,8 +2300,10 @@ func _battle_summary(activations: int = 0) -> Dictionary:
 
 	return {
 		"mission_id": current_mission,
+		"swapped_sides": mission_swapped_sides,
 		"winner": _battle_winner(),
 		"is_over": _is_battle_over(),
+
 		"turns": turn_number,
 		"activations": activations,
 		"player_survivors": player_survivors,

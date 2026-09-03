@@ -223,9 +223,16 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn("reward_seed", self.source)
         self.assertIn('"scavenger_alpha"', self.source)
 
+    def test_ascending_ridge_mission_and_slope_are_encoded(self):
+        self.assertIn('"ascending_ridge"', self.source)
+        self.assertIn("mission_swapped_sides", self.source)
+        self.assertIn('"enemy_ridge_guard"', self.source)
+        self.assertIn("swapped_sides", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

@@ -86,8 +86,10 @@ func _run() -> void:
 	_run_ai_and_auto_acceptance(scene)
 	_run_ancient_ruins_acceptance(scene)
 	_run_crystal_quarry_acceptance(scene)
+	_run_ascending_ridge_acceptance(scene)
 
 	if _failures.is_empty():
+
 
 
 		print("GODOT TESTS PASSED")
@@ -1282,8 +1284,87 @@ func _test_crystal_quarry_auto_battle_completes_deterministically(scene: Control
 	_assert_true(run1["is_over"], "Crystal Quarry Auto battle completes")
 
 
+func _run_ascending_ridge_acceptance(scene: Control) -> void:
+	_test_ascending_ridge_no_adjacent_step_exceeds_one_elevation(scene)
+	_test_ascending_ridge_height_hit_modifier_clamps_at_cap(scene)
+	_test_ascending_ridge_swapping_sides_alters_tactical_outcome(scene)
+	_test_ascending_ridge_melee_can_reach_combat_via_slope(scene)
+	_test_ascending_ridge_shield_protects_uphill_advancing_formation(scene)
+
+
+func _test_ascending_ridge_no_adjacent_step_exceeds_one_elevation(scene: Control) -> void:
+	scene._load_mission("ascending_ridge")
+	var min_h := 99
+	var max_h := -99
+	for x in range(scene.GRID_COLUMNS):
+		for y in range(scene.GRID_ROWS):
+			var grid := Vector2i(x, y)
+			var h: int = scene._height_at(grid)
+			if h < min_h: min_h = h
+			if h > max_h: max_h = h
+			for dir in scene.DIRECTIONS:
+				var neighbor: Vector2i = grid + dir
+				if scene._is_in_bounds(neighbor):
+					var nh: int = scene._height_at(neighbor)
+					_assert_true(abs(h - nh) <= 1, "slope step delta at (%d,%d)->(%d,%d) is <= 1" % [x, y, neighbor.x, neighbor.y])
+
+	_assert_equal(min_h, 0, "Ascending Ridge minimum elevation is H0")
+	_assert_equal(max_h, 4, "Ascending Ridge maximum elevation is H4")
+
+
+func _test_ascending_ridge_height_hit_modifier_clamps_at_cap(scene: Control) -> void:
+	scene._load_mission("ascending_ridge")
+	var low_unit = scene._unit_by_id("arlen")
+	var high_unit = scene._unit_by_id("commander")
+	low_unit["grid"] = Vector2i(0, 3)
+	high_unit["grid"] = Vector2i(9, 3)
+	var uphill_mod: int = scene._height_hit_modifier(low_unit, high_unit)
+	var downhill_mod: int = scene._height_hit_modifier(high_unit, low_unit)
+	_assert_equal(uphill_mod, -15, "uphill attack from H0 to H4 clamps at -15% hit")
+	_assert_equal(downhill_mod, 15, "downhill attack from H4 to H0 clamps at +15% hit")
+
+
+func _test_ascending_ridge_swapping_sides_alters_tactical_outcome(scene: Control) -> void:
+	scene._load_mission("ascending_ridge", false)
+	var arlen_uphill = scene._unit_by_id("arlen")
+	_assert_true(arlen_uphill["grid"].x <= 2, "normal deployment starts player on low ground")
+	var uphill_summary: Dictionary = scene.run_auto_battle(40, 1337)
+	_assert_false(uphill_summary["swapped_sides"], "uphill summary records swapped_sides false")
+
+	scene._load_mission("ascending_ridge", true)
+	var arlen_downhill = scene._unit_by_id("arlen")
+	_assert_true(arlen_downhill["grid"].x >= 7, "swapped deployment starts player on high ground")
+	var downhill_summary: Dictionary = scene.run_auto_battle(40, 1337)
+	_assert_true(downhill_summary["swapped_sides"], "downhill summary records swapped_sides true")
+	_assert_true(uphill_summary["destroyed_parts"] != downhill_summary["destroyed_parts"], "uphill and downhill runs produce different tactical outcomes")
+
+
+
+func _test_ascending_ridge_melee_can_reach_combat_via_slope(scene: Control) -> void:
+	scene._load_mission("ascending_ridge", false)
+	var blade = scene._unit_by_id("enemy_blade")
+	blade["grid"] = Vector2i(6, 3)
+	var arlen = scene._unit_by_id("arlen")
+	arlen["grid"] = Vector2i(4, 3)
+	var reachable: Dictionary = scene._calculate_reachable_tiles(arlen)
+	_assert_true(reachable.has(scene._grid_key(Vector2i(5, 3))), "melee unit can legally step uphill toward target")
+
+
+func _test_ascending_ridge_shield_protects_uphill_advancing_formation(scene: Control) -> void:
+	scene._load_mission("ascending_ridge", false)
+	var brann = scene._unit_by_id("brann")
+	var mira = scene._unit_by_id("mira")
+	var enemy_sniper = scene._unit_by_id("enemy_sniper")
+	brann["grid"] = Vector2i(5, 3)
+	mira["grid"] = Vector2i(4, 3)
+	enemy_sniper["grid"] = Vector2i(8, 3)
+	scene._begin_activation(enemy_sniper)
+	var interceptor = scene._intercepting_shield_for(enemy_sniper, mira)
+	_assert_equal(interceptor["id"], "brann", "shield formation intercepts downhill sniper shot targeting ally behind shield")
+
 
 func _assert_true(actual: bool, message: String) -> void:
+
 
 
 
