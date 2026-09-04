@@ -1,6 +1,8 @@
 extends Control
 class_name HangarScreen
 
+signal deploy_requested(loadouts: Dictionary)
+
 const GameDataScript := preload("res://src/data/game_data.gd")
 const MechBuildModelScript := preload("res://src/data/mech_build_model.gd")
 
@@ -15,6 +17,9 @@ var builds: Dictionary = build_model.prototype_builds()
 var unit_tab_rects: Dictionary = {}
 var nav_rects: Dictionary = {}
 var highlighted_part_name := "Head"
+var squad_view_active := false
+var deploy_button_rect := Rect2()
+var squad_toggle_rect := Rect2()
 
 
 func _ready() -> void:
@@ -152,6 +157,16 @@ func _gui_input(event: InputEvent) -> void:
 	if press_position == null:
 		return
 
+	if deploy_button_rect.has_point(press_position):
+		deploy()
+		accept_event()
+		return
+
+	if squad_toggle_rect.has_point(press_position):
+		toggle_squad_view()
+		accept_event()
+		return
+
 	if nav_rects.get("previous", Rect2()).has_point(press_position):
 		select_previous_unit()
 		accept_event()
@@ -177,10 +192,16 @@ func _draw() -> void:
 	_draw_panel(rects["header"], Color(0.10, 0.13, 0.14))
 	_draw_title()
 	_draw_unit_tabs(rects["tabs"])
-	_draw_unit_identity(rects["identity"])
-	_draw_weapon_panel(rects["weapon"])
-	_draw_parts_panel(rects["parts"])
-	_draw_part_options(rects["options"])
+	_draw_deploy_button()
+
+	if squad_view_active:
+		_draw_squad_preparation_view()
+	else:
+		_draw_unit_identity(rects["identity"])
+		_draw_weapon_panel(rects["weapon"])
+		_draw_parts_panel(rects["parts"])
+		_draw_part_options(rects["options"])
+		_draw_squad_toggle_button()
 
 
 func _draw_title() -> void:
@@ -388,4 +409,115 @@ func build_signals(build: Dictionary = {}) -> Dictionary:
 
 func current_build_signals() -> Dictionary:
 	return build_signals()
+
+
+func squad_overview() -> Array:
+	var overview: Array = []
+	for unit_id in UNIT_IDS:
+		var build: Dictionary = builds.get(unit_id, {})
+		var summary: Dictionary = build_model.build_summary(build, GameDataScript.WEAPON_DATA, GameDataScript.ORB_DATA, GameDataScript.PART_NAMES)
+		var signals: Dictionary = build_model.build_signals(build, GameDataScript.WEAPON_DATA, GameDataScript.ORB_DATA, GameDataScript.PART_NAMES)
+		var stats: Dictionary = signals.get("key_stats", {})
+		overview.append({
+			"unit_id": unit_id,
+			"pilot": _pilot_name(unit_id),
+			"mech": str(summary.get("mech", "")),
+			"weapon": str(summary.get("weapon", "")),
+			"weapon_handedness": str(summary.get("weapon_handedness", "")),
+			"off_hand": str(summary.get("off_hand", "")),
+			"has_shield": bool(summary.get("has_shield", false)),
+			"move": int(stats.get("move", 3)),
+			"max_hp": int(stats.get("max_hp", 0)),
+			"summary_line": str(signals.get("summary_line", "")),
+			"role_tags": signals.get("role_tags", []).duplicate(),
+			"build": build.duplicate(true),
+		})
+	return overview
+
+
+func deploy_loadouts() -> Dictionary:
+	var loadouts: Dictionary = {}
+	for unit_id in UNIT_IDS:
+		var build: Dictionary = builds.get(unit_id, {})
+		loadouts[unit_id] = build_model.battle_loadout_for_build(
+			build,
+			GameDataScript.WEAPON_DATA,
+			GameDataScript.ORB_DATA,
+			GameDataScript.PART_NAMES
+		)
+	return loadouts
+
+
+func deploy() -> Dictionary:
+	var loadouts: Dictionary = deploy_loadouts()
+	deploy_requested.emit(loadouts)
+	return loadouts
+
+
+func toggle_squad_view() -> bool:
+	squad_view_active = not squad_view_active
+	queue_redraw()
+	return squad_view_active
+
+
+func _draw_deploy_button() -> void:
+	deploy_button_rect = Rect2(_p(1030, 38), _p(180, 44))
+	draw_rect(deploy_button_rect, Color(0.20, 0.44, 0.32), true)
+	draw_rect(deploy_button_rect, Color(0.46, 0.75, 0.56), false, 1.5)
+	_draw_centered_text(deploy_button_rect, "DEPLOY TO BATTLE", 13, Color(0.95, 0.98, 0.96))
+
+
+func _draw_squad_toggle_button() -> void:
+	squad_toggle_rect = Rect2(_p(674, 488), _p(580, 46))
+	draw_rect(squad_toggle_rect, Color(0.14, 0.18, 0.20), true)
+	draw_rect(squad_toggle_rect, Color(0.35, 0.48, 0.52), false, 1.5)
+	_draw_centered_text(squad_toggle_rect, "REVIEW SQUAD PREPARATION (4 MECHS)", 13, Color(0.85, 0.92, 0.94))
+
+
+func _draw_squad_preparation_view() -> void:
+	var overview: Array = squad_overview()
+	var col_w: float = (size.x - 56.0) / 4.0
+	var y_top: float = 128.0
+	var h: float = 348.0
+
+	for i in range(overview.size()):
+		var info: Dictionary = overview[i]
+		var col_rect := Rect2(Vector2(26.0 + i * (col_w + 8.0), y_top), Vector2(col_w, h))
+		_draw_panel(col_rect, Color(0.11, 0.14, 0.16))
+
+		var is_active: bool = str(info["unit_id"]) == current_unit_id
+		if is_active:
+			draw_rect(col_rect, Color(0.46, 0.65, 0.56), false, 2.0)
+
+		var px := col_rect.position.x + 14.0
+		draw_string(_font(), Vector2(px, col_rect.position.y + 28), str(info["pilot"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(18), Color(0.94, 0.96, 0.95))
+		draw_string(_font(), Vector2(px, col_rect.position.y + 50), str(info["mech"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(12), Color(0.63, 0.70, 0.71))
+
+		var wep_line := "%s (%s)" % [str(info["weapon"]), str(info["weapon_handedness"])]
+		if bool(info["has_shield"]):
+			wep_line += " + Shield"
+		draw_string(_font(), Vector2(px, col_rect.position.y + 82), wep_line, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(13), Color(0.86, 0.77, 0.52))
+
+		var stat_line := "Move %d · Armor %d HP" % [int(info["move"]), int(info["max_hp"])]
+		draw_string(_font(), Vector2(px, col_rect.position.y + 110), stat_line, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(12), Color(0.72, 0.82, 0.80))
+
+		draw_string(_font(), Vector2(px, col_rect.position.y + 142), "SIGNALS:", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.55, 0.62, 0.64))
+		var sum_line := str(info["summary_line"])
+		draw_string(_font(), Vector2(px, col_rect.position.y + 162), sum_line, HORIZONTAL_ALIGNMENT_LEFT, col_w - 28.0, _font_size(10), Color(0.78, 0.84, 0.84))
+
+		var tags_y := col_rect.position.y + 210.0
+		for tag in info.get("role_tags", []):
+			draw_string(_font(), Vector2(px, tags_y), "• " + str(tag), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.56, 0.75, 0.82))
+			tags_y += 18.0
+
+	# Bottom bar in squad view
+	squad_toggle_rect = Rect2(_p(26, 488), _p(580, 46))
+	draw_rect(squad_toggle_rect, Color(0.14, 0.18, 0.20), true)
+	draw_rect(squad_toggle_rect, Color(0.35, 0.48, 0.52), false, 1.5)
+	_draw_centered_text(squad_toggle_rect, "<- BACK TO MECH CUSTOMIZATION", 13, Color(0.85, 0.92, 0.94))
+
+	var deploy_squad_rect := Rect2(_p(674, 488), _p(580, 46))
+	draw_rect(deploy_squad_rect, Color(0.20, 0.44, 0.32), true)
+	draw_rect(deploy_squad_rect, Color(0.46, 0.75, 0.56), false, 1.5)
+	_draw_centered_text(deploy_squad_rect, "CONFIRM & DEPLOY SQUAD TO BATTLE", 14, Color(0.95, 0.98, 0.96))
 
