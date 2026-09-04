@@ -359,6 +359,29 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIsNotNone(sniper_match, "Sniper weapon data is present")
         self.assertIn('"Body": 10', sniper_match.group("body"))
 
+    def test_mission_selector_and_debug_controls_are_encoded(self):
+        for hook in [
+            "func _select_mission",
+            "func _restart_current_mission",
+            "func _open_mission_selector",
+            "func _close_mission_selector",
+            "func _toggle_mission_selector",
+            "func _set_auto_battle",
+            "func _toggle_auto_battle",
+            "func _set_fast_simulation",
+            "func _toggle_fast_simulation",
+            "func _set_simulation_seed",
+            "func _cycle_debug_seed",
+            "func _draw_debug_control_bar",
+            "func _draw_mission_selector_overlay",
+        ]:
+            self.assertIn(hook, self.source)
+        for mission in ["ancient_ruins", "crystal_quarry", "ascending_ridge"]:
+            self.assertIn(f'"{mission}"', self.source)
+        self.assertIn("purpose", self.source)
+        self.assertIn("mission_selector_open", self.source)
+        self.assertIn("fast_simulation", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

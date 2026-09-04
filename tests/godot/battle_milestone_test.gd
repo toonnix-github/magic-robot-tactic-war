@@ -102,6 +102,7 @@ func _run() -> void:
 	_run_orb_loadout_and_status_acceptance(scene)
 	_run_pilot_passives_acceptance(scene)
 	_run_weapon_data_validation_acceptance(scene)
+	_run_mission_selector_and_debug_controls_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -2407,6 +2408,149 @@ func _test_weapons_remain_tactically_distinct(scene: Control) -> void:
 	_assert_equal(sniper["range_min"], 2, "Sniper has minimum range 2")
 	_assert_equal(sniper["range_max"], 6, "Sniper reaches range 6")
 	_assert_equal(sniper["part_weights"]["Head"], 30, "Sniper head weight is highest at 30%")
+
+
+func _run_mission_selector_and_debug_controls_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_select_mission",
+		"_restart_current_mission",
+		"_open_mission_selector",
+		"_close_mission_selector",
+		"_toggle_mission_selector",
+		"_set_auto_battle",
+		"_toggle_auto_battle",
+		"_set_fast_simulation",
+		"_toggle_fast_simulation",
+		"_set_simulation_seed",
+		"_cycle_debug_seed",
+		"_draw_debug_control_bar",
+		"_draw_mission_selector_overlay",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "mission selector API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_each_mission_can_be_selected_and_launched(scene)
+	_test_ascending_ridge_both_deployment_directions(scene)
+	_test_manual_and_auto_mode_toggle_before_battle(scene)
+	_test_fast_simulation_toggles_presentation(scene)
+	_test_debug_seed_selection_and_cycling(scene)
+	_test_restart_restores_initial_mission_state_and_loadouts(scene)
+	_test_deterministic_reproducibility_with_same_seed_mission_loadout(scene)
+	_test_mission_selector_overlay_toggle_and_content(scene)
+
+
+func _test_each_mission_can_be_selected_and_launched(scene: Control) -> void:
+	scene._select_mission("ancient_ruins", false)
+	_assert_equal(scene.current_mission, "ancient_ruins", "Ancient Ruins selected and loaded")
+	_assert_equal(scene.turn_number, 1, "starts at turn 1")
+
+	scene._select_mission("crystal_quarry", false)
+	_assert_equal(scene.current_mission, "crystal_quarry", "Crystal Quarry selected and loaded")
+	_assert_equal(scene.turn_number, 1, "Crystal Quarry starts at turn 1")
+
+	scene._select_mission("ascending_ridge", false)
+	_assert_equal(scene.current_mission, "ascending_ridge", "Ascending Ridge selected and loaded")
+	_assert_equal(scene.turn_number, 1, "Ascending Ridge starts at turn 1")
+
+
+func _test_ascending_ridge_both_deployment_directions(scene: Control) -> void:
+	scene._select_mission("ascending_ridge", false)
+	_assert_false(scene.mission_swapped_sides, "normal deployment is uphill (swapped_sides = false)")
+	var arlen = scene._unit_by_id("arlen")
+	var enemy = scene._unit_by_id("commander")
+	_assert_true(arlen["grid"].x < enemy["grid"].x, "player starts on left side for uphill assault")
+
+	scene._select_mission("ascending_ridge", true)
+	_assert_true(scene.mission_swapped_sides, "swapped deployment is downhill (swapped_sides = true)")
+	arlen = scene._unit_by_id("arlen")
+	enemy = scene._unit_by_id("commander")
+	_assert_true(arlen["grid"].x > enemy["grid"].x, "player starts on right ridge for downhill defense")
+
+
+func _test_manual_and_auto_mode_toggle_before_battle(scene: Control) -> void:
+	scene._select_mission("ancient_ruins", false)
+	scene._set_auto_battle(false)
+	_assert_false(scene.auto_battle, "manual mode can be set before battle")
+
+	scene._toggle_auto_battle()
+	_assert_true(scene.auto_battle, "auto mode can be toggled on")
+
+	scene._toggle_auto_battle()
+	_assert_false(scene.auto_battle, "auto mode can be toggled off")
+
+
+func _test_fast_simulation_toggles_presentation(scene: Control) -> void:
+	scene._set_fast_simulation(true)
+	_assert_true(scene.fast_simulation, "fast simulation can be enabled")
+	_assert_false(scene.enemy_presentation_enabled, "presentation disabled in fast simulation")
+	_assert_false(scene.attack_presentation_enabled, "attack presentation disabled in fast simulation")
+
+	scene._toggle_fast_simulation()
+	_assert_false(scene.fast_simulation, "fast simulation toggled off")
+	_assert_true(scene.enemy_presentation_enabled, "presentation restored for manual play")
+	_assert_true(scene.attack_presentation_enabled, "attack presentation restored for manual play")
+
+
+func _test_debug_seed_selection_and_cycling(scene: Control) -> void:
+	scene._set_simulation_seed(1337)
+	_assert_equal(scene.simulation_seed, 1337, "simulation seed set to 1337")
+	_assert_equal(scene.current_debug_seed, 1337, "current debug seed recorded")
+
+	var cycled: int = scene._cycle_debug_seed()
+	_assert_equal(scene.simulation_seed, cycled, "cycled seed applied to simulation")
+	_assert_equal(scene.current_debug_seed, cycled, "cycled debug seed updated")
+
+
+func _test_restart_restores_initial_mission_state_and_loadouts(scene: Control) -> void:
+	scene._select_mission("ancient_ruins", false)
+	scene.configure_player_loadouts({"arlen": {"weapon": "Sword"}})
+	var arlen = scene._unit_by_id("arlen")
+	_assert_equal(arlen["weapon"], "Sword", "custom weapon configured")
+	scene._damage_part(arlen, "Head", 30)
+	_assert_true(arlen["parts"]["Head"]["hp"] < 84, "Arlen Head took damage")
+
+	scene._restart_current_mission()
+	arlen = scene._unit_by_id("arlen")
+	_assert_equal(scene.turn_number, 1, "turn number reset to 1 on restart")
+	_assert_equal(arlen["weapon"], "Sword", "configured weapon preserved across restart")
+	_assert_equal(arlen["parts"]["Head"]["hp"], 84, "Head HP restored to initial 84")
+	_assert_true(scene.turn_log.is_empty(), "turn log reset on restart")
+
+
+func _test_deterministic_reproducibility_with_same_seed_mission_loadout(scene: Control) -> void:
+	scene._select_mission("ancient_ruins", false)
+	scene.configure_player_loadouts({"arlen": {"weapon": "Sword"}})
+	scene.set_debug_seed(42)
+	var run1: Dictionary = scene.run_auto_battle(20, 42)
+
+	scene._restart_current_mission()
+	scene.set_debug_seed(42)
+	var run2: Dictionary = scene.run_auto_battle(20, 42)
+
+	_assert_equal(run1["winner"], run2["winner"], "reproducible winner with same seed and loadout")
+	_assert_equal(run1["turns"], run2["turns"], "reproducible turns with same seed and loadout")
+	_assert_equal(run1["turn_log"].size(), run2["turn_log"].size(), "reproducible turn log size")
+
+
+func _test_mission_selector_overlay_toggle_and_content(scene: Control) -> void:
+	scene._open_mission_selector()
+	_assert_true(scene.mission_selector_open, "mission selector is open")
+
+	for m_id in ["ancient_ruins", "crystal_quarry", "ascending_ridge"]:
+		var m_data: Dictionary = scene.MISSIONS_DATA[m_id]
+		_assert_true(m_data.has("purpose"), "%s has purpose description" % m_id)
+		_assert_true(str(m_data["purpose"]).length() > 10, "%s purpose is descriptive" % m_id)
+
+	scene.notification(CanvasItem.NOTIFICATION_DRAW)
+
+	scene._close_mission_selector()
+	_assert_false(scene.mission_selector_open, "mission selector closed")
+
+	scene._toggle_mission_selector()
+	_assert_true(scene.mission_selector_open, "mission selector toggled open")
+	scene._close_mission_selector()
 
 
 func _assert_true(actual: bool, message: String) -> void:

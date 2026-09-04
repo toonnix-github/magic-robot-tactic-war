@@ -223,6 +223,7 @@ const MISSIONS_DATA := {
 		"name": "Ancient Ruins",
 		"objective": "defeat_commander",
 		"objective_label": "Defeat Commander",
+		"purpose": "Baseline 7x10 combat, cover positions, stepped elevation up to H2.",
 		"commander_id": "commander",
 		"cover_tiles": [Vector2i(3, 2), Vector2i(5, 4), Vector2i(6, 2), Vector2i(8, 1)],
 	},
@@ -231,6 +232,7 @@ const MISSIONS_DATA := {
 		"name": "Crystal Quarry",
 		"objective": "defeat_all",
 		"objective_label": "Defeat All Enemies",
+		"purpose": "Steeper terrain, H3 chokepoints, defeat-all objective, loot rewards.",
 		"cover_tiles": [Vector2i(3, 1), Vector2i(3, 5), Vector2i(5, 3), Vector2i(7, 2)],
 		"loot_table": {
 			"credits": 500,
@@ -249,6 +251,7 @@ const MISSIONS_DATA := {
 		"name": "Ascending Ridge",
 		"objective": "defeat_commander",
 		"objective_label": "Defeat Commander",
+		"purpose": "Continuous slope H0-H4; test uphill assault vs downhill defense.",
 		"commander_id": "commander",
 		"cover_tiles": [Vector2i(3, 2), Vector2i(5, 4), Vector2i(7, 1), Vector2i(7, 5)],
 	},
@@ -313,6 +316,13 @@ var attack_feedback_queue: Array[String] = []
 var attack_feedback_log: Array[String] = []
 var attack_feedback_attacker_id := ""
 var attack_feedback_target_id := ""
+const DEBUG_SEEDS: Array[int] = [1337, 42, 9999, 101, 777]
+var current_debug_seed: int = 1337
+var mission_selector_open: bool = false
+var fast_simulation: bool = false
+var last_configured_loadouts: Dictionary = {}
+var debug_rects: Dictionary = {}
+var mission_selector_rects: Dictionary = {}
 
 
 
@@ -362,6 +372,63 @@ func _gui_input(event: InputEvent) -> void:
 		accept_event()
 		return
 
+	if mission_selector_open:
+		if mission_selector_rects.get("close", Rect2()).has_point(press_position):
+			_close_mission_selector()
+			accept_event()
+			return
+		if mission_selector_rects.get("auto_toggle", Rect2()).has_point(press_position):
+			_toggle_auto_battle()
+			accept_event()
+			return
+		if mission_selector_rects.get("fast_sim", Rect2()).has_point(press_position):
+			_toggle_fast_simulation()
+			accept_event()
+			return
+		if mission_selector_rects.get("seed_cycle", Rect2()).has_point(press_position):
+			_cycle_debug_seed()
+			accept_event()
+			return
+		if mission_selector_rects.get("ancient_ruins", Rect2()).has_point(press_position):
+			_select_mission("ancient_ruins", false)
+			accept_event()
+			return
+		if mission_selector_rects.get("crystal_quarry", Rect2()).has_point(press_position):
+			_select_mission("crystal_quarry", false)
+			accept_event()
+			return
+		if mission_selector_rects.get("ascending_ridge_uphill", Rect2()).has_point(press_position):
+			_select_mission("ascending_ridge", false)
+			accept_event()
+			return
+		if mission_selector_rects.get("ascending_ridge_downhill", Rect2()).has_point(press_position):
+			_select_mission("ascending_ridge", true)
+			accept_event()
+			return
+		accept_event()
+		return
+
+	if debug_rects.get("mission_selector", Rect2()).has_point(press_position):
+		_open_mission_selector()
+		accept_event()
+		return
+	if debug_rects.get("restart", Rect2()).has_point(press_position):
+		_restart_current_mission()
+		accept_event()
+		return
+	if debug_rects.get("auto_toggle", Rect2()).has_point(press_position):
+		_toggle_auto_battle()
+		accept_event()
+		return
+	if debug_rects.get("fast_sim", Rect2()).has_point(press_position):
+		_toggle_fast_simulation()
+		accept_event()
+		return
+	if debug_rects.get("seed_cycle", Rect2()).has_point(press_position):
+		_cycle_debug_seed()
+		accept_event()
+		return
+
 	if turn_state == TurnState.MOVE_PREVIEW:
 		if move_confirm_rect.has_point(press_position):
 			_confirm_move()
@@ -399,7 +466,6 @@ func _gui_input(event: InputEvent) -> void:
 		accept_event()
 		return
 
-
 	_handle_grid_tap(press_position)
 	accept_event()
 
@@ -413,6 +479,8 @@ func _draw() -> void:
 	_draw_part_status_panel()
 	_draw_enemy_inspection_panel()
 	_draw_action_bar()
+	_draw_debug_control_bar()
+	_draw_mission_selector_overlay()
 
 
 func _create_units() -> void:
@@ -3087,7 +3155,10 @@ func _draw_mission_panel() -> void:
 				detail = "VICTORY"
 		else:
 			detail = "DEFEAT"
-	draw_string(_font(), _p(1052, 55), "TURN %02d" % turn_number, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.56, 0.63, 0.67))
+	var turn_str := "TURN %02d" % turn_number
+	if auto_battle:
+		turn_str += " · AUTO"
+	draw_string(_font(), _p(1052, 55), turn_str, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.96, 0.86, 0.48) if auto_battle else Color(0.56, 0.63, 0.67))
 	draw_string(_font(), _p(1052, 80), objective_label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(15), Color(0.95, 0.97, 0.97))
 	draw_string(_font(), _p(1052, 101), detail, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(11), Color(0.62, 0.69, 0.73))
 
@@ -3463,10 +3534,28 @@ func run_auto_battle(max_activations: int = 150, initial_seed: int = 1337) -> Di
 
 
 func set_debug_seed(seed_val: int) -> void:
+	current_debug_seed = seed_val
 	simulation_seed = seed_val
 
 
+func _set_simulation_seed(seed_val: int) -> void:
+	set_debug_seed(seed_val)
+
+
+func _cycle_debug_seed() -> int:
+	var idx: int = DEBUG_SEEDS.find(current_debug_seed)
+	if idx < 0 or idx >= DEBUG_SEEDS.size() - 1:
+		current_debug_seed = DEBUG_SEEDS[0]
+	else:
+		current_debug_seed = DEBUG_SEEDS[idx + 1]
+	simulation_seed = current_debug_seed
+	last_action_message = "Seed: %d" % current_debug_seed
+	queue_redraw()
+	return current_debug_seed
+
+
 func configure_player_loadouts(loadouts: Dictionary) -> void:
+	last_configured_loadouts = loadouts.duplicate(true)
 	for unit_id in loadouts.keys():
 		var unit: Dictionary = _unit_by_id(str(unit_id)) if _unit_by_id(str(unit_id)) is Dictionary else {}
 		if not unit.is_empty() and str(unit.get("team", "")) == "player":
@@ -3488,6 +3577,218 @@ func configure_player_loadouts(loadouts: Dictionary) -> void:
 			if cfg.has("orbs") and cfg["orbs"] is Dictionary:
 				for part_name in cfg["orbs"]:
 					_install_orb(unit, str(part_name), str(cfg["orbs"][part_name]))
+
+
+func _select_mission(mission_id: String, swapped_sides: bool = false) -> void:
+	mission_selector_open = false
+	current_mission = mission_id
+	mission_swapped_sides = swapped_sides
+	simulation_seed = current_debug_seed
+	_load_mission(mission_id, swapped_sides)
+	if not last_configured_loadouts.is_empty():
+		configure_player_loadouts(last_configured_loadouts)
+	last_action_message = "Loaded %s" % str(MISSIONS_DATA.get(mission_id, {}).get("name", mission_id))
+	queue_redraw()
+
+
+func _restart_current_mission() -> void:
+	_load_mission(current_mission, mission_swapped_sides)
+	simulation_seed = current_debug_seed
+	if not last_configured_loadouts.is_empty():
+		configure_player_loadouts(last_configured_loadouts)
+	last_action_message = "Restarted %s" % str(MISSIONS_DATA.get(current_mission, {}).get("name", current_mission))
+	queue_redraw()
+
+
+func _open_mission_selector() -> void:
+	mission_selector_open = true
+	queue_redraw()
+
+
+func _close_mission_selector() -> void:
+	mission_selector_open = false
+	queue_redraw()
+
+
+func _toggle_mission_selector() -> void:
+	mission_selector_open = not mission_selector_open
+	queue_redraw()
+
+
+func _set_auto_battle(enabled: bool) -> void:
+	auto_battle = enabled
+	last_action_message = "Auto Battle: ON" if auto_battle else "Auto Battle: OFF"
+	if auto_battle and not _is_battle_over() and not _input_locked():
+		if active_unit != null and str(active_unit.get("team", "")) == "player":
+			_resolve_ai_activation(active_unit)
+	queue_redraw()
+
+
+func _toggle_auto_battle() -> void:
+	_set_auto_battle(not auto_battle)
+
+
+func _set_fast_simulation(enabled: bool) -> void:
+	fast_simulation = enabled
+	enemy_presentation_enabled = not enabled
+	attack_presentation_enabled = not enabled
+	last_action_message = "Fast Sim: ON" if enabled else "Fast Sim: OFF"
+	queue_redraw()
+
+
+func _toggle_fast_simulation() -> void:
+	_set_fast_simulation(not fast_simulation)
+
+
+func _draw_debug_control_bar() -> void:
+	var bar_rect := _r(30, 521, 845, 62)
+	_draw_panel(bar_rect)
+	debug_rects.clear()
+
+	var mission_btn := _r(42, 533, 110, 38)
+	debug_rects["mission_selector"] = mission_btn
+	draw_rect(mission_btn, Color(0.18, 0.26, 0.33), true)
+	draw_rect(mission_btn, Color(0.42, 0.62, 0.80), false, 1.5)
+	_draw_centered_text(mission_btn, "MISSIONS", 11, Color(0.92, 0.96, 0.98))
+
+	var restart_btn := _r(160, 533, 95, 38)
+	debug_rects["restart"] = restart_btn
+	draw_rect(restart_btn, Color(0.28, 0.22, 0.18), true)
+	draw_rect(restart_btn, Color(0.72, 0.52, 0.35), false, 1.5)
+	_draw_centered_text(restart_btn, "RESTART", 11, Color(0.96, 0.92, 0.88))
+
+	var auto_btn := _r(263, 533, 110, 38)
+	debug_rects["auto_toggle"] = auto_btn
+	var auto_bg := Color(0.16, 0.38, 0.26) if auto_battle else Color(0.22, 0.24, 0.26)
+	var auto_border := Color(0.40, 0.78, 0.58) if auto_battle else Color(0.45, 0.50, 0.55)
+	var auto_label := "AUTO: ON" if auto_battle else "AUTO: OFF"
+	draw_rect(auto_btn, auto_bg, true)
+	draw_rect(auto_btn, auto_border, false, 1.5)
+	_draw_centered_text(auto_btn, auto_label, 11, Color(0.95, 0.98, 0.95) if auto_battle else Color(0.75, 0.80, 0.82))
+
+	var sim_btn := _r(381, 533, 110, 38)
+	debug_rects["fast_sim"] = sim_btn
+	var sim_bg := Color(0.38, 0.28, 0.14) if fast_simulation else Color(0.22, 0.24, 0.26)
+	var sim_border := Color(0.85, 0.65, 0.30) if fast_simulation else Color(0.45, 0.50, 0.55)
+	var sim_label := "SIM: FAST" if fast_simulation else "SIM: NORM"
+	draw_rect(sim_btn, sim_bg, true)
+	draw_rect(sim_btn, sim_border, false, 1.5)
+	_draw_centered_text(sim_btn, sim_label, 11, Color(0.98, 0.94, 0.88) if fast_simulation else Color(0.75, 0.80, 0.82))
+
+	var seed_btn := _r(499, 533, 115, 38)
+	debug_rects["seed_cycle"] = seed_btn
+	draw_rect(seed_btn, Color(0.22, 0.24, 0.26), true)
+	draw_rect(seed_btn, Color(0.45, 0.50, 0.55), false, 1.5)
+	_draw_centered_text(seed_btn, "SEED: %d" % current_debug_seed, 10, Color(0.85, 0.90, 0.92))
+
+	var m_name := str(MISSIONS_DATA.get(current_mission, {}).get("name", "Mission"))
+	var dep_str := " (Downhill)" if mission_swapped_sides else (" (Uphill)" if current_mission == "ascending_ridge" else "")
+	draw_string(_font(), _p(626, 547), "%s%s" % [m_name, dep_str], HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(11), Color(0.90, 0.94, 0.96))
+	draw_string(_font(), _p(626, 563), "Auto: %s · %s" % ["ON" if auto_battle else "OFF", "Fast Sim" if fast_simulation else "Normal Pres"], HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.60, 0.70, 0.75))
+
+
+func _draw_mission_selector_overlay() -> void:
+	if not mission_selector_open:
+		return
+	draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), Color(0.04, 0.07, 0.09, 0.82), true)
+
+	var modal_rect := _r(220, 45, 870, 515)
+	_draw_panel(modal_rect)
+	mission_selector_rects.clear()
+
+	draw_string(_font(), _p(245, 75), "PHASE 1 MISSION & SCENARIO SELECTOR", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(16), Color(0.96, 0.86, 0.48))
+	draw_string(_font(), _p(245, 93), "Select mission, deployment orientation, automation mode, and deterministic seed.", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(11), Color(0.65, 0.72, 0.75))
+
+	var options: Array[Dictionary] = [
+		{
+			"key": "ancient_ruins",
+			"mission_id": "ancient_ruins",
+			"swapped": false,
+			"title": "Ancient Ruins",
+			"tag": "Standard",
+			"objective": "Objective: Defeat Commander",
+			"purpose": str(MISSIONS_DATA["ancient_ruins"]["purpose"]),
+		},
+		{
+			"key": "crystal_quarry",
+			"mission_id": "crystal_quarry",
+			"swapped": false,
+			"title": "Crystal Quarry",
+			"tag": "Defeat All",
+			"objective": "Objective: Defeat All Enemies",
+			"purpose": str(MISSIONS_DATA["crystal_quarry"]["purpose"]),
+		},
+		{
+			"key": "ascending_ridge_uphill",
+			"mission_id": "ascending_ridge",
+			"swapped": false,
+			"title": "Ascending Ridge (Uphill Assault)",
+			"tag": "Elevation H0->H4",
+			"objective": "Objective: Defeat Commander",
+			"purpose": "Continuous slope H0-H4; player deploys at H0 and assaults uphill.",
+		},
+		{
+			"key": "ascending_ridge_downhill",
+			"mission_id": "ascending_ridge",
+			"swapped": true,
+			"title": "Ascending Ridge (Downhill Defense / Swapped)",
+			"tag": "Elevation H4->H0",
+			"objective": "Objective: Defeat Commander",
+			"purpose": "Swapped deployment; player holds the H4 ridge with downhill advantage.",
+		},
+	]
+
+	var y := 110.0
+	for opt in options:
+		var card_rect := _r(240, y, 830, 76)
+		var is_current: bool = current_mission == opt["mission_id"] and mission_swapped_sides == bool(opt["swapped"])
+		var bg_col := Color(0.16, 0.22, 0.26) if not is_current else Color(0.18, 0.28, 0.34)
+		var border_col := Color(0.30, 0.40, 0.48) if not is_current else Color(0.40, 0.78, 0.58)
+		draw_rect(card_rect, bg_col, true)
+		draw_rect(card_rect, border_col, false, 1.5)
+
+		draw_string(_font(), _p(255, y + 22), str(opt["title"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(13), Color(0.96, 0.98, 0.98))
+		draw_string(_font(), _p(255, y + 40), str(opt["objective"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.46, 0.75, 0.58))
+		draw_string(_font(), _p(255, y + 58), str(opt["purpose"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.70, 0.75, 0.78))
+
+		var btn_rect := _r(945, y + 18, 110, 40)
+		mission_selector_rects[str(opt["key"])] = btn_rect
+		var btn_bg := Color(0.20, 0.45, 0.32) if is_current else Color(0.22, 0.30, 0.38)
+		var btn_border := Color(0.40, 0.78, 0.58) if is_current else Color(0.45, 0.65, 0.85)
+		var btn_label := "RELOAD" if is_current else "LAUNCH"
+		draw_rect(btn_rect, btn_bg, true)
+		draw_rect(btn_rect, btn_border, false, 1.5)
+		_draw_centered_text(btn_rect, btn_label, 12, Color.WHITE)
+
+		y += 84.0
+
+	var auto_modal_btn := _r(240, 455, 130, 38)
+	mission_selector_rects["auto_toggle"] = auto_modal_btn
+	var auto_bg := Color(0.16, 0.38, 0.26) if auto_battle else Color(0.22, 0.24, 0.26)
+	var auto_border := Color(0.40, 0.78, 0.58) if auto_battle else Color(0.45, 0.50, 0.55)
+	draw_rect(auto_modal_btn, auto_bg, true)
+	draw_rect(auto_modal_btn, auto_border, false, 1.5)
+	_draw_centered_text(auto_modal_btn, "AUTO: ON" if auto_battle else "AUTO: OFF", 11, Color.WHITE)
+
+	var sim_modal_btn := _r(385, 455, 130, 38)
+	mission_selector_rects["fast_sim"] = sim_modal_btn
+	var sim_bg := Color(0.38, 0.28, 0.14) if fast_simulation else Color(0.22, 0.24, 0.26)
+	var sim_border := Color(0.85, 0.65, 0.30) if fast_simulation else Color(0.45, 0.50, 0.55)
+	draw_rect(sim_modal_btn, sim_bg, true)
+	draw_rect(sim_modal_btn, sim_border, false, 1.5)
+	_draw_centered_text(sim_modal_btn, "SIM: FAST" if fast_simulation else "SIM: NORM", 11, Color.WHITE)
+
+	var seed_modal_btn := _r(530, 455, 130, 38)
+	mission_selector_rects["seed_cycle"] = seed_modal_btn
+	draw_rect(seed_modal_btn, Color(0.22, 0.24, 0.26), true)
+	draw_rect(seed_modal_btn, Color(0.45, 0.50, 0.55), false, 1.5)
+	_draw_centered_text(seed_modal_btn, "SEED: %d" % current_debug_seed, 11, Color(0.85, 0.90, 0.92))
+
+	var close_btn := _r(945, 455, 110, 38)
+	mission_selector_rects["close"] = close_btn
+	draw_rect(close_btn, Color(0.32, 0.20, 0.20), true)
+	draw_rect(close_btn, Color(0.75, 0.40, 0.40), false, 1.5)
+	_draw_centered_text(close_btn, "CLOSE", 12, Color(0.96, 0.90, 0.90))
 
 
 
