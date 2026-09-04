@@ -306,6 +306,15 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn("ENEMY INTEL", self.source)
         self.assertIn("shield_warning", self.source)
 
+    def test_numeric_hp_hooks_are_encoded(self):
+        for hook in [
+            "func _part_hp_text",
+            "func _shield_hp_text",
+        ]:
+            self.assertIn(hook, self.source)
+        self.assertIn("DESTROYED", self.source)
+        self.assertIn("BROKEN", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

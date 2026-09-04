@@ -98,6 +98,7 @@ func _run() -> void:
 	_run_attack_overlay_acceptance(scene)
 	_run_movement_preview_acceptance(scene)
 	_run_enemy_inspection_acceptance(scene)
+	_run_numeric_hp_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -1994,6 +1995,86 @@ func _test_enemy_inspection_never_changes_active_unit_or_initiative(scene: Contr
 	scene._inspect_target(scene._unit_by_id("enemy_blade"))
 	_assert_equal(scene.active_unit["id"], active_before, "active unit unchanged after target inspection")
 	_assert_equal(scene.initiative_timeline, timeline_before, "initiative timeline unchanged after target inspection")
+
+	scene.notification(CanvasItem.NOTIFICATION_DRAW)
+
+
+func _run_numeric_hp_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_part_hp_text",
+		"_shield_hp_text",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "numeric HP API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_part_hp_numbers_match_simulation_state_before_and_after_damage(scene)
+	_test_destroyed_part_displays_zero_and_destroyed_label(scene)
+	_test_shield_numeric_hp_decreases_on_damage(scene)
+	_test_selecting_different_unit_updates_numeric_hp(scene)
+
+
+func _test_part_hp_numbers_match_simulation_state_before_and_after_damage(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var arlen = scene._unit_by_id("arlen")
+	var body_hp := int(arlen["parts"]["Body"]["hp"])
+	var body_max := int(arlen["parts"]["Body"]["max_hp"])
+	_assert_equal(scene._part_hp_text(arlen, "Body"), "%d / %d" % [body_hp, body_max], "body displays numeric HP matching simulation")
+	var head_hp := int(arlen["parts"]["Head"]["hp"])
+	var head_max := int(arlen["parts"]["Head"]["max_hp"])
+	_assert_equal(scene._part_hp_text(arlen, "Head"), "%d / %d" % [head_hp, head_max], "head displays numeric HP matching simulation")
+
+	scene._damage_part(arlen, "Body", 35)
+	_assert_equal(scene._part_hp_text(arlen, "Body"), "%d / %d" % [body_hp - 35, body_max], "part HP text reflects reduced HP after damage")
+
+	scene._damage_part(arlen, "Body", 15)
+	_assert_equal(scene._part_hp_text(arlen, "Body"), "%d / %d" % [body_hp - 50, body_max], "part HP text updates continuously on damage")
+
+
+func _test_destroyed_part_displays_zero_and_destroyed_label(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var arlen = scene._unit_by_id("arlen")
+	scene._damage_part(arlen, "Right Arm", 100)
+	_assert_true(bool(arlen["parts"]["Right Arm"]["destroyed"]), "part marked destroyed")
+	_assert_equal(scene._part_hp_text(arlen, "Right Arm"), "0 / 100 DESTROYED", "destroyed part displays 0 and DESTROYED label")
+
+	scene._damage_part(arlen, "Left Arm", 250)
+	_assert_equal(scene._part_hp_text(arlen, "Left Arm"), "0 / 100 DESTROYED", "overkilled part displays exactly 0, never negative")
+
+
+func _test_shield_numeric_hp_decreases_on_damage(scene: Control) -> void:
+	scene._load_mission("ascending_ridge")
+	var guard = scene._unit_by_id("enemy_ridge_guard")
+	_assert_true(int(guard["shield_max_hp"]) > 0, "guard has shield")
+	_assert_equal(scene._shield_hp_text(guard), "%d / %d" % [guard["shield_hp"], guard["shield_max_hp"]], "initial shield HP text matches state")
+
+	var initial_hp: int = int(guard["shield_hp"])
+	scene._damage_shield(guard, 20)
+	_assert_equal(scene._shield_hp_text(guard), "%d / %d" % [initial_hp - 20, guard["shield_max_hp"]], "shield numeric HP decreases after damage")
+
+	scene._damage_shield(guard, initial_hp)
+	_assert_equal(scene._shield_hp_text(guard), "0 / %d BROKEN" % int(guard["shield_max_hp"]), "broken shield displays 0 and BROKEN label")
+
+	var blade = scene._unit_by_id("enemy_blade")
+	_assert_equal(scene._shield_hp_text(blade), "", "unit without shield returns empty string")
+
+
+func _test_selecting_different_unit_updates_numeric_hp(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var arlen = scene._unit_by_id("arlen")
+	var enemy = scene._unit_by_id("enemy_blade")
+	var arlen_head_hp := int(arlen["parts"]["Head"]["hp"])
+	var enemy_head_hp := int(enemy["parts"]["Head"]["hp"])
+	scene._damage_part(enemy, "Head", 40)
+
+	scene._select_unit(arlen)
+	_assert_equal(scene.selected_unit["id"], "arlen", "arlen is selected")
+	_assert_equal(scene._part_hp_text(scene.selected_unit, "Head"), "%d / 100" % arlen_head_hp, "arlen has initial Head HP")
+
+	scene._select_unit(enemy)
+	_assert_equal(scene.selected_unit["id"], "enemy_blade", "enemy is selected")
+	_assert_equal(scene._part_hp_text(scene.selected_unit, "Head"), "%d / 100" % (enemy_head_hp - 40), "selected enemy displays damaged Head HP")
 
 	scene.notification(CanvasItem.NOTIFICATION_DRAW)
 

@@ -2814,19 +2814,57 @@ func _draw_mission_panel() -> void:
 
 
 
+func _part_hp_text(unit, part_name: String) -> String:
+	if unit == null or not unit.get("parts", {}).has(part_name):
+		return "0 / 0"
+	var part: Dictionary = unit["parts"][part_name]
+	var hp := int(part.get("hp", 0))
+	var max_hp := int(part.get("max_hp", PART_MAX_HP))
+	if bool(part.get("destroyed", false)) or hp <= 0:
+		return "0 / %d DESTROYED" % max_hp
+	return "%d / %d" % [hp, max_hp]
+
+
+func _shield_hp_text(unit) -> String:
+	if unit == null or int(unit.get("shield_max_hp", 0)) <= 0:
+		return ""
+	var hp := int(unit.get("shield_hp", 0))
+	var max_hp := int(unit.get("shield_max_hp", 0))
+	if hp <= 0 or not _shield_is_active(unit):
+		return "0 / %d BROKEN" % max_hp
+	return "%d / %d" % [hp, max_hp]
+
+
 func _draw_part_status_panel() -> void:
 	if selected_unit == null:
 		return
 
-	_draw_panel(_r(30, 410, 176, 124))
-	draw_string(_font(), _p(48, 433), "PART STATUS", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.56, 0.63, 0.67))
+	var has_shield: bool = int(selected_unit.get("shield_max_hp", 0)) > 0
+	var panel_h: float = 142.0 if has_shield else 126.0
+	_draw_panel(_r(30, 396, 235, panel_h))
+	draw_string(_font(), _p(48, 416), "PART STATUS", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.56, 0.63, 0.67))
+	var y := 436.0
 	for index in range(PART_NAMES.size()):
 		var part_name: String = PART_NAMES[index]
-		var y := 458.0 + index * 17.0
 		var part: Dictionary = selected_unit["parts"][part_name]
-		var label_color := Color(0.78, 0.82, 0.84) if not bool(part["destroyed"]) else Color(0.88, 0.48, 0.46)
+		var p_hp := int(part.get("hp", 0))
+		var destroyed: bool = bool(part.get("destroyed", false)) or p_hp <= 0
+		var label_color := Color(0.78, 0.82, 0.84) if not destroyed else Color(0.88, 0.48, 0.46)
 		draw_string(_font(), _p(48, y), _short_part_name(part_name), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), label_color)
-		_draw_bar(_r(100, y - 8.0, 76, 7), _part_hp_ratio(selected_unit, part_name), Color(0.46, 0.65, 0.56) if not bool(part["destroyed"]) else Color(0.76, 0.32, 0.31))
+		_draw_bar(_r(96, y - 8.0, 68, 7), _part_hp_ratio(selected_unit, part_name), Color(0.46, 0.65, 0.56) if not destroyed else Color(0.76, 0.32, 0.31))
+		var hp_str := _part_hp_text(selected_unit, part_name)
+		draw_string(_font(), _p(170, y), hp_str, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), label_color)
+		y += 15.0
+
+	if has_shield:
+		var s_hp := int(selected_unit.get("shield_hp", 0))
+		var s_max := int(selected_unit.get("shield_max_hp", 0))
+		var s_active := _shield_is_active(selected_unit)
+		var s_col := Color(0.53, 0.71, 0.75) if s_active else Color(0.76, 0.32, 0.31)
+		draw_string(_font(), _p(48, y), "Shield", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), s_col)
+		_draw_bar(_r(96, y - 8.0, 68, 7), float(s_hp) / float(s_max) if s_max > 0 else 0.0, Color(0.40, 0.60, 0.75) if s_active else Color(0.76, 0.32, 0.31))
+		var s_str := _shield_hp_text(selected_unit)
+		draw_string(_font(), _p(170, y), s_str, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), s_col)
 
 
 func _inspect_target(target) -> Dictionary:
@@ -2953,7 +2991,7 @@ func _draw_enemy_inspection_panel() -> void:
 		var label_col := Color(0.78, 0.82, 0.84) if not destroyed else Color(0.88, 0.48, 0.46)
 		draw_string(_font(), _p(976, y), _short_part_name(part_name), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), label_col)
 		_draw_bar(_r(1030, y - 8.0, 130, 7), float(p_hp) / float(p_max) if p_max > 0 else 0.0, Color(0.46, 0.65, 0.56) if not destroyed else Color(0.76, 0.32, 0.31))
-		var hp_text := "%d/%d" % [p_hp, p_max] if not destroyed else "DESTROYED"
+		var hp_text := _part_hp_text(selected_unit, part_name)
 		draw_string(_font(), _p(1170, y), hp_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), label_col)
 		y += 15.0
 
@@ -2963,7 +3001,7 @@ func _draw_enemy_inspection_panel() -> void:
 		var s_active: bool = bool(data["shield_active"])
 		draw_string(_font(), _p(976, y), "Shield", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.53, 0.71, 0.75) if s_active else Color(0.76, 0.32, 0.31))
 		_draw_bar(_r(1030, y - 8.0, 130, 7), float(s_hp) / float(s_max) if s_max > 0 else 0.0, Color(0.40, 0.60, 0.75) if s_active else Color(0.76, 0.32, 0.31))
-		var s_text := "%d/%d" % [s_hp, s_max] if s_active else "BROKEN"
+		var s_text := _shield_hp_text(selected_unit)
 		draw_string(_font(), _p(1170, y), s_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), Color(0.53, 0.71, 0.75) if s_active else Color(0.76, 0.32, 0.31))
 		y += 15.0
 
