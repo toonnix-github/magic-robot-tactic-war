@@ -117,6 +117,7 @@ func _run() -> void:
 	_run_phase2_orb_installation_acceptance(scene)
 	_run_phase2_build_summary_and_signals_acceptance(scene)
 	_run_phase2_squad_deploy_builds_acceptance(scene)
+	_run_phase2_current_vs_inspected_hud_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -3442,6 +3443,60 @@ func _test_phase2_redeploy_after_hangar_change(scene: Control, hangar) -> void:
 	var arlen = scene._unit_by_id("arlen")
 	_assert_equal(int(arlen["base_move_range"]), 2, "#41: Arlen re-deployed with bulwark_legs Move 2")
 	_assert_equal(int(arlen["parts"]["Legs"]["max_hp"]), 132, "#41: Arlen Legs part HP updated from bulwark_legs")
+
+
+func _run_phase2_current_vs_inspected_hud_acceptance(scene: Control) -> void:
+	var hud = scene.battle_hud
+	for method in [
+		"draw_current_unit_panel",
+		"draw_inspected_unit_panel",
+		"current_unit",
+		"inspected_unit",
+	]:
+		_assert_true(hud.has_method(method), "#42: battle_hud exposes %s" % method)
+
+	if not _failures.is_empty():
+		return
+
+	_test_phase2_left_panel_tracks_active_unit(scene)
+	_test_phase2_inspecting_enemy_tracks_right_panel_without_changing_turn(scene)
+	_test_phase2_inspecting_ally_tracks_right_panel_without_changing_turn(scene)
+	_test_phase2_both_panels_reflect_part_and_orb_status(scene)
+
+
+func _test_phase2_left_panel_tracks_active_unit(scene: Control) -> void:
+	scene._load_mission("ancient_ruins", false)
+	var active = scene.active_unit
+	_assert_equal(scene.battle_hud.current_unit(scene)["id"], active["id"], "#42: Left panel tracks current active unit")
+
+
+func _test_phase2_inspecting_enemy_tracks_right_panel_without_changing_turn(scene: Control) -> void:
+	scene._load_mission("ancient_ruins", false)
+	var enemy = scene._unit_by_id("enemy_spear")
+	scene.battle_hud.inspect_unit(scene, enemy)
+	_assert_equal(scene.battle_hud.inspected_unit(scene)["id"], "enemy_spear", "#42: Right panel tracks inspected enemy")
+	_assert_equal(scene.active_unit["id"], "arlen", "#42: Inspecting enemy does not transfer turn ownership")
+	_assert_equal(scene.battle_hud.current_unit(scene)["id"], "arlen", "#42: Left panel remains current active unit")
+
+
+func _test_phase2_inspecting_ally_tracks_right_panel_without_changing_turn(scene: Control) -> void:
+	scene._load_mission("ancient_ruins", false)
+	var ally = scene._unit_by_id("mira")
+	scene.battle_hud.inspect_unit(scene, ally)
+	_assert_equal(scene.battle_hud.inspected_unit(scene)["id"], "mira", "#42: Right panel tracks inspected ally")
+	_assert_equal(scene.active_unit["id"], "arlen", "#42: Inspecting ally does not transfer turn ownership")
+	_assert_equal(scene.battle_hud.current_unit(scene)["id"], "arlen", "#42: Left panel remains current active unit")
+
+
+func _test_phase2_both_panels_reflect_part_and_orb_status(scene: Control) -> void:
+	scene._load_mission("ancient_ruins", false)
+	var enemy = scene._unit_by_id("enemy_spear")
+	scene.battle_hud.inspect_unit(scene, enemy)
+	scene._damage_part(enemy, "Left Arm", 100)
+	var inspected = scene.battle_hud.inspected_unit(scene)
+	_assert_true(bool(inspected["parts"]["Left Arm"]["destroyed"]), "#42: inspected unit reflects destroyed part")
+	var current = scene.battle_hud.current_unit(scene)
+	_assert_equal(current["id"], "arlen", "#42: current unit remains intact")
 
 
 func _assert_true(actual: bool, message: String) -> void:

@@ -754,6 +754,21 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         ]:
             self.assertIn(hook, main_source)
 
+    def test_phase2_current_vs_inspected_hud_apis_exist(self):
+        """#42 - Battle HUD with Current Unit vs Inspected Unit panels."""
+        hud_source = (ROOT / "src" / "ui" / "battle_hud.gd").read_text(encoding="utf-8")
+        main_source = (ROOT / "src" / "main.gd").read_text(encoding="utf-8")
+
+        for hook in [
+            "func draw_current_unit_panel",
+            "func draw_inspected_unit_panel",
+            "func current_unit",
+            "func inspected_unit",
+        ]:
+            self.assertIn(hook, hud_source)
+
+        self.assertIn("var inspected_unit", main_source)
+
 
 if __name__ == "__main__":
     unittest.main()
