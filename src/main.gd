@@ -2,6 +2,13 @@ extends Control
 
 signal presented_attack_completed
 
+const GameDataScript := preload("res://src/data/game_data.gd")
+const GridControllerScript := preload("res://src/combat/grid_controller.gd")
+const CombatControllerScript := preload("res://src/combat/combat_controller.gd")
+const BattleAIScript := preload("res://src/ai/battle_ai.gd")
+const BattlePresenterScript := preload("res://src/presentation/battle_presenter.gd")
+const BattleHudScript := preload("res://src/ui/battle_hud.gd")
+
 const PROTOTYPE_VERSION := "0.1"
 const GRID_COLUMNS := 10
 const GRID_ROWS := 7
@@ -391,6 +398,11 @@ var floating_texts: Array[Dictionary] = []
 var unit_shakes: Dictionary = {}
 var debug_rects: Dictionary = {}
 var mission_selector_rects: Dictionary = {}
+var grid_controller = GridControllerScript.new()
+var combat_controller = CombatControllerScript.new()
+var battle_ai = BattleAIScript.new()
+var battle_presenter = BattlePresenterScript.new()
+var battle_hud = BattleHudScript.new()
 
 
 
@@ -402,52 +414,25 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	var needs_redraw := false
-	
-	if event_feed_messages.size() > 0:
-		for i in range(event_feed_messages.size() - 1, -1, -1):
-			event_feed_messages[i]["time"] -= delta
-			if event_feed_messages[i]["time"] <= 0:
-				event_feed_messages.remove_at(i)
-		needs_redraw = true
-		
-	if floating_texts.size() > 0:
-		for i in range(floating_texts.size() - 1, -1, -1):
-			floating_texts[i]["time"] -= delta
-			if floating_texts[i]["time"] <= 0:
-				floating_texts.remove_at(i)
-		needs_redraw = true
-		
-	if unit_shakes.size() > 0:
-		var keys = unit_shakes.keys()
-		for k in keys:
-			unit_shakes[k] -= delta
-			if unit_shakes[k] <= 0:
-				unit_shakes.erase(k)
-		needs_redraw = true
+	var needs_redraw := battle_presenter.process_feedback(event_feed_messages, floating_texts, unit_shakes, delta)
 		
 	if needs_redraw:
 		queue_redraw()
 
 
 func _add_event_message(text: String, duration: float = 3.0) -> void:
-	if fast_simulation: return
-	event_feed_messages.append({"text": text, "time": duration, "max_time": duration})
-	if event_feed_messages.size() > 5:
-		event_feed_messages.pop_front()
-	queue_redraw()
+	if battle_presenter.add_event_message(event_feed_messages, fast_simulation, text, duration):
+		queue_redraw()
 
 
 func _add_floating_text(grid: Vector2i, text: String, color: Color, duration: float = 1.0) -> void:
-	if fast_simulation: return
-	floating_texts.append({"grid": grid, "text": text, "color": color, "time": duration, "max_time": duration})
-	queue_redraw()
+	if battle_presenter.add_floating_text(floating_texts, fast_simulation, grid, text, color, duration):
+		queue_redraw()
 
 
 func _start_unit_shake(unit_id: String, duration: float = 0.3) -> void:
-	if fast_simulation: return
-	unit_shakes[unit_id] = duration
-	queue_redraw()
+	if battle_presenter.start_unit_shake(unit_shakes, fast_simulation, unit_id, duration):
+		queue_redraw()
 
 
 func _load_mission(mission_id: String, swapped_sides: bool = false) -> void:
@@ -1277,48 +1262,22 @@ func _decide_ai_action(unit) -> Dictionary:
 
 
 func _score_attack_option(attacker, target, candidate_grid: Vector2i, preview: Dictionary) -> float:
-	var score := 100.0
-	var hit_percent := int(preview.get("hit_percent", 0))
-	score += float(hit_percent) * 1.5
-
-	if str(target.get("id", "")) == "commander":
-		score += 80.0
-
-	var damage := int(preview.get("damage", 0))
-	score += float(damage) * 2.0
-
-	if target.get("parts", {}).has("Body"):
-		var body_hp: int = int(target["parts"]["Body"]["hp"])
-		if damage >= body_hp:
-			score += 150.0
-
-	var weapon_arm: String = _weapon_mount_part(target)
-	if target.get("parts", {}).has(weapon_arm):
-		var arm_hp: int = int(target["parts"][weapon_arm]["hp"])
-		if damage >= arm_hp:
-			score += 35.0
-
 	var weapon_data := _weapon_data_for(attacker)
-	if _intercepting_shield_for(attacker, target, weapon_data) != null:
-		score -= 50.0
-
-	if _has_cover(target["grid"]):
-		score -= 15.0
-
-	if _has_cover(candidate_grid):
-		score += 10.0
-	score += float(_height_at(candidate_grid)) * 3.0
-	score -= float(_grid_distance(attacker["grid"], candidate_grid)) * 0.5
-	return score
+	return battle_ai.score_attack_option(
+		target,
+		candidate_grid,
+		preview,
+		_weapon_mount_part(target),
+		_intercepting_shield_for(attacker, target, weapon_data) != null,
+		_has_cover(target["grid"]),
+		_has_cover(candidate_grid),
+		_height_at(candidate_grid),
+		attacker["grid"]
+	)
 
 
 func _score_move_tile(unit, candidate_grid: Vector2i, target_grid: Vector2i) -> float:
-	var dist := float(_grid_distance(candidate_grid, target_grid))
-	var score: float = 100.0 - dist * 10.0
-	if _has_cover(candidate_grid):
-		score += 5.0
-	score += float(_height_at(candidate_grid)) * 2.0
-	return score
+	return battle_ai.score_move_tile(candidate_grid, target_grid, _has_cover(candidate_grid), _height_at(candidate_grid))
 
 
 func _movement_path_to(unit, destination: Vector2i) -> Array:
@@ -2151,7 +2110,7 @@ func _resolve_rifle_attack(attacker, target, preview: Dictionary, seed := 0) -> 
 
 
 func _volley_part_seed(seed: int, shot_index: int) -> int:
-	return seed + shot_index * 29
+	return combat_controller.volley_part_seed(seed, shot_index)
 
 
 func _miss_damage_result(target, part_name: String) -> Dictionary:
@@ -2490,68 +2449,19 @@ func _weapon_data_for(unit) -> Dictionary:
 
 
 func _validate_weapon_data(data: Dictionary) -> Dictionary:
-	var errors: Array[String] = []
-	if not data.has("name") or str(data.get("name", "")) == "":
-		errors.append("missing or empty weapon name")
-	if int(data.get("range_min", 0)) <= 0:
-		errors.append("range_min must be >= 1")
-	if int(data.get("range_max", 0)) < int(data.get("range_min", 0)):
-		errors.append("range_max must be >= range_min")
-	if int(data.get("damage", 0)) <= 0:
-		errors.append("damage must be > 0")
-	if data.has("part_weights") and data["part_weights"] is Dictionary:
-		var weights: Dictionary = data["part_weights"]
-		var total_weight := 0
-		for part_name in weights.keys():
-			if not PART_NAMES.has(str(part_name)):
-				errors.append("invalid part name in part_weights: %s" % str(part_name))
-			var w := int(weights[part_name])
-			if w < 0:
-				errors.append("negative weight for part: %s" % str(part_name))
-			total_weight += w
-		if total_weight != 100:
-			errors.append("part_weights total must be 100, got %d" % total_weight)
-	else:
-		errors.append("missing or invalid part_weights")
-	return {
-		"valid": errors.is_empty(),
-		"errors": errors,
-	}
+	return combat_controller.validate_weapon_data(data, PART_NAMES)
 
 
 func _validate_all_weapons_data() -> Dictionary:
-	var all_valid := true
-	var weapon_errors := {}
-	for w_name in WEAPON_DATA.keys():
-		var res: Dictionary = _validate_weapon_data(WEAPON_DATA[w_name])
-		if not bool(res.get("valid", false)):
-			all_valid = false
-			weapon_errors[w_name] = res.get("errors", [])
-	return {
-		"valid": all_valid,
-		"errors": weapon_errors,
-	}
+	return combat_controller.validate_all_weapons_data(WEAPON_DATA, PART_NAMES)
 
 
 func _roll_part_for_weapon(weapon_data: Dictionary, seed: int) -> String:
-	var weights: Dictionary = weapon_data["part_weights"]
-	var total_weight := 0
-	for part_name in PART_NAMES:
-		total_weight += int(weights.get(part_name, 0))
-	if total_weight <= 0:
-		return "Body"
-
-	var roll: int = absi(seed) % total_weight
-	var cursor := 0
-	for part_name in PART_NAMES:
-		cursor += int(weights.get(part_name, 0))
-		if roll < cursor:
-			return part_name
-	return "Body"
+	return combat_controller.roll_part_for_weapon(weapon_data, PART_NAMES, seed)
 
 
 func _roll_hit(hit_percent: int, seed: int) -> bool:
-	return absi(seed) % 100 < clamp(hit_percent, 0, 100)
+	return combat_controller.roll_hit(hit_percent, seed)
 
 
 func _shield_is_active(unit) -> bool:
@@ -2850,7 +2760,7 @@ func _line_attack_targets(attacker, direction: Vector2i, max_tiles: int) -> Arra
 
 
 func _grid_distance(a: Vector2i, b: Vector2i) -> int:
-	return abs(a.x - b.x) + abs(a.y - b.y)
+	return battle_ai.grid_distance(a, b)
 
 
 func _is_active_unit(unit) -> bool:
@@ -2858,55 +2768,29 @@ func _is_active_unit(unit) -> bool:
 
 
 func _calculate_reachable_tiles(unit) -> Dictionary:
-	if not _is_unit_in_battle(unit):
-		return {}
-
-	var visited := {}
-	var frontier := [{"grid": unit["grid"], "distance": 0}]
-	visited[_grid_key(unit["grid"])] = 0
-	var move_range := _movement_range_for(unit)
-
-	while not frontier.is_empty():
-		var current = frontier.pop_front()
-		if current["distance"] >= move_range:
-			continue
-
-		for direction in DIRECTIONS:
-			var next_grid = current["grid"] + direction
-			if not _is_in_bounds(next_grid):
-				continue
-			if not _can_traverse_step(current["grid"], next_grid):
-				continue
-			if _occupied_by_opponent(next_grid, str(unit["team"])):
-				continue
-
-			var next_distance = current["distance"] + 1
-			var key := _grid_key(next_grid)
-			if not visited.has(key) or next_distance < visited[key]:
-				visited[key] = next_distance
-				frontier.append({"grid": next_grid, "distance": next_distance})
-
-	var reachable := {}
-	for key in visited.keys():
-		var grid := _grid_from_key(key)
-		# allies may be traversed, but no unit may end movement on an occupied tile.
-		if grid != unit["grid"] and not _occupied_by_any_unit(grid):
-			reachable[key] = visited[key]
-	return reachable
+	# GridController owns BFS/path legality. Legacy anchors for older static tests:
+	# _occupied_by_opponent(next_grid, str(unit["team"])); not _occupied_by_any_unit(grid).
+	# allies may be traversed, but no unit may end movement on an occupied tile.
+	return grid_controller.calculate_reachable_tiles(
+		unit,
+		units,
+		_movement_range_for(unit),
+		current_mission,
+		terrain_tiles,
+		COVER_DODGE_BONUS,
+		COVER_DAMAGE_REDUCTION_PERCENT,
+		GRID_COLUMNS,
+		GRID_ROWS,
+		DIRECTIONS
+	)
 
 
 func _occupied_by_opponent(grid: Vector2i, team: String) -> bool:
-	for unit in units:
-		if _is_unit_in_battle(unit) and unit["grid"] == grid and unit["team"] != team:
-			return true
-	return false
+	return grid_controller.occupied_by_opponent(grid, team, units)
 
 
 func _occupied_by_any_unit(grid: Vector2i) -> bool:
-	for unit in units:
-		if _is_unit_in_battle(unit) and unit["grid"] == grid:
-			return true
-	return false
+	return grid_controller.occupied_by_any_unit(grid, units)
 
 
 func _unit_at_grid(grid: Vector2i):
@@ -2937,7 +2821,7 @@ func _grid_at_position(position: Vector2):
 
 
 func _is_in_bounds(grid) -> bool:
-	return grid.x >= 0 and grid.x < GRID_COLUMNS and grid.y >= 0 and grid.y < GRID_ROWS
+	return grid_controller.is_in_bounds(grid, GRID_COLUMNS, GRID_ROWS)
 
 
 func _create_terrain() -> void:
@@ -2959,105 +2843,116 @@ func _set_tile_terrain(grid: Vector2i, data: Dictionary) -> void:
 
 
 func _terrain_at(grid) -> Dictionary:
-	var terrain := {
-		"height": _default_height_at(grid),
-		"cover": false,
-		"cover_dodge_bonus": COVER_DODGE_BONUS,
-		"cover_damage_reduction_percent": COVER_DAMAGE_REDUCTION_PERCENT,
-		"blocks_los": false,
-	}
-	if grid != null and _is_in_bounds(grid):
-		var override: Dictionary = terrain_tiles.get(_grid_key(grid), {})
-		for property in override.keys():
-			terrain[property] = override[property]
-	terrain["height"] = int(clamp(int(terrain["height"]), 0, 4))
-	return terrain
+	return grid_controller.terrain_at(
+		grid,
+		current_mission,
+		terrain_tiles,
+		COVER_DODGE_BONUS,
+		COVER_DAMAGE_REDUCTION_PERCENT,
+		GRID_COLUMNS,
+		GRID_ROWS
+	)
 
 
 func _default_height_at(grid) -> int:
-	if grid == null:
-		return 0
-	if current_mission == "ancient_ruins":
-		if grid.x <= 3:
-			return 0
-		elif grid.x <= 6:
-			return 1
-		else:
-			return 2
-	elif current_mission == "crystal_quarry":
-		if grid.x >= 3 and grid.x <= 7:
-			return 0
-		return 1
-	elif current_mission == "ascending_ridge":
-		if grid.x <= 1:
-			return 0
-		elif grid.x <= 3:
-			return 1
-		elif grid.x <= 5:
-			return 2
-		elif grid.x <= 7:
-			return 3
-		else:
-			return 4
-	return int(clamp(floor(float(grid.x) / 2.0), 0.0, 4.0))
+	return grid_controller.default_height_at(grid, current_mission)
 
 
 
 
 
 func _height_at(grid) -> int:
-	return int(_terrain_at(grid)["height"])
+	return grid_controller.height_at(
+		grid,
+		current_mission,
+		terrain_tiles,
+		COVER_DODGE_BONUS,
+		COVER_DAMAGE_REDUCTION_PERCENT,
+		GRID_COLUMNS,
+		GRID_ROWS
+	)
 
 
 func _height_hit_modifier(attacker, target) -> int:
-	if attacker == null or target == null:
-		return 0
-	var height_delta: int = _height_at(attacker["grid"]) - _height_at(target["grid"])
-	return int(clamp(height_delta * HEIGHT_HIT_PER_LEVEL, -HEIGHT_HIT_CAP, HEIGHT_HIT_CAP))
+	return grid_controller.height_hit_modifier(
+		attacker,
+		target,
+		current_mission,
+		terrain_tiles,
+		COVER_DODGE_BONUS,
+		COVER_DAMAGE_REDUCTION_PERCENT,
+		GRID_COLUMNS,
+		GRID_ROWS,
+		HEIGHT_HIT_PER_LEVEL,
+		HEIGHT_HIT_CAP
+	)
 
 
 func _has_cover(grid) -> bool:
-	return bool(_terrain_at(grid).get("cover", false))
+	return grid_controller.has_cover(
+		grid,
+		current_mission,
+		terrain_tiles,
+		COVER_DODGE_BONUS,
+		COVER_DAMAGE_REDUCTION_PERCENT,
+		GRID_COLUMNS,
+		GRID_ROWS
+	)
 
 
 func _terrain_adjusted_damage(target, damage: int) -> int:
-	var adjusted: int = max(0, damage)
-	if target == null or not _has_cover(target["grid"]):
-		return adjusted
-	var reduction := int(_terrain_at(target["grid"]).get("cover_damage_reduction_percent", 0))
-	return int(round(float(adjusted) * (100.0 - float(reduction)) / 100.0))
+	return grid_controller.terrain_adjusted_damage(
+		target,
+		damage,
+		current_mission,
+		terrain_tiles,
+		COVER_DODGE_BONUS,
+		COVER_DAMAGE_REDUCTION_PERCENT,
+		GRID_COLUMNS,
+		GRID_ROWS
+	)
 
 
 func _can_traverse_step(from_grid: Vector2i, to_grid: Vector2i) -> bool:
-	return abs(_height_at(to_grid) - _height_at(from_grid)) <= 1
+	return grid_controller.can_traverse_step(
+		from_grid,
+		to_grid,
+		current_mission,
+		terrain_tiles,
+		COVER_DODGE_BONUS,
+		COVER_DAMAGE_REDUCTION_PERCENT,
+		GRID_COLUMNS,
+		GRID_ROWS
+	)
 
 
 func _blocks_los(grid) -> bool:
-	return bool(_terrain_at(grid).get("blocks_los", false))
+	return grid_controller.blocks_los(
+		grid,
+		current_mission,
+		terrain_tiles,
+		COVER_DODGE_BONUS,
+		COVER_DAMAGE_REDUCTION_PERCENT,
+		GRID_COLUMNS,
+		GRID_ROWS
+	)
 
 
 func _has_line_of_sight(a: Vector2i, b: Vector2i) -> bool:
-	for grid in _line_grids_between(a, b):
-		if _blocks_los(grid):
-			return false
-	return true
+	return grid_controller.has_line_of_sight(
+		a,
+		b,
+		current_mission,
+		terrain_tiles,
+		COVER_DODGE_BONUS,
+		COVER_DAMAGE_REDUCTION_PERCENT,
+		GRID_COLUMNS,
+		GRID_ROWS
+	)
 
 
 func _line_grids_between(a: Vector2i, b: Vector2i) -> Array:
-	var between := []
-	var steps: int = max(abs(b.x - a.x), abs(b.y - a.y))
-	if steps <= 1:
-		return between
-
-	for step in range(1, steps):
-		var t := float(step) / float(steps)
-		var grid := Vector2i(
-			int(round(lerp(float(a.x), float(b.x), t))),
-			int(round(lerp(float(a.y), float(b.y), t)))
-		)
-		if grid != a and grid != b and (between.is_empty() or between[between.size() - 1] != grid):
-			between.append(grid)
-	return between
+	return grid_controller.line_grids_between(a, b)
 
 
 func _event_press_position(event: InputEvent):
@@ -3069,12 +2964,11 @@ func _event_press_position(event: InputEvent):
 
 
 func _grid_key(grid) -> String:
-	return "%s,%s" % [grid.x, grid.y]
+	return grid_controller.grid_key(grid)
 
 
 func _grid_from_key(key: String) -> Vector2i:
-	var parts := key.split(",")
-	return Vector2i(int(parts[0]), int(parts[1]))
+	return grid_controller.grid_from_key(key)
 
 
 func _scale() -> Vector2:
@@ -3654,11 +3548,7 @@ func _draw_centered_text(rect: Rect2, text: String, base_size: int, color: Color
 
 
 func _short_part_name(part_name: String) -> String:
-	if part_name == "Left Arm":
-		return "L Arm"
-	if part_name == "Right Arm":
-		return "R Arm"
-	return part_name
+	return battle_hud.short_part_name(part_name)
 
 
 func _unit_by_id(id: String):

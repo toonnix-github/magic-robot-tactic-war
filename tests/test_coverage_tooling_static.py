@@ -24,6 +24,13 @@ class CoverageToolingStaticTests(unittest.TestCase):
         self.assertIn("Engine.has_meta", runner)
         self.assertIn("Engine.set_meta", runner)
 
+    def test_coverage_runner_instruments_all_src_gdscript_files(self):
+        """#34 — coverage must follow code extracted out of src/main.gd."""
+        runner = (ROOT / "tools" / "gdscript_function_coverage.py").read_text(encoding="utf-8")
+        self.assertIn("SOURCE_GDSCRIPT_ROOT = Path(\"src\")", runner)
+        self.assertIn("def production_gdscript_files(project_root: Path)", runner)
+        self.assertIn("relative_path.rglob(\"*.gd\")", runner)
+
 
 if __name__ == "__main__":
     unittest.main()

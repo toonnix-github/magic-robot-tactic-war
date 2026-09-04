@@ -431,6 +431,43 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn("func _draw_event_feed", self.source)
         self.assertIn("func _draw_floating_texts", self.source)
 
+    def test_phase1_architecture_modules_are_present(self):
+        """#34 — Phase 1 responsibilities are split into explicit modules."""
+        expected_modules = {
+            "src/combat/combat_controller.gd": "class_name CombatController",
+            "src/combat/grid_controller.gd": "class_name GridController",
+            "src/ai/battle_ai.gd": "class_name BattleAI",
+            "src/presentation/battle_presenter.gd": "class_name BattlePresenter",
+            "src/ui/battle_hud.gd": "class_name BattleHud",
+            "src/data/game_data.gd": "class_name GameData",
+        }
+        for relative_path, class_name in expected_modules.items():
+            module_path = ROOT / relative_path
+            self.assertTrue(module_path.exists(), f"{relative_path} is missing")
+            self.assertIn(class_name, module_path.read_text(encoding="utf-8"))
+
+    def test_main_wires_phase1_modules_instead_of_standing_alone(self):
+        """#34 — main.gd remains scene orchestration/wiring for extracted systems."""
+        for preload in [
+            'preload("res://src/data/game_data.gd")',
+            'preload("res://src/combat/grid_controller.gd")',
+            'preload("res://src/combat/combat_controller.gd")',
+            'preload("res://src/ai/battle_ai.gd")',
+            'preload("res://src/presentation/battle_presenter.gd")',
+            'preload("res://src/ui/battle_hud.gd")',
+        ]:
+            self.assertIn(preload, self.source)
+        for controller_var in [
+            "var grid_controller",
+            "var combat_controller",
+            "var battle_ai",
+            "var battle_presenter",
+            "var battle_hud",
+        ]:
+            self.assertIn(controller_var, self.source)
+        self.assertIn("grid_controller.calculate_reachable_tiles", self.source)
+        self.assertIn("battle_presenter.add_event_message", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

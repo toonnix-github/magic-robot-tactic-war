@@ -106,6 +106,7 @@ func _run() -> void:
 	_run_auto_benchmark_acceptance(scene)
 	_run_visible_auto_playback_acceptance(scene)
 	await _run_combat_impact_acceptance(scene)
+	_run_phase1_architecture_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -2756,6 +2757,43 @@ func _run_combat_impact_acceptance(scene: Control) -> void:
 	var hit_floats: Array = scene.floating_texts.map(func(f): return str(f.get("text", "")))
 	_assert_true(hit_floats.any(func(f): return f.begins_with("-")), "#31: hit produces numeric floating damage")
 	_assert_true(scene.unit_shakes.has(fixture_hit["target"]["id"]), "#31: hit DOES shake target")
+
+
+func _run_phase1_architecture_acceptance(scene: Control) -> void:
+	# #34 — architecture modules are loadable and wired without changing deterministic outcomes.
+	for module_path in [
+		"res://src/data/game_data.gd",
+		"res://src/combat/grid_controller.gd",
+		"res://src/combat/combat_controller.gd",
+		"res://src/ai/battle_ai.gd",
+		"res://src/presentation/battle_presenter.gd",
+		"res://src/ui/battle_hud.gd"
+	]:
+		_assert_true(load(module_path) != null, "#34: module loads: %s" % module_path)
+
+	for property_name in [
+		"grid_controller",
+		"combat_controller",
+		"battle_ai",
+		"battle_presenter",
+		"battle_hud"
+	]:
+		_assert_true(scene.get(property_name) != null, "#34: scene wires %s" % property_name)
+
+	scene.fast_simulation = true
+	scene.auto_battle = false
+	scene._load_mission("ancient_ruins", false)
+	scene.enemy_presentation_enabled = false
+	scene.attack_presentation_enabled = false
+	var first_result: Dictionary = scene.run_auto_battle(60, 4242)
+	scene.fast_simulation = true
+	scene.auto_battle = false
+	scene._load_mission("ancient_ruins", false)
+	scene.enemy_presentation_enabled = false
+	scene.attack_presentation_enabled = false
+	var replay_result: Dictionary = scene.run_auto_battle(60, 4242)
+	_assert_equal(replay_result["winner"], first_result["winner"], "#34: same seed replay preserves winner")
+	_assert_equal(replay_result["turn_log"], first_result["turn_log"], "#34: same seed replay preserves deterministic combat log")
 
 
 func _assert_true(actual: bool, message: String) -> void:

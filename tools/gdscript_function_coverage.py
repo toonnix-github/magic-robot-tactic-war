@@ -3,7 +3,7 @@
 
 This intentionally avoids modifying the working tree. It copies the project to a
 temporary directory, instruments GDScript function entries with coverage prints,
-runs the Godot milestone test, then reports function coverage for src/main.gd.
+runs the Godot milestone test, then reports function coverage for src/**/*.gd.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_SCRIPT = Path("src/main.gd")
+SOURCE_GDSCRIPT_ROOT = Path("src")
 GODOT_TEST_SCRIPT = "res://tests/godot/battle_milestone_test.gd"
 COVERAGE_PREFIX = "__GDSCRIPT_COVERAGE__"
 FUNCTION_RE = re.compile(r"^(?P<indent>\s*)func\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(")
@@ -73,9 +73,26 @@ def instrument_script(project_root: Path, relative_path: Path) -> list[str]:
     original_lines = script_path.read_text(encoding="utf-8").splitlines()
     instrumented_lines: list[str] = []
     functions: list[str] = []
+    pending_function: tuple[str, str] | None = None
+
+    def coverage_lines(function_name: str, indent: str) -> list[str]:
+        marker = f"{COVERAGE_PREFIX}:{relative_path.as_posix()}:{function_name}"
+        meta_key_source = f"{relative_path.as_posix()}_{function_name}"
+        meta_key = "__gdscript_coverage_seen_" + re.sub(r"[^A-Za-z0-9_]", "_", meta_key_source)
+        return [
+            f'{indent}if not Engine.has_meta("{meta_key}"):',
+            f'{indent}\tEngine.set_meta("{meta_key}", true)',
+            f'{indent}\tprint("{marker}")',
+        ]
 
     for line in original_lines:
         instrumented_lines.append(line)
+        if pending_function is not None and line.rstrip().endswith(":"):
+            function_name, indent = pending_function
+            instrumented_lines.extend(coverage_lines(function_name, indent))
+            pending_function = None
+            continue
+
         match = FUNCTION_RE.match(line)
         if not match:
             continue
@@ -83,15 +100,22 @@ def instrument_script(project_root: Path, relative_path: Path) -> list[str]:
         function_name = match.group("name")
         functions.append(function_name)
         indent = match.group("indent") + "\t"
-        marker = f"{COVERAGE_PREFIX}:{relative_path.as_posix()}:{function_name}"
-        meta_key_source = f"{relative_path.as_posix()}_{function_name}"
-        meta_key = "__gdscript_coverage_seen_" + re.sub(r"[^A-Za-z0-9_]", "_", meta_key_source)
-        instrumented_lines.append(f'{indent}if not Engine.has_meta("{meta_key}"):')
-        instrumented_lines.append(f'{indent}\tEngine.set_meta("{meta_key}", true)')
-        instrumented_lines.append(f'{indent}\tprint("{marker}")')
+        if line.rstrip().endswith(":"):
+            instrumented_lines.extend(coverage_lines(function_name, indent))
+        else:
+            pending_function = (function_name, indent)
 
     script_path.write_text("\n".join(instrumented_lines) + "\n", encoding="utf-8")
     return functions
+
+
+def production_gdscript_files(project_root: Path) -> list[Path]:
+    relative_path = project_root / SOURCE_GDSCRIPT_ROOT
+    return [
+        path.relative_to(project_root)
+        for path in sorted(relative_path.rglob("*.gd"))
+        if not path.name.endswith(".uid")
+    ]
 
 
 def run_godot(godot: str, project_root: Path) -> subprocess.CompletedProcess[str]:
@@ -122,7 +146,9 @@ def main() -> int:
 
     try:
         copy_project(temp_root)
-        functions = instrument_script(temp_root, SOURCE_SCRIPT)
+        functions_by_script: dict[Path, list[str]] = {}
+        for source_script in production_gdscript_files(temp_root):
+            functions_by_script[source_script] = instrument_script(temp_root, source_script)
         result = run_godot(godot, temp_root)
         output = result.stdout + result.stderr
         filtered_output = visible_output(output)
@@ -133,11 +159,19 @@ def main() -> int:
             print(f"Godot test command failed with exit code {result.returncode}", file=sys.stderr)
             return result.returncode
 
-        covered = covered_functions(output, SOURCE_SCRIPT)
-        total = len(functions)
-        covered_count = len(covered)
+        total = 0
+        covered_count = 0
+        missed: list[str] = []
+        for source_script, functions in functions_by_script.items():
+            covered = covered_functions(output, source_script)
+            total += len(functions)
+            covered_count += len(covered)
+            missed.extend(
+                f"{source_script.as_posix()}:{name}"
+                for name in functions
+                if name not in covered
+            )
         percent = 100.0 if total == 0 else covered_count / total * 100.0
-        missed = [name for name in functions if name not in covered]
 
         print(f"GDScript function coverage: {covered_count}/{total} ({percent:.1f}%)")
         if missed:
