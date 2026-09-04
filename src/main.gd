@@ -319,12 +319,14 @@ func _gui_input(event: InputEvent) -> void:
 		elif selected_action == "Attack" and turn_state == TurnState.SELECTING_ATTACK:
 			if _is_active_unit(tapped_unit):
 				_cancel_attack_selection()
-			elif not _confirm_attack_target(tapped_unit):
-				_preview_attack_target(tapped_unit)
+			elif selected_unit != null and selected_unit["id"] == tapped_unit["id"] and _is_attack_target_legal(active_unit, tapped_unit):
+				_confirm_attack_target(tapped_unit)
+			else:
+				_inspect_target(tapped_unit)
 			accept_event()
 			return
 
-		_select_unit(tapped_unit)
+		_inspect_unit(tapped_unit)
 		accept_event()
 		return
 
@@ -340,6 +342,7 @@ func _draw() -> void:
 	_draw_initiative_strip()
 	_draw_mission_panel()
 	_draw_part_status_panel()
+	_draw_enemy_inspection_panel()
 	_draw_action_bar()
 
 
@@ -2824,6 +2827,176 @@ func _draw_part_status_panel() -> void:
 		var label_color := Color(0.78, 0.82, 0.84) if not bool(part["destroyed"]) else Color(0.88, 0.48, 0.46)
 		draw_string(_font(), _p(48, y), _short_part_name(part_name), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), label_color)
 		_draw_bar(_r(100, y - 8.0, 76, 7), _part_hp_ratio(selected_unit, part_name), Color(0.46, 0.65, 0.56) if not bool(part["destroyed"]) else Color(0.76, 0.32, 0.31))
+
+
+func _inspect_target(target) -> Dictionary:
+	if target == null:
+		return {}
+	selected_unit = target
+	if active_unit != null:
+		return _preview_attack_target(target)
+	queue_redraw()
+	return {}
+
+
+func _inspect_unit(unit) -> void:
+	if unit == null:
+		return
+	selected_unit = unit
+	if active_unit != null and turn_state == TurnState.SELECTING_ATTACK:
+		_preview_attack_target(unit)
+	else:
+		queue_redraw()
+
+
+func _target_inspection_data(unit) -> Dictionary:
+	if unit == null:
+		return {}
+
+	var terrain := _terrain_at(unit["grid"])
+	var height := _height_at(unit["grid"])
+	var has_cov := _has_cover(unit["grid"])
+	var terrain_desc := "H%d" % height
+	if has_cov:
+		terrain_desc += " · Cover"
+
+	var consequences: Array[String] = []
+	if bool(unit.get("weapon_disabled", false)):
+		consequences.append("Weapon disabled (%s)" % str(unit.get("weapon_mount_part", "Arm")))
+	if int(unit.get("accuracy_modifier", 0)) < 0:
+		consequences.append("Accuracy reduced (%+d%%)" % int(unit["accuracy_modifier"]))
+	if int(unit.get("current_move_range", 0)) == 0 and bool(unit.get("parts", {}).get("Legs", {}).get("destroyed", false)):
+		consequences.append("Legs destroyed: mobility lost")
+
+	var part_details := {}
+	for part_name in PART_NAMES:
+		var part: Dictionary = unit["parts"].get(part_name, {})
+		part_details[part_name] = {
+			"hp": int(part.get("hp", 0)),
+			"max_hp": int(part.get("max_hp", PART_MAX_HP)),
+			"destroyed": bool(part.get("destroyed", false)),
+		}
+
+	var orbs_info: Array[String] = []
+	for orb in _active_orbs(unit):
+		orbs_info.append("%s (%s)" % [str(orb.get("name", orb.get("id", ""))), str(orb.get("element", ""))])
+
+	var statuses_info: Array[String] = []
+	for st in unit.get("statuses", []):
+		if st is Dictionary:
+			statuses_info.append(str(st.get("name", st.get("id", ""))))
+		else:
+			statuses_info.append(str(st))
+
+	var data := {
+		"id": str(unit.get("id", "")),
+		"name": str(unit.get("name", "")),
+		"mech": str(unit.get("mech", "")),
+		"weapon": str(unit.get("weapon", "")),
+		"team": str(unit.get("team", "")),
+		"grid": unit["grid"],
+		"height": height,
+		"has_cover": has_cov,
+		"terrain_desc": terrain_desc,
+		"consequences": consequences,
+		"parts": part_details,
+		"shield_hp": int(unit.get("shield_hp", 0)),
+		"shield_max_hp": int(unit.get("shield_max_hp", 0)),
+		"has_shield": int(unit.get("shield_max_hp", 0)) > 0,
+		"shield_active": _shield_is_active(unit),
+		"statuses": statuses_info,
+		"orbs": orbs_info,
+	}
+
+	if active_unit != null and str(active_unit.get("id", "")) != str(unit.get("id", "")):
+		var preview: Dictionary = _attack_preview(active_unit, unit)
+		data["attack_preview"] = preview
+		var interceptor = _intercepting_shield_for(active_unit, unit, _weapon_data_for(active_unit))
+		data["shield_interceptor"] = interceptor
+		if interceptor != null:
+			data["shield_warning"] = "Protected by %s's Shield" % str(interceptor.get("name", "Ally"))
+		else:
+			data["shield_warning"] = ""
+	else:
+		data["attack_preview"] = {}
+		data["shield_interceptor"] = null
+		data["shield_warning"] = ""
+
+	return data
+
+
+func _draw_enemy_inspection_panel() -> void:
+	if selected_unit == null or selected_unit == active_unit:
+		return
+	if selected_unit["team"] != "enemy" and turn_state != TurnState.SELECTING_ATTACK:
+		return
+
+	var panel_rect := _r(960, 126, 310, 385)
+	_draw_panel(panel_rect)
+
+	var data: Dictionary = _target_inspection_data(selected_unit)
+	var is_enemy: bool = str(selected_unit.get("team", "")) == "enemy"
+	var header_title := "TARGET INSPECTION" if turn_state == TurnState.SELECTING_ATTACK else ("ENEMY INTEL" if is_enemy else "ALLY INTEL")
+	var header_color := Color(0.85, 0.65, 0.40) if turn_state == TurnState.SELECTING_ATTACK else Color(0.56, 0.63, 0.67)
+	draw_string(_font(), _p(976, 148), header_title, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), header_color)
+
+	draw_string(_font(), _p(976, 170), str(selected_unit["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(16), Color(0.95, 0.97, 0.97))
+	draw_string(_font(), _p(976, 188), "%s · %s" % [selected_unit["mech"], selected_unit["weapon"]], HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(11), Color(0.62, 0.69, 0.73))
+	draw_string(_font(), _p(976, 204), str(data.get("terrain_desc", "")), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.70, 0.75, 0.77))
+
+	var y := 220.0
+	for part_name in PART_NAMES:
+		var p_info: Dictionary = data["parts"][part_name]
+		var p_hp: int = int(p_info["hp"])
+		var p_max: int = int(p_info["max_hp"])
+		var destroyed: bool = bool(p_info["destroyed"])
+		var label_col := Color(0.78, 0.82, 0.84) if not destroyed else Color(0.88, 0.48, 0.46)
+		draw_string(_font(), _p(976, y), _short_part_name(part_name), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), label_col)
+		_draw_bar(_r(1030, y - 8.0, 130, 7), float(p_hp) / float(p_max) if p_max > 0 else 0.0, Color(0.46, 0.65, 0.56) if not destroyed else Color(0.76, 0.32, 0.31))
+		var hp_text := "%d/%d" % [p_hp, p_max] if not destroyed else "DESTROYED"
+		draw_string(_font(), _p(1170, y), hp_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), label_col)
+		y += 15.0
+
+	if bool(data.get("has_shield", false)):
+		var s_hp: int = int(data["shield_hp"])
+		var s_max: int = int(data["shield_max_hp"])
+		var s_active: bool = bool(data["shield_active"])
+		draw_string(_font(), _p(976, y), "Shield", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.53, 0.71, 0.75) if s_active else Color(0.76, 0.32, 0.31))
+		_draw_bar(_r(1030, y - 8.0, 130, 7), float(s_hp) / float(s_max) if s_max > 0 else 0.0, Color(0.40, 0.60, 0.75) if s_active else Color(0.76, 0.32, 0.31))
+		var s_text := "%d/%d" % [s_hp, s_max] if s_active else "BROKEN"
+		draw_string(_font(), _p(1170, y), s_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), Color(0.53, 0.71, 0.75) if s_active else Color(0.76, 0.32, 0.31))
+		y += 15.0
+
+	for c in data.get("consequences", []):
+		draw_string(_font(), _p(976, y), "⚠ " + str(c), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), Color(0.96, 0.76, 0.40))
+		y += 13.0
+
+	if turn_state == TurnState.SELECTING_ATTACK and not data["attack_preview"].is_empty():
+		var preview: Dictionary = data["attack_preview"]
+		y += 4.0
+		draw_line(_p(976, y), _p(1250, y), Color(0.25, 0.33, 0.36), 1.0)
+		y += 14.0
+		var legal: bool = bool(preview["legal"])
+		var hit: int = int(preview["hit_percent"])
+		var dmg: int = int(preview["damage"])
+		var h_mod: int = int(preview.get("height_hit_modifier", 0))
+		var c_mod: int = int(preview.get("cover_dodge_modifier", 0))
+		var pat: String = str(preview.get("weapon_pattern", "single"))
+		var status_text := "LEGAL TARGET" if legal else "INVALID TARGET"
+		var status_color := Color(0.40, 0.78, 0.58) if legal else Color(0.88, 0.42, 0.42)
+		draw_string(_font(), _p(976, y), status_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), status_color)
+		y += 14.0
+		var mod_notes := ""
+		if h_mod != 0:
+			mod_notes += " (H%+d%%)" % h_mod
+		if c_mod != 0:
+			mod_notes += " (Cover %+d%%)" % c_mod
+		draw_string(_font(), _p(976, y), "Hit: %d%%%s · Est Dmg: %d" % [hit, mod_notes, dmg], HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.93, 0.96, 0.96))
+		y += 14.0
+		draw_string(_font(), _p(976, y), "Pattern: %s · Range: %d-%d" % [pat.to_upper(), int(preview.get("min_range", 1)), int(preview.get("range", 1))], HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), Color(0.62, 0.69, 0.73))
+		y += 14.0
+		if str(data.get("shield_warning", "")) != "":
+			draw_string(_font(), _p(976, y), "⚠ " + str(data["shield_warning"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), Color(0.96, 0.86, 0.48))
 
 
 func _draw_action_bar() -> void:

@@ -97,6 +97,7 @@ func _run() -> void:
 	await _run_attack_presentation_acceptance(scene)
 	_run_attack_overlay_acceptance(scene)
 	_run_movement_preview_acceptance(scene)
+	_run_enemy_inspection_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -1880,6 +1881,121 @@ func _test_move_confirm_attack_remains_valid(scene: Control) -> void:
 	scene._select_action("Attack")
 	_assert_equal(scene.turn_state, scene.TurnState.SELECTING_ATTACK, "can transition to attack selection")
 	_assert_true(scene._confirm_attack_target(enemy), "attack can be confirmed after move")
+
+
+func _run_enemy_inspection_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_inspect_target",
+		"_inspect_unit",
+		"_target_inspection_data",
+		"_draw_enemy_inspection_panel",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "enemy-inspection API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_inspect_two_enemies_without_consuming_action(scene)
+	_test_target_panel_reflects_part_hp_and_destroyed_state(scene)
+	_test_attack_preview_values_match_actual_validation(scene)
+	_test_shielded_target_warning_when_interception_active(scene)
+	_test_enemy_inspection_never_changes_active_unit_or_initiative(scene)
+
+
+func _test_inspect_two_enemies_without_consuming_action(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var arlen = scene._unit_by_id("arlen")
+	var enemy1 = scene._unit_by_id("enemy_blade")
+	var enemy2 = scene._unit_by_id("enemy_spear")
+	scene._begin_activation(arlen)
+	scene._select_action("Attack")
+	_assert_equal(scene.turn_state, scene.TurnState.SELECTING_ATTACK, "in attack mode")
+
+	scene._inspect_target(enemy1)
+	_assert_equal(scene.selected_unit["id"], "enemy_blade", "enemy 1 inspected")
+	_assert_equal(scene.active_unit["id"], "arlen", "active unit unchanged after inspecting enemy 1")
+	_assert_false(arlen["has_attacked"], "action not consumed by inspecting enemy 1")
+	_assert_false(arlen["has_moved"], "move not consumed by inspecting enemy 1")
+	_assert_equal(scene.turn_state, scene.TurnState.SELECTING_ATTACK, "still in attack mode")
+
+	scene._inspect_target(enemy2)
+	_assert_equal(scene.selected_unit["id"], "enemy_spear", "enemy 2 inspected immediately")
+	_assert_equal(scene.active_unit["id"], "arlen", "active unit unchanged after inspecting enemy 2")
+	_assert_false(arlen["has_attacked"], "action not consumed by inspecting enemy 2")
+	_assert_equal(scene.turn_state, scene.TurnState.SELECTING_ATTACK, "still in attack mode")
+
+
+func _test_target_panel_reflects_part_hp_and_destroyed_state(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var enemy = scene._unit_by_id("enemy_blade")
+	scene._damage_part(enemy, "Head", 100)
+	var data: Dictionary = scene._target_inspection_data(enemy)
+	_assert_equal(data["parts"]["Head"]["hp"], 0, "Head HP is 0 in target data")
+	_assert_true(data["parts"]["Head"]["destroyed"], "Head marked destroyed in target data")
+	_assert_true(data["parts"]["Body"]["hp"] > 0, "Body HP is positive")
+	_assert_false(data["parts"]["Body"]["destroyed"], "Body not destroyed")
+	_assert_true(data["consequences"].size() > 0, "Consequences list has penalty for destroyed Head")
+
+	scene._damage_part(enemy, str(enemy["weapon_mount_part"]), 100)
+	data = scene._target_inspection_data(enemy)
+	_assert_true(bool(enemy["weapon_disabled"]), "weapon disabled after mount destroyed")
+
+	scene._load_mission("ascending_ridge")
+	var guard = scene._unit_by_id("enemy_ridge_guard")
+	var guard_data: Dictionary = scene._target_inspection_data(guard)
+	_assert_true(guard_data["has_shield"], "guard has shield in target data")
+	_assert_equal(guard_data["shield_hp"], guard["shield_hp"], "shield HP matches")
+	_assert_equal(guard_data["shield_max_hp"], guard["shield_max_hp"], "shield max HP matches")
+
+
+func _test_attack_preview_values_match_actual_validation(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var arlen = scene._unit_by_id("arlen")
+	var enemy = scene._unit_by_id("enemy_blade")
+	arlen["grid"] = Vector2i(2, 3)
+	enemy["grid"] = Vector2i(4, 3)
+	scene._begin_activation(arlen)
+	scene._select_action("Attack")
+	var data: Dictionary = scene._target_inspection_data(enemy)
+	var preview: Dictionary = scene._attack_preview(arlen, enemy)
+	_assert_equal(data["attack_preview"]["legal"], preview["legal"], "target data preview legality matches")
+	_assert_equal(data["attack_preview"]["hit_percent"], preview["hit_percent"], "target data preview hit% matches")
+	_assert_equal(data["attack_preview"]["damage"], preview["damage"], "target data preview damage matches")
+	_assert_equal(data["attack_preview"]["weapon_pattern"], preview["weapon_pattern"], "target data weapon pattern matches")
+
+
+func _test_shielded_target_warning_when_interception_active(scene: Control) -> void:
+	scene._load_mission("ascending_ridge")
+	var sera = scene._unit_by_id("sera")
+	var guard = scene._unit_by_id("enemy_ridge_guard")
+	var enemy = scene._unit_by_id("enemy_blade")
+	sera["grid"] = Vector2i(1, 3)
+	guard["grid"] = Vector2i(3, 3)
+	enemy["grid"] = Vector2i(4, 3)
+	scene._begin_activation(sera)
+	scene._select_action("Attack")
+	_assert_true(scene._can_shield_intercept(guard, sera, enemy, scene._weapon_data_for(sera)), "guard can intercept")
+	var data: Dictionary = scene._target_inspection_data(enemy)
+	_assert_true(data["shield_interceptor"] != null, "shield interceptor identified")
+	_assert_true(str(data["shield_warning"]).contains("Ridge Guard"), "shield warning mentions intercepting guard")
+
+
+func _test_enemy_inspection_never_changes_active_unit_or_initiative(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var arlen = scene._unit_by_id("arlen")
+	scene._begin_activation(arlen)
+	var active_before: String = scene.active_unit["id"]
+	var timeline_before: Array = scene.initiative_timeline.duplicate()
+
+	scene._inspect_unit(scene._unit_by_id("commander"))
+	_assert_equal(scene.active_unit["id"], active_before, "active unit unchanged after ally/enemy inspection")
+	_assert_equal(scene.initiative_timeline, timeline_before, "initiative timeline unchanged after inspection")
+
+	scene._inspect_target(scene._unit_by_id("enemy_blade"))
+	_assert_equal(scene.active_unit["id"], active_before, "active unit unchanged after target inspection")
+	_assert_equal(scene.initiative_timeline, timeline_before, "initiative timeline unchanged after target inspection")
+
+	scene.notification(CanvasItem.NOTIFICATION_DRAW)
 
 
 func _assert_true(actual: bool, message: String) -> void:

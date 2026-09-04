@@ -294,6 +294,19 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn("MOVE_PREVIEW", self.source)
 
 
+    def test_enemy_inspection_hooks_are_encoded(self):
+        for hook in [
+            "func _inspect_target",
+            "func _inspect_unit",
+            "func _target_inspection_data",
+            "func _draw_enemy_inspection_panel",
+        ]:
+            self.assertIn(hook, self.source)
+        self.assertIn("TARGET INSPECTION", self.source)
+        self.assertIn("ENEMY INTEL", self.source)
+        self.assertIn("shield_warning", self.source)
+
+
 if __name__ == "__main__":
     unittest.main()
 
