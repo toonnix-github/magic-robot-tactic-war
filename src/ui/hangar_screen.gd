@@ -339,3 +339,24 @@ func _font_size(size_pt: int) -> int:
 func _p(x: float, y: float) -> Vector2:
 	var scale := Vector2(size.x / DESIGN_SIZE.x, size.y / DESIGN_SIZE.y) if size.x > 0.0 and size.y > 0.0 else Vector2.ONE
 	return Vector2(x * scale.x, y * scale.y)
+
+func available_orb_options(part_name: String) -> Array:
+	var options: Array = []
+	for orb_id in GameDataScript.ORB_DATA.keys():
+		var orb = GameDataScript.ORB_DATA[orb_id].duplicate(true)
+		orb["id"] = orb_id
+		options.append(orb)
+	return options
+
+func install_orb(part_name: String, orb_id: String) -> bool:
+	if not builds.has(current_unit_id): return false
+	builds[current_unit_id] = build_model.install_orb(builds[current_unit_id], part_name, orb_id, [])
+	queue_redraw()
+	return true
+
+func remove_orb(part_name: String) -> bool:
+	if not builds.has(current_unit_id): return false
+	builds[current_unit_id] = build_model.remove_orb(builds[current_unit_id], part_name, [])
+	queue_redraw()
+	return true
+

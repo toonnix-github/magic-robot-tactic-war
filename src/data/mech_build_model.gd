@@ -445,3 +445,16 @@ func _stat_label(stat_name: String) -> String:
 	if stat_name == "max_hp":
 		return "HP"
 	return stat_name.capitalize()
+
+func install_orb(build: Dictionary, part_name: String, orb_id: String, part_names: Array = []) -> Dictionary:
+	var updated = build.duplicate(true)
+	if not updated.has("orbs") or not (updated["orbs"] is Dictionary):
+		updated["orbs"] = {}
+	updated["orbs"][part_name] = orb_id
+	return updated
+
+func remove_orb(build: Dictionary, part_name: String, part_names: Array = []) -> Dictionary:
+	var updated = build.duplicate(true)
+	if updated.has("orbs") and (updated["orbs"] is Dictionary):
+		updated["orbs"].erase(part_name)
+	return updated
