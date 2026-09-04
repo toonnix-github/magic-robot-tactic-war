@@ -113,6 +113,7 @@ func _run() -> void:
 	_run_phase2_build_model_acceptance(scene)
 	await _run_phase2_hangar_shell_acceptance(scene)
 	_run_phase2_part_swap_tradeoffs_acceptance(scene)
+	_run_phase2_weapon_offhand_rules_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -412,8 +413,12 @@ func _set_enemy_shield_fixture(scene: Control) -> Dictionary:
 	var protected = scene._unit_by_id("commander")
 	attacker["weapon"] = "Rifle"
 	attacker["grid"] = Vector2i(6, 3)
-	shield["weapon"] = "Shield"
-	shield["weapon_mount_part"] = "Left Arm"
+	shield["weapon"] = "Sword"
+	shield["off_hand"] = "Shield"
+	shield["weapon_mount_part"] = "Right Arm"
+	shield["weapon_required_parts"] = ["Right Arm"]
+	shield["off_hand_part"] = "Left Arm"
+	shield["off_hand_disabled"] = false
 	shield["shield_max_hp"] = 25
 	shield["shield_hp"] = 25
 	shield["shield_disabled"] = false
@@ -1453,7 +1458,7 @@ func _test_phase1_ancient_ruins_different_loadouts(scene: Control) -> void:
 	scene.configure_player_loadouts({
 		"arlen": {"weapon": "Sword"},
 		"mira": {"weapon": "Spear"},
-		"sera": {"weapon": "Shield"},
+		"sera": {"weapon": "Sword", "off_hand": "Shield"},
 	})
 	var alt_run: Dictionary = scene.run_auto_battle(15, 1337)
 	_assert_true(default_run["turn_log"] != alt_run["turn_log"], "different weapon loadouts produce distinct tactical combat flows")
@@ -1653,11 +1658,11 @@ func _test_shield_intercept_feedback_names_shield_hp_loss(scene: Control) -> voi
 
 
 func _test_destroy_feedback_precedes_next_activation(scene: Control) -> void:
-	var fixture := _attack_presentation_fixture(scene, "Shield", Vector2i(2, 1))
+	var fixture := _attack_presentation_fixture(scene, "Sword", Vector2i(2, 1))
 	fixture["attacker"]["weapon_mount_part"] = "Right Arm"
 	fixture["target"]["parts"]["Body"]["hp"] = 20
 	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["target"])
-	var result: Dictionary = scene._resolve_attack_result(fixture["attacker"], fixture["target"], preview, "Body", 11)
+	var result: Dictionary = scene._resolve_attack_result(fixture["attacker"], fixture["target"], preview, "Body", 21)
 	var sequence: Array = scene._build_attack_feedback_sequence(fixture["attacker"], fixture["target"], result)
 	var joined := " | ".join(sequence)
 	_assert_true(joined.contains("BODY DESTROYED"), "destroyed part feedback is stronger than ordinary hit")
@@ -2635,10 +2640,12 @@ func _test_auto_benchmark_constants_and_loadouts(scene: Control) -> void:
 
 	_assert_equal(scene.SENSIBLE_LOADOUT["mira"]["weapon"], "Sniper", "sensible mira uses Sniper with Hawkeye")
 	_assert_equal(scene.SENSIBLE_LOADOUT["sera"]["weapon"], "Rifle", "sensible sera uses Rifle with Elemental Resonance")
-	_assert_equal(scene.SENSIBLE_LOADOUT["brann"]["weapon"], "Shield", "sensible brann uses Shield with Guardian Stance")
+	_assert_equal(scene.SENSIBLE_LOADOUT["brann"]["weapon"], "Sword", "sensible brann uses one weapon with Guardian Stance")
+	_assert_equal(scene.SENSIBLE_LOADOUT["brann"]["off_hand"], "Shield", "sensible brann uses Shield off-hand")
 
 	_assert_equal(scene.MISMATCHED_LOADOUT["mira"]["weapon"], "Sword", "mismatched mira uses Sword disabling Hawkeye")
-	_assert_equal(scene.MISMATCHED_LOADOUT["sera"]["weapon"], "Shield", "mismatched sera uses Shield with no procs")
+	_assert_equal(scene.MISMATCHED_LOADOUT["sera"]["weapon"], "Sword", "mismatched sera uses Sword with no procs")
+	_assert_false(scene.MISMATCHED_LOADOUT["sera"].has("off_hand"), "mismatched sera has no off-hand utility")
 	_assert_equal(scene.MISMATCHED_LOADOUT["brann"]["weapon"], "Spear", "mismatched brann uses Spear with no shield")
 
 
@@ -3146,6 +3153,110 @@ func _test_phase2_hangar_part_swap_flow(scene: Control, model) -> void:
 	_assert_equal(rows[4]["part_id"], "sprinter_legs", "#37: Hangar part rows refresh after swap")
 	_assert_equal(model.build_stats(hangar.builds["arlen"])["move"], 4, "#37: swapped build updates derived Move")
 	hangar.queue_free()
+
+
+func _run_phase2_weapon_offhand_rules_acceptance(scene: Control) -> void:
+	# #38 — Weapon handedness and off-hand equipment in battle.
+	for method in [
+		"_off_hand_data_for",
+		"_configure_unit_equipment_state",
+		"_weapon_required_parts",
+		"_has_off_hand_shield"
+	]:
+		_assert_true(scene.has_method(method), "#38: battle scene exposes %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_phase2_invalid_two_hand_offhand_is_not_equipped(scene)
+	_test_phase2_one_hand_weapon_can_use_shield_offhand(scene)
+	_test_phase2_one_hand_arm_destruction_rules(scene)
+	_test_phase2_two_hand_arm_destruction_rules(scene)
+	_test_phase2_attack_has_no_weapon_choice_command(scene)
+
+
+func _test_phase2_invalid_two_hand_offhand_is_not_equipped(scene: Control) -> void:
+	scene._load_mission("ancient_ruins", false)
+	scene.configure_player_loadouts({
+		"arlen": {
+			"weapon": "Sniper",
+			"off_hand": "Shield",
+		},
+	})
+	var arlen = scene._unit_by_id("arlen")
+	_assert_equal(arlen["weapon"], "Sniper", "#38: 2H weapon remains equipped")
+	_assert_equal(arlen["off_hand"], "", "#38: invalid 2H off-hand is removed")
+	_assert_false(scene._has_off_hand_shield(arlen), "#38: 2H + Shield cannot be equipped")
+	_assert_equal(int(arlen["shield_max_hp"]), 0, "#38: rejected Shield grants no Shield HP")
+
+
+func _test_phase2_one_hand_weapon_can_use_shield_offhand(scene: Control) -> void:
+	scene._load_mission("ancient_ruins", false)
+	scene.configure_player_loadouts({
+		"sera": {
+			"weapon": "Rifle",
+			"off_hand": "Shield",
+		},
+	})
+	var sera = scene._unit_by_id("sera")
+	_assert_equal(sera["weapon"], "Rifle", "#38: Rifle remains attack weapon")
+	_assert_equal(sera["off_hand"], "Shield", "#38: Shield equips as off-hand")
+	_assert_true(scene._has_off_hand_shield(sera), "#38: 1H + Shield is active")
+	_assert_true(int(sera["shield_max_hp"]) > 0, "#38: Shield off-hand grants Shield HP")
+
+
+func _test_phase2_one_hand_arm_destruction_rules(scene: Control) -> void:
+	scene._load_mission("ancient_ruins", false)
+	scene.configure_player_loadouts({
+		"sera": {
+			"weapon": "Rifle",
+			"off_hand": "Shield",
+		},
+	})
+	var sera = scene._unit_by_id("sera")
+	scene._damage_part(sera, "Left Arm", 100)
+	_assert_false(bool(sera["weapon_disabled"]), "#38: 1H left arm loss does not disable right-arm weapon")
+	_assert_true(bool(sera["off_hand_disabled"]), "#38: left arm loss disables off-hand")
+	_assert_false(scene._shield_is_active(sera), "#38: disabled off-hand Shield cannot guard")
+
+	scene._load_mission("ancient_ruins", false)
+	scene.configure_player_loadouts({
+		"sera": {
+			"weapon": "Rifle",
+			"off_hand": "Shield",
+		},
+	})
+	sera = scene._unit_by_id("sera")
+	scene._damage_part(sera, "Right Arm", 100)
+	_assert_true(bool(sera["weapon_disabled"]), "#38: 1H right arm loss disables weapon")
+	_assert_false(bool(sera["off_hand_disabled"]), "#38: right arm loss does not disable off-hand by itself")
+
+
+func _test_phase2_two_hand_arm_destruction_rules(scene: Control) -> void:
+	scene._load_mission("ancient_ruins", false)
+	scene.configure_player_loadouts({
+		"arlen": {
+			"weapon": "Spear",
+		},
+	})
+	var arlen = scene._unit_by_id("arlen")
+	scene._damage_part(arlen, "Left Arm", 100)
+	_assert_true(bool(arlen["weapon_disabled"]), "#38: 2H left arm loss disables weapon")
+
+	scene._load_mission("ancient_ruins", false)
+	scene.configure_player_loadouts({
+		"arlen": {
+			"weapon": "Spear",
+		},
+	})
+	arlen = scene._unit_by_id("arlen")
+	scene._damage_part(arlen, "Right Arm", 100)
+	_assert_true(bool(arlen["weapon_disabled"]), "#38: 2H right arm loss disables weapon")
+
+
+func _test_phase2_attack_has_no_weapon_choice_command(scene: Control) -> void:
+	_assert_equal(scene.PRIMARY_ACTIONS, ["Move", "Attack", "Wait"], "#38: primary commands remain Move Attack Wait")
+	_assert_false(scene.PRIMARY_ACTIONS.has("Weapon"), "#38: no weapon-selection command exists")
+	_assert_false(scene.PRIMARY_ACTIONS.has("Item"), "#38: off-hand does not add item command")
 
 
 func _assert_true(actual: bool, message: String) -> void:

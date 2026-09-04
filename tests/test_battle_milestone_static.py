@@ -675,6 +675,30 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn("build_model.swap_part", hangar_source)
         self.assertIn("build_model.part_delta", hangar_source)
 
+    def test_phase2_weapon_offhand_rules_are_encoded(self):
+        """#38 — Shield is off-hand equipment and arm destruction follows handedness."""
+        data_source = (ROOT / "src" / "data" / "game_data.gd").read_text(encoding="utf-8")
+        combat_source = (ROOT / "src" / "combat" / "combat_controller.gd").read_text(encoding="utf-8")
+
+        self.assertIn("OFF_HAND_EQUIPMENT_DATA", self.source)
+        self.assertIn("WEAPON_HANDEDNESS", self.source)
+        self.assertNotRegex(data_source, r'"Shield":\s*\{\s*"name":\s*"Shield"')
+        for weapon in ["Sword", "Rifle", "Spear", "Sniper"]:
+            self.assertIn(f'"{weapon}"', data_source)
+
+        for hook in [
+            "func _off_hand_data_for",
+            "func _configure_unit_equipment_state",
+            "func _weapon_required_parts",
+            "func _has_off_hand_shield",
+        ]:
+            self.assertIn(hook, self.source)
+
+        self.assertIn("weapon_required_parts", combat_source)
+        self.assertIn("off_hand_disabled", combat_source)
+        self.assertIn("unit[\"weapon_disabled\"] = true", combat_source)
+        self.assertNotIn('PRIMARY_ACTIONS := ["Move", "Attack", "Wait", "Weapon"', self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
