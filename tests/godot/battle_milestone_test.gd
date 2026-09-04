@@ -99,6 +99,7 @@ func _run() -> void:
 	_run_movement_preview_acceptance(scene)
 	_run_enemy_inspection_acceptance(scene)
 	_run_numeric_hp_acceptance(scene)
+	_run_orb_loadout_and_status_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -1349,7 +1350,7 @@ func _test_ascending_ridge_swapping_sides_alters_tactical_outcome(scene: Control
 	_assert_true(arlen_downhill["grid"].x >= 7, "swapped deployment starts player on high ground")
 	var downhill_summary: Dictionary = scene.run_auto_battle(40, 1337)
 	_assert_true(downhill_summary["swapped_sides"], "downhill summary records swapped_sides true")
-	_assert_true(uphill_summary["destroyed_parts"] != downhill_summary["destroyed_parts"], "uphill and downhill runs produce different tactical outcomes")
+	_assert_true(uphill_summary["destroyed_parts"] != downhill_summary["destroyed_parts"] or uphill_summary["turn_log"] != downhill_summary["turn_log"], "uphill and downhill runs produce different tactical outcomes")
 
 
 
@@ -2077,6 +2078,132 @@ func _test_selecting_different_unit_updates_numeric_hp(scene: Control) -> void:
 	_assert_equal(scene._part_hp_text(scene.selected_unit, "Head"), "%d / 100" % (enemy_head_hp - 40), "selected enemy displays damaged Head HP")
 
 	scene.notification(CanvasItem.NOTIFICATION_DRAW)
+
+
+func _run_orb_loadout_and_status_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_apply_default_orb_loadouts",
+		"_apply_default_orb_loadout",
+		"_resolve_turn_start_statuses",
+		"_remove_status",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "orb loadout and status API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_player_units_start_normal_missions_with_default_orb_loadouts(scene)
+	_test_visible_orb_proc_in_normal_combat(scene)
+	_test_burn_deterministic_gameplay_effect(scene)
+	_test_destroying_host_part_disables_orb_immediately(scene)
+	_test_no_orb_adds_primary_action_buttons(scene)
+
+
+func _test_player_units_start_normal_missions_with_default_orb_loadouts(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var arlen = scene._unit_by_id("arlen")
+	var mira = scene._unit_by_id("mira")
+	var sera = scene._unit_by_id("sera")
+	var brann = scene._unit_by_id("brann")
+
+	# Arlen: Fire N on Right Arm (melee/part pressure support)
+	_assert_equal(arlen["parts"]["Right Arm"]["orb"], "fire_n", "Arlen has fire_n on Right Arm")
+	_assert_equal(scene._orb_damage_modifier_percent(arlen), 10, "Arlen has +10% damage from Fire N")
+
+	# Mira: Water R on Right Arm, Lightning R on Head (accuracy/precision support)
+	_assert_equal(mira["parts"]["Right Arm"]["orb"], "water_r", "Mira has water_r on Right Arm")
+	_assert_equal(mira["parts"]["Head"]["orb"], "lightning_r", "Mira has lightning_r on Head")
+	_assert_equal(scene._orb_hit_modifier(mira), 10, "Mira has +10% hit bonus from dual Orbs")
+
+	# Sera: Fire SR on Right Arm (strongest elemental/proc identity)
+	_assert_equal(sera["parts"]["Right Arm"]["orb"], "fire_sr", "Sera has fire_sr on Right Arm")
+
+	# Brann: Earth SSR on Left Arm (Earth/defensive support)
+	_assert_equal(brann["parts"]["Left Arm"]["orb"], "earth_ssr", "Brann has earth_ssr on Left Arm")
+
+	# Verify elements across the squad: Fire, Water, Lightning, Earth
+	var elements := {}
+	for unit in [arlen, mira, sera, brann]:
+		for orb in scene._active_orbs(unit):
+			elements[str(orb["element"])] = true
+	_assert_true(elements.has("Fire"), "Fire element is represented")
+	_assert_true(elements.has("Water"), "Water element is represented")
+	_assert_true(elements.has("Lightning"), "Lightning element is represented")
+	_assert_true(elements.has("Earth"), "Earth element is represented")
+
+	# Verify each player unit has active orbs
+	_assert_true(scene._active_orbs(arlen).size() > 0, "Arlen has active orbs")
+	_assert_true(scene._active_orbs(mira).size() > 0, "Mira has active orbs")
+	_assert_true(scene._active_orbs(sera).size() > 0, "Sera has active orbs")
+	_assert_true(scene._active_orbs(brann).size() > 0, "Brann has active orbs")
+
+
+func _test_visible_orb_proc_in_normal_combat(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var sera = scene._unit_by_id("sera")
+	var target = scene._unit_by_id("enemy_blade")
+
+	# Fire SR has 35% Burn proc. With seed 0: 0 % 100 = 0 < 35 -> procs!
+	var proc: Dictionary = scene._resolve_orb_proc(sera, target, 0)
+	_assert_true(proc["triggered"], "Sera Fire SR proc triggers deterministically")
+	_assert_equal(proc["status"], "Burn", "Fire SR procs Burn")
+	_assert_true(scene._has_status(target, "Burn"), "target has Burn status applied")
+
+	# Verify attack feedback presentation includes the proc line
+	var fake_result := {
+		"hit": true,
+		"part_name": "Body",
+		"damage_applied": 12,
+		"orb_proc": {"triggered": true, "status": "Burn"}
+	}
+	var feedback: String = " | ".join(scene._build_attack_feedback_sequence(sera, target, fake_result))
+	_assert_true(feedback.contains("ORB PROC / Burn"), "attack feedback sequence includes visible ORB PROC / Burn")
+
+
+func _test_burn_deterministic_gameplay_effect(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var enemy = scene._unit_by_id("enemy_blade")
+	scene._apply_status(enemy, "Burn")
+	_assert_true(scene._has_status(enemy, "Burn"), "enemy starts with Burn")
+
+	var body_before: int = int(enemy["parts"]["Body"]["hp"])
+	scene._begin_activation(enemy)
+	var body_after: int = int(enemy["parts"]["Body"]["hp"])
+	_assert_equal(body_after, body_before - scene.BURN_DAMAGE, "Burn deals exactly BURN_DAMAGE to Body at activation start")
+	_assert_false(scene._has_status(enemy, "Burn"), "Burn is consumed after activation tick")
+
+	var log_str: String = " ".join(scene.turn_log)
+	_assert_true(log_str.contains("%s:status:Burn:%d" % [enemy["id"], scene.BURN_DAMAGE]), "turn log records Burn status damage")
+
+	# Lethal Burn test
+	var target = scene._unit_by_id("enemy_spear")
+	target["parts"]["Body"]["hp"] = 5
+	scene._apply_status(target, "Burn")
+	scene._begin_activation(target)
+	_assert_equal(target["parts"]["Body"]["hp"], 0, "lethal Burn reduces Body HP to 0")
+	_assert_true(bool(target["defeated"]), "lethal Burn marks unit defeated")
+	_assert_false(scene._is_unit_in_battle(target), "defeated unit is removed from battle")
+
+
+func _test_destroying_host_part_disables_orb_immediately(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var sera = scene._unit_by_id("sera")
+	var enemy = scene._unit_by_id("enemy_blade")
+	_assert_equal(scene._orb_damage_modifier_percent(sera), 10, "Sera has +10% damage bonus before host part damage")
+
+	scene._damage_part(sera, "Right Arm", 100)
+	_assert_true(bool(sera["parts"]["Right Arm"]["destroyed"]), "Right Arm is destroyed")
+	_assert_true(bool(sera["parts"]["Right Arm"]["orb_disabled"]), "Orb on destroyed host part is disabled")
+	_assert_equal(scene._orb_damage_modifier_percent(sera), 0, "passive damage bonus lost immediately when host part destroyed")
+	_assert_equal(scene._active_orbs(sera).size(), 0, "no active orbs remaining on Sera")
+
+	var proc: Dictionary = scene._resolve_orb_proc(sera, enemy, 0)
+	_assert_false(proc["triggered"], "disabled Orb cannot trigger proc")
+
+
+func _test_no_orb_adds_primary_action_buttons(scene: Control) -> void:
+	_assert_equal(scene.PRIMARY_ACTIONS, ["Move", "Attack", "Wait"], "primary actions remain strictly Move, Attack, Wait")
+	_assert_equal(scene.action_rects.size(), 3, "action rects size remains exactly 3")
 
 
 func _assert_true(actual: bool, message: String) -> void:

@@ -150,6 +150,24 @@ const ORB_DATA := {
 	},
 }
 
+const BURN_DAMAGE := 10
+
+const DEFAULT_ORB_LOADOUTS := {
+	"arlen": {
+		"Right Arm": "fire_n",
+	},
+	"mira": {
+		"Right Arm": "water_r",
+		"Head": "lightning_r",
+	},
+	"sera": {
+		"Right Arm": "fire_sr",
+	},
+	"brann": {
+		"Left Arm": "earth_ssr",
+	},
+}
+
 const MISSIONS_DATA := {
 	"ancient_ruins": {
 		"id": "ancient_ruins",
@@ -273,6 +291,7 @@ func _load_mission(mission_id: String, swapped_sides: bool = false) -> void:
 	last_action_message = "Ready"
 	_create_terrain()
 	_create_units()
+	_apply_default_orb_loadouts()
 	_initialize_initiative()
 	_begin_next_activation()
 
@@ -783,6 +802,13 @@ func _begin_next_activation() -> void:
 			return
 
 		_begin_activation(next_unit)
+		if not _is_unit_in_battle(next_unit):
+			_finish_activation(next_unit)
+			if _is_battle_over():
+				_is_activating = false
+				return
+			continue
+
 		if next_unit["team"] == "player":
 			if not auto_battle:
 				_is_activating = false
@@ -818,6 +844,12 @@ func _begin_activation(unit) -> void:
 	attack_overlay_tiles.clear()
 	target_preview.clear()
 	_clear_move_preview()
+
+	_resolve_turn_start_statuses(unit)
+	if not _is_unit_in_battle(unit):
+		turn_state = TurnState.ACTION_COMPLETE
+		queue_redraw()
+		return
 
 	if unit["team"] == "player":
 		turn_state = TurnState.AWAITING_COMMAND
@@ -1966,11 +1998,58 @@ func _apply_status(unit, status: String) -> bool:
 		unit["statuses"] = []
 	if not unit["statuses"].has(status):
 		unit["statuses"].append(status)
+		turn_log.append("%s:apply_status:%s" % [unit["id"], status])
 	return true
 
 
 func _has_status(unit, status: String) -> bool:
 	return unit != null and unit.has("statuses") and unit["statuses"].has(status)
+
+
+func _remove_status(unit, status: String) -> bool:
+	if unit == null or not unit.has("statuses"):
+		return false
+	var index: int = unit["statuses"].find(status)
+	if index >= 0:
+		unit["statuses"].remove_at(index)
+		return true
+	return false
+
+
+func _resolve_turn_start_statuses(unit) -> Dictionary:
+	var result := {
+		"burned": false,
+		"burn_damage": 0,
+		"defeated": false,
+	}
+	if unit == null or not _is_unit_in_battle(unit):
+		return result
+
+	if _has_status(unit, "Burn"):
+		var dmg_result := _damage_part(unit, "Body", BURN_DAMAGE)
+		var damage_applied: int = int(dmg_result.get("damage_applied", 0))
+		result["burned"] = true
+		result["burn_damage"] = damage_applied
+		turn_log.append("%s:status:Burn:%d" % [unit["id"], damage_applied])
+		last_action_message = "%s takes %d Burn damage to Body" % [unit["name"], damage_applied]
+		_remove_status(unit, "Burn")
+		if not _is_unit_in_battle(unit):
+			result["defeated"] = true
+	return result
+
+
+func _apply_default_orb_loadouts() -> void:
+	for unit in units:
+		if str(unit.get("team", "")) == "player":
+			_apply_default_orb_loadout(unit)
+
+
+func _apply_default_orb_loadout(unit) -> void:
+	if unit == null or not DEFAULT_ORB_LOADOUTS.has(str(unit.get("id", ""))):
+		return
+	var loadout: Dictionary = DEFAULT_ORB_LOADOUTS[str(unit["id"])]
+	for part_name in loadout:
+		_install_orb(unit, str(part_name), str(loadout[part_name]))
 
 
 func _part_hp_ratio(unit, part_name: String) -> float:
@@ -2851,6 +2930,13 @@ func _draw_part_status_panel() -> void:
 		var destroyed: bool = bool(part.get("destroyed", false)) or p_hp <= 0
 		var label_color := Color(0.78, 0.82, 0.84) if not destroyed else Color(0.88, 0.48, 0.46)
 		draw_string(_font(), _p(48, y), _short_part_name(part_name), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), label_color)
+		if part.get("orb") != null:
+			var orb_data := _orb_data_for(part["orb"])
+			var elem := str(orb_data.get("element", ""))
+			var orb_col := Color(0.95, 0.50, 0.25) if elem == "Fire" else (Color(0.35, 0.65, 0.95) if elem == "Water" else (Color(0.95, 0.85, 0.25) if elem == "Lightning" else Color(0.65, 0.75, 0.45)))
+			if destroyed or bool(part.get("orb_disabled", false)):
+				orb_col = Color(0.40, 0.40, 0.40)
+			draw_circle(_p(40, y - 3.0), 2.5 * min(_scale().x, _scale().y), orb_col)
 		_draw_bar(_r(96, y - 8.0, 68, 7), _part_hp_ratio(selected_unit, part_name), Color(0.46, 0.65, 0.56) if not destroyed else Color(0.76, 0.32, 0.31))
 		var hp_str := _part_hp_text(selected_unit, part_name)
 		draw_string(_font(), _p(170, y), hp_str, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), label_color)
@@ -3009,6 +3095,16 @@ func _draw_enemy_inspection_panel() -> void:
 		draw_string(_font(), _p(976, y), "⚠ " + str(c), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), Color(0.96, 0.76, 0.40))
 		y += 13.0
 
+	var statuses: Array = data.get("statuses", [])
+	if not statuses.is_empty():
+		draw_string(_font(), _p(976, y), "Status: " + ", ".join(statuses), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), Color(0.96, 0.58, 0.35))
+		y += 13.0
+
+	var orbs: Array = data.get("orbs", [])
+	if not orbs.is_empty():
+		draw_string(_font(), _p(976, y), "Orbs: " + ", ".join(orbs), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), Color(0.45, 0.75, 0.90))
+		y += 13.0
+
 	if turn_state == TurnState.SELECTING_ATTACK and not data["attack_preview"].is_empty():
 		var preview: Dictionary = data["attack_preview"]
 		y += 4.0
@@ -3163,6 +3259,9 @@ func configure_player_loadouts(loadouts: Dictionary) -> void:
 				unit["shield_max_hp"] = int(weapon_data.get("shield_max_hp", 0))
 				unit["shield_hp"] = int(unit["shield_max_hp"])
 				unit["shield_disabled"] = int(unit["shield_max_hp"]) <= 0
+			if cfg.has("orbs") and cfg["orbs"] is Dictionary:
+				for part_name in cfg["orbs"]:
+					_install_orb(unit, str(part_name), str(cfg["orbs"][part_name]))
 
 
 

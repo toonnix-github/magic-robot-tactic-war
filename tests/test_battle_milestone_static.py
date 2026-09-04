@@ -315,6 +315,18 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn("DESTROYED", self.source)
         self.assertIn("BROKEN", self.source)
 
+    def test_default_orb_loadouts_and_burn_status_are_encoded(self):
+        for hook in [
+            "func _apply_default_orb_loadouts",
+            "func _apply_default_orb_loadout",
+            "func _resolve_turn_start_statuses",
+            "func _remove_status",
+        ]:
+            self.assertIn(hook, self.source)
+        self.assertIn("DEFAULT_ORB_LOADOUTS", self.source)
+        self.assertIn("BURN_DAMAGE", self.source)
+        self.assertIn('"Burn"', self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
