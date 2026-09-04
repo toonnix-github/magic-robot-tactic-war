@@ -168,6 +168,55 @@ const DEFAULT_ORB_LOADOUTS := {
 	},
 }
 
+const PILOT_DATA := {
+	"arlen": {
+		"id": "arlen",
+		"name": "Arlen",
+		"title": "Breaker",
+		"passive": {
+			"id": "part_breaker",
+			"name": "Part Breaker",
+			"desc": "Attacks against damaged enemy parts deal +15% bonus damage.",
+			"part_pressure_damage_percent": 15,
+		},
+	},
+	"mira": {
+		"id": "mira",
+		"name": "Mira",
+		"title": "Sharpshooter",
+		"passive": {
+			"id": "hawkeye",
+			"name": "Hawkeye",
+			"desc": "Attacks at distance 4 or greater gain +15% hit chance.",
+			"long_range_hit_bonus": 15,
+			"min_distance": 4,
+		},
+	},
+	"sera": {
+		"id": "sera",
+		"name": "Sera",
+		"title": "Spellweaver",
+		"passive": {
+			"id": "elemental_resonance",
+			"name": "Elemental Resonance",
+			"desc": "Increases Orb proc chance by +15%.",
+			"orb_proc_bonus_percent": 15,
+		},
+	},
+	"brann": {
+		"id": "brann",
+		"name": "Brann",
+		"title": "Iron Wall",
+		"passive": {
+			"id": "guardian_stance",
+			"name": "Guardian Stance",
+			"desc": "Shield absorbs +5 damage and gains +15 Shield Max HP.",
+			"shield_damage_reduction": 5,
+			"shield_max_hp_bonus": 15,
+		},
+	},
+}
+
 const MISSIONS_DATA := {
 	"ancient_ruins": {
 		"id": "ancient_ruins",
@@ -292,6 +341,7 @@ func _load_mission(mission_id: String, swapped_sides: bool = false) -> void:
 	_create_terrain()
 	_create_units()
 	_apply_default_orb_loadouts()
+	_apply_default_pilot_loadouts()
 	_initialize_initiative()
 	_begin_next_activation()
 
@@ -653,6 +703,7 @@ func _create_units() -> void:
 		unit["dodge"] = 10
 		unit["weapon_mount_part"] = _weapon_mount_part(unit)
 		unit["weapon_disabled"] = false
+		unit["pilot_id"] = ""
 		var weapon_data := _weapon_data_for(unit)
 		unit["shield_max_hp"] = int(weapon_data.get("shield_max_hp", 0))
 		unit["shield_hp"] = int(unit["shield_max_hp"])
@@ -1704,7 +1755,11 @@ func _resolve_shield_damage(attacker, shield_unit, original_target, preview: Dic
 	var damage_result := _shield_damage_result(shield_unit)
 	var orb_proc := _empty_orb_proc()
 	if hit:
-		damage_result = _damage_shield(shield_unit, _terrain_adjusted_damage(shield_unit, _orb_adjusted_damage(attacker, damage)))
+		var raw_dmg := _calculate_attack_damage(attacker, damage, shield_unit, "Shield")
+		var terrain_dmg := _terrain_adjusted_damage(shield_unit, raw_dmg)
+		var reduction := _pilot_shield_damage_reduction(shield_unit)
+		var final_shield_dmg: int = int(max(1, terrain_dmg - reduction)) if reduction > 0 else terrain_dmg
+		damage_result = _damage_shield(shield_unit, final_shield_dmg)
 		orb_proc = _resolve_orb_proc(attacker, shield_unit, hit_seed)
 	return {
 		"attacker_id": str(attacker["id"]),
@@ -1756,7 +1811,7 @@ func _resolve_weapon_attack(attacker, target, preview: Dictionary, part_name := 
 	var orb_proc := _empty_orb_proc()
 	if hit:
 		var damage: int = damage_override if damage_override >= 0 else int(weapon_data["damage"])
-		damage_result = _damage_part(target, resolved_part, _terrain_adjusted_damage(target, _orb_adjusted_damage(attacker, damage)))
+		damage_result = _damage_part(target, resolved_part, _terrain_adjusted_damage(target, _calculate_attack_damage(attacker, damage, target, resolved_part)))
 		orb_proc = _resolve_orb_proc(attacker, target, seed)
 
 	return {
@@ -1967,9 +2022,10 @@ func _orb_adjusted_damage(unit, damage: int) -> int:
 
 func _resolve_orb_proc(attacker, target, seed: int) -> Dictionary:
 	var proc_effects := _orb_effects(attacker, "proc_status")
+	var pilot_bonus := _pilot_orb_proc_bonus(attacker)
 	for index in range(proc_effects.size()):
 		var effect: Dictionary = proc_effects[index]
-		var chance := int(effect.get("chance_percent", 0))
+		var chance := int(effect.get("chance_percent", 0)) + pilot_bonus
 		if absi(seed + index * 37) % 100 < chance:
 			var status := str(effect.get("status", ""))
 			_apply_status(target, status)
@@ -2050,6 +2106,99 @@ func _apply_default_orb_loadout(unit) -> void:
 	var loadout: Dictionary = DEFAULT_ORB_LOADOUTS[str(unit["id"])]
 	for part_name in loadout:
 		_install_orb(unit, str(part_name), str(loadout[part_name]))
+
+
+func _pilot_data_for(unit) -> Dictionary:
+	if unit == null:
+		return {}
+	var pilot_id: String = str(unit.get("pilot_id", unit.get("id", "")))
+	if PILOT_DATA.has(pilot_id):
+		return PILOT_DATA[pilot_id]
+	return {}
+
+
+func _pilot_passive_for(unit) -> Dictionary:
+	var data: Dictionary = _pilot_data_for(unit)
+	return data.get("passive", {})
+
+
+func _set_unit_pilot(unit, pilot_id: String) -> bool:
+	if unit == null:
+		return false
+	unit["pilot_id"] = pilot_id
+	var weapon_data := _weapon_data_for(unit)
+	var shield_bonus: int = 0
+	var passive := _pilot_passive_for(unit)
+	if not passive.is_empty():
+		shield_bonus = int(passive.get("shield_max_hp_bonus", 0))
+	unit["shield_max_hp"] = int(weapon_data.get("shield_max_hp", 0)) + shield_bonus
+	unit["shield_hp"] = int(unit["shield_max_hp"])
+	unit["shield_disabled"] = int(unit["shield_max_hp"]) <= 0
+	return true
+
+
+func _apply_default_pilot_loadouts() -> void:
+	for unit in units:
+		if str(unit.get("team", "")) == "player":
+			var pid := str(unit.get("id", ""))
+			if PILOT_DATA.has(pid):
+				_set_unit_pilot(unit, pid)
+
+
+func _pilot_damage_modifier_percent(attacker, target = null, part_name: String = "") -> int:
+	var passive: Dictionary = _pilot_passive_for(attacker)
+	if passive.is_empty():
+		return 0
+	if passive.has("part_pressure_damage_percent"):
+		if target != null and target.has("parts"):
+			var is_damaged := false
+			if part_name != "":
+				if target["parts"].has(part_name):
+					var p: Dictionary = target["parts"][part_name]
+					is_damaged = int(p.get("hp", 0)) < int(p.get("max_hp", PART_MAX_HP))
+				else:
+					is_damaged = false
+			else:
+				for p_name in PART_NAMES:
+					var p: Dictionary = target["parts"].get(p_name, {})
+					if int(p.get("hp", 0)) < int(p.get("max_hp", PART_MAX_HP)):
+						is_damaged = true
+						break
+			if is_damaged:
+				return int(passive["part_pressure_damage_percent"])
+	return 0
+
+
+func _pilot_hit_modifier(attacker, target = null) -> int:
+	var passive: Dictionary = _pilot_passive_for(attacker)
+	if passive.is_empty():
+		return 0
+	if passive.has("long_range_hit_bonus"):
+		var min_dist: int = int(passive.get("min_distance", 4))
+		if attacker != null and target != null:
+			var dist := _grid_distance(attacker["grid"], target["grid"])
+			if dist >= min_dist:
+				return int(passive["long_range_hit_bonus"])
+	return 0
+
+
+func _pilot_orb_proc_bonus(attacker) -> int:
+	var passive: Dictionary = _pilot_passive_for(attacker)
+	return int(passive.get("orb_proc_bonus_percent", 0))
+
+
+func _pilot_shield_damage_reduction(shield_unit) -> int:
+	var passive: Dictionary = _pilot_passive_for(shield_unit)
+	return int(passive.get("shield_damage_reduction", 0))
+
+
+func _calculate_attack_damage(attacker, base_damage: int, target = null, part_name := "") -> int:
+	var pilot_mod := _pilot_damage_modifier_percent(attacker, target, part_name)
+	if pilot_mod == 0:
+		return _orb_adjusted_damage(attacker, base_damage)
+	var orb_mod := _orb_damage_modifier_percent(attacker)
+	var total_mod := orb_mod + pilot_mod
+	return int(round(float(max(0, base_damage)) * (100.0 + float(total_mod)) / 100.0))
 
 
 func _part_hp_ratio(unit, part_name: String) -> float:
@@ -2316,9 +2465,11 @@ func _attack_preview(attacker, target) -> Dictionary:
 	var height_modifier := _height_hit_modifier(attacker, target)
 	var cover_dodge_modifier := -int(_terrain_at(target["grid"]).get("cover_dodge_bonus", 0)) if target != null and _has_cover(target["grid"]) else 0
 	var orb_hit_modifier := _orb_hit_modifier(attacker)
-	var hit_percent: int = int(clamp(base_hit + accuracy_modifier + height_modifier + cover_dodge_modifier + orb_hit_modifier, 0, 100))
+	var pilot_hit_modifier := _pilot_hit_modifier(attacker, target)
+	var hit_percent: int = int(clamp(base_hit + accuracy_modifier + height_modifier + cover_dodge_modifier + orb_hit_modifier + pilot_hit_modifier, 0, 100))
 	var base_damage := int(weapon_data.get("damage", 0))
 	var orb_damage_modifier_percent := _orb_damage_modifier_percent(attacker)
+	var pilot_damage_modifier_percent := _pilot_damage_modifier_percent(attacker, target)
 	var preview := {
 		"attacker_id": str(attacker["id"]) if attacker != null else "",
 		"target_id": str(target["id"]) if target != null else "",
@@ -2331,7 +2482,9 @@ func _attack_preview(attacker, target) -> Dictionary:
 		"cover_dodge_modifier": cover_dodge_modifier,
 		"orb_hit_modifier": orb_hit_modifier,
 		"orb_damage_modifier_percent": orb_damage_modifier_percent,
-		"damage": _terrain_adjusted_damage(target, _orb_adjusted_damage(attacker, base_damage)) if legal else 0,
+		"pilot_hit_modifier": pilot_hit_modifier,
+		"pilot_damage_modifier_percent": pilot_damage_modifier_percent,
+		"damage": _terrain_adjusted_damage(target, _calculate_attack_damage(attacker, base_damage, target)) if legal else 0,
 		"base_damage": base_damage,
 		"legal": legal,
 		"weapon_pattern": str(weapon_data.get("pattern", "single")),
@@ -2841,7 +2994,11 @@ func _draw_selected_unit_panel() -> void:
 	_draw_centered_text(Rect2(portrait_center - Vector2(portrait_radius, portrait_radius), Vector2(portrait_radius * 2.0, portrait_radius * 2.0)), str(selected_unit["letter"]), 16, Color(0.86, 0.90, 0.92))
 
 	draw_string(_font(), _p(115, 58), str(selected_unit["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(18), Color(0.95, 0.97, 0.97))
-	draw_string(_font(), _p(115, 79), "%s / %s" % [selected_unit["mech"], selected_unit["weapon"]], HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(12), Color(0.62, 0.69, 0.73))
+	var passive := _pilot_passive_for(selected_unit)
+	var sub_text := "%s / %s" % [selected_unit["mech"], selected_unit["weapon"]]
+	if not passive.is_empty():
+		sub_text += " · %s" % str(passive.get("name", ""))
+	draw_string(_font(), _p(115, 79), sub_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(12), Color(0.62, 0.69, 0.73))
 	if _is_active_unit(selected_unit):
 		draw_string(_font(), _p(222, 55), "ACTIVE", HORIZONTAL_ALIGNMENT_RIGHT, 25.0 * _scale().x, _font_size(9), Color(0.96, 0.86, 0.48))
 	_draw_bar(_r(115, 92, 122, 8), _overall_hp_ratio(selected_unit), Color(0.46, 0.65, 0.56))
@@ -3012,6 +3169,18 @@ func _target_inspection_data(unit) -> Dictionary:
 		else:
 			statuses_info.append(str(st))
 
+	var pilot_data := _pilot_data_for(unit)
+	var pilot_info := {}
+	if not pilot_data.is_empty():
+		var p_passive: Dictionary = pilot_data.get("passive", {})
+		pilot_info = {
+			"id": str(pilot_data.get("id", "")),
+			"name": str(pilot_data.get("name", "")),
+			"title": str(pilot_data.get("title", "")),
+			"passive_name": str(p_passive.get("name", "")),
+			"passive_desc": str(p_passive.get("desc", "")),
+		}
+
 	var data := {
 		"id": str(unit.get("id", "")),
 		"name": str(unit.get("name", "")),
@@ -3030,6 +3199,7 @@ func _target_inspection_data(unit) -> Dictionary:
 		"shield_active": _shield_is_active(unit),
 		"statuses": statuses_info,
 		"orbs": orbs_info,
+		"pilot": pilot_info,
 	}
 
 	if active_unit != null and str(active_unit.get("id", "")) != str(unit.get("id", "")):
@@ -3103,6 +3273,11 @@ func _draw_enemy_inspection_panel() -> void:
 	var orbs: Array = data.get("orbs", [])
 	if not orbs.is_empty():
 		draw_string(_font(), _p(976, y), "Orbs: " + ", ".join(orbs), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), Color(0.45, 0.75, 0.90))
+		y += 13.0
+
+	var pilot: Dictionary = data.get("pilot", {})
+	if not pilot.is_empty():
+		draw_string(_font(), _p(976, y), "Pilot: %s · %s" % [str(pilot.get("name", "")), str(pilot.get("passive_name", ""))], HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), Color(0.85, 0.75, 0.95))
 		y += 13.0
 
 	if turn_state == TurnState.SELECTING_ATTACK and not data["attack_preview"].is_empty():
@@ -3252,11 +3427,18 @@ func configure_player_loadouts(loadouts: Dictionary) -> void:
 		var unit: Dictionary = _unit_by_id(str(unit_id)) if _unit_by_id(str(unit_id)) is Dictionary else {}
 		if not unit.is_empty() and str(unit.get("team", "")) == "player":
 			var cfg: Dictionary = loadouts[unit_id]
-			if cfg.has("weapon"):
-				unit["weapon"] = cfg["weapon"]
-				unit["weapon_mount_part"] = _weapon_mount_part(unit)
+			if cfg.has("pilot"):
+				_set_unit_pilot(unit, str(cfg["pilot"]))
+			if cfg.has("weapon") or cfg.has("pilot"):
+				if cfg.has("weapon"):
+					unit["weapon"] = cfg["weapon"]
+					unit["weapon_mount_part"] = _weapon_mount_part(unit)
 				var weapon_data := _weapon_data_for(unit)
-				unit["shield_max_hp"] = int(weapon_data.get("shield_max_hp", 0))
+				var shield_bonus: int = 0
+				var passive := _pilot_passive_for(unit)
+				if not passive.is_empty():
+					shield_bonus = int(passive.get("shield_max_hp_bonus", 0))
+				unit["shield_max_hp"] = int(weapon_data.get("shield_max_hp", 0)) + shield_bonus
 				unit["shield_hp"] = int(unit["shield_max_hp"])
 				unit["shield_disabled"] = int(unit["shield_max_hp"]) <= 0
 			if cfg.has("orbs") and cfg["orbs"] is Dictionary:

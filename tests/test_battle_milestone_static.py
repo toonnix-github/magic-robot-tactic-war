@@ -327,6 +327,25 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn("BURN_DAMAGE", self.source)
         self.assertIn('"Burn"', self.source)
 
+    def test_pilot_passives_are_encoded(self):
+        for hook in [
+            "func _pilot_data_for",
+            "func _pilot_passive_for",
+            "func _set_unit_pilot",
+            "func _pilot_damage_modifier_percent",
+            "func _pilot_hit_modifier",
+            "func _pilot_orb_proc_bonus",
+            "func _pilot_shield_damage_reduction",
+            "func _calculate_attack_damage",
+            "func _apply_default_pilot_loadouts",
+        ]:
+            self.assertIn(hook, self.source)
+        self.assertIn("PILOT_DATA", self.source)
+        for pilot in ["arlen", "mira", "sera", "brann"]:
+            self.assertIn(f'"{pilot}"', self.source)
+        for passive in ["part_breaker", "hawkeye", "elemental_resonance", "guardian_stance"]:
+            self.assertIn(f'"{passive}"', self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -100,6 +100,7 @@ func _run() -> void:
 	_run_enemy_inspection_acceptance(scene)
 	_run_numeric_hp_acceptance(scene)
 	_run_orb_loadout_and_status_acceptance(scene)
+	_run_pilot_passives_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -2204,6 +2205,110 @@ func _test_destroying_host_part_disables_orb_immediately(scene: Control) -> void
 func _test_no_orb_adds_primary_action_buttons(scene: Control) -> void:
 	_assert_equal(scene.PRIMARY_ACTIONS, ["Move", "Attack", "Wait"], "primary actions remain strictly Move, Attack, Wait")
 	_assert_equal(scene.action_rects.size(), 3, "action rects size remains exactly 3")
+
+
+func _run_pilot_passives_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_pilot_data_for",
+		"_pilot_passive_for",
+		"_set_unit_pilot",
+		"_pilot_damage_modifier_percent",
+		"_pilot_hit_modifier",
+		"_pilot_orb_proc_bonus",
+		"_pilot_shield_damage_reduction",
+		"_calculate_attack_damage",
+		"_apply_default_pilot_loadouts",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "pilot passive API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_each_pilot_has_passive_defined_in_data(scene)
+	_test_arlen_passive_influences_part_pressure_damage(scene)
+	_test_mira_passive_influences_ranged_accuracy(scene)
+	_test_sera_passive_influences_orb_proc_behavior(scene)
+	_test_brann_passive_reinforces_shield_defense(scene)
+	_test_no_pilot_creates_extra_primary_action(scene)
+	_test_inspection_panel_exposes_pilot_identity(scene)
+
+
+func _test_each_pilot_has_passive_defined_in_data(scene: Control) -> void:
+	var required_pilots := ["arlen", "mira", "sera", "brann"]
+	for pid in required_pilots:
+		_assert_true(scene.PILOT_DATA.has(pid), "pilot data contains %s" % pid)
+		var pdata: Dictionary = scene.PILOT_DATA[pid]
+		_assert_true(pdata.has("name") and pdata.has("title") and pdata.has("passive"), "%s has required metadata" % pid)
+		var passive: Dictionary = pdata["passive"]
+		_assert_true(passive.has("id") and passive.has("name") and passive.has("desc"), "%s has passive description" % pid)
+
+
+func _test_arlen_passive_influences_part_pressure_damage(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var arlen = scene._unit_by_id("arlen")
+	var target = scene._unit_by_id("enemy_blade")
+	target["parts"]["Head"]["hp"] = 100
+	_assert_equal(scene._pilot_damage_modifier_percent(arlen, target, "Head"), 0, "Arlen gets no bonus against undamaged part")
+	target["parts"]["Head"]["hp"] = 80
+	_assert_equal(scene._pilot_damage_modifier_percent(arlen, target, "Head"), 15, "Arlen gets +15% bonus against damaged part")
+	_assert_equal(scene._calculate_attack_damage(arlen, 20, target, "Head"), 25, "calculated damage includes +10% orb and +15% pilot bonus (total +25%)")
+	scene._set_unit_pilot(arlen, "")
+	_assert_equal(scene._pilot_damage_modifier_percent(arlen, target, "Head"), 0, "removing pilot removes part pressure bonus")
+	_assert_equal(scene._calculate_attack_damage(arlen, 20, target, "Head"), 22, "calculated damage returns to base orb damage without pilot")
+	scene._set_unit_pilot(arlen, "arlen")
+
+
+func _test_mira_passive_influences_ranged_accuracy(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var mira = scene._unit_by_id("mira")
+	var target = scene._unit_by_id("enemy_blade")
+	mira["grid"] = Vector2i(1, 1)
+	target["grid"] = Vector2i(3, 1)
+	_assert_equal(scene._pilot_hit_modifier(mira, target), 0, "Mira gets no accuracy bonus at distance < 4")
+	target["grid"] = Vector2i(5, 1)
+	_assert_equal(scene._pilot_hit_modifier(mira, target), 15, "Mira gets +15% hit bonus at distance >= 4")
+	scene._set_unit_pilot(mira, "")
+	_assert_equal(scene._pilot_hit_modifier(mira, target), 0, "removing pilot removes Hawkeye bonus")
+	scene._set_unit_pilot(mira, "mira")
+
+
+func _test_sera_passive_influences_orb_proc_behavior(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var sera = scene._unit_by_id("sera")
+	_assert_equal(scene._pilot_orb_proc_bonus(sera), 15, "Sera has +15% orb proc bonus")
+	scene._set_unit_pilot(sera, "")
+	_assert_equal(scene._pilot_orb_proc_bonus(sera), 0, "removing pilot removes orb proc bonus")
+	scene._set_unit_pilot(sera, "sera")
+
+
+func _test_brann_passive_reinforces_shield_defense(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var brann = scene._unit_by_id("brann")
+	_assert_equal(scene._pilot_shield_damage_reduction(brann), 5, "Brann has 5 shield damage reduction")
+	_assert_equal(int(brann["shield_max_hp"]), 40, "Brann shield max HP includes +15 bonus (25 + 15 = 40)")
+	var enemy = scene._unit_by_id("enemy_blade")
+	enemy["grid"] = brann["grid"] + Vector2i(1, 0)
+	var preview: Dictionary = scene._attack_preview(enemy, brann)
+	var res: Dictionary = scene._resolve_shield_damage(enemy, brann, brann, preview, 0, 30, false)
+	_assert_equal(res["damage_applied"], 25, "Shield damage absorbed by Guardian Stance (30 - 5 = 25)")
+	scene._set_unit_pilot(brann, "")
+	_assert_equal(scene._pilot_shield_damage_reduction(brann), 0, "removing pilot removes shield reduction")
+	scene._set_unit_pilot(brann, "brann")
+
+
+func _test_no_pilot_creates_extra_primary_action(scene: Control) -> void:
+	_assert_equal(scene.PRIMARY_ACTIONS, ["Move", "Attack", "Wait"], "primary actions remain strictly Move, Attack, Wait with pilots")
+	_assert_equal(scene.action_rects.size(), 3, "action rects size remains exactly 3 with pilots")
+
+
+func _test_inspection_panel_exposes_pilot_identity(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var arlen = scene._unit_by_id("arlen")
+	var data: Dictionary = scene._target_inspection_data(arlen)
+	_assert_true(data.has("pilot"), "inspection data contains pilot key")
+	var pilot: Dictionary = data["pilot"]
+	_assert_equal(pilot.get("name"), "Arlen", "inspection data shows pilot name")
+	_assert_equal(pilot.get("passive_name"), "Part Breaker", "inspection data shows pilot passive name")
 
 
 func _assert_true(actual: bool, message: String) -> void:
