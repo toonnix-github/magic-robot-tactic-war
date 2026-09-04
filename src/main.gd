@@ -434,6 +434,12 @@ func _gui_input(event: InputEvent) -> void:
 	if press_position == null:
 		return
 	if _input_locked():
+		# Allow Auto toggle even during presentation so the player can
+		# turn Auto OFF and regain manual control at the next activation.
+		if debug_rects.get("auto_toggle", Rect2()).has_point(press_position):
+			_toggle_auto_battle()
+			accept_event()
+			return
 		accept_event()
 		return
 
@@ -997,9 +1003,15 @@ func _begin_next_activation() -> void:
 			if not auto_battle:
 				_is_activating = false
 				return
-			_resolve_ai_activation(next_unit)
+			if fast_simulation:
+				_resolve_ai_activation(next_unit)
+			else:
+				var player_plan := _plan_ai_activation(next_unit)
+				_is_activating = false
+				_present_enemy_activation.call_deferred(next_unit, player_plan)
+				return
 		else:
-			if auto_battle or not enemy_presentation_enabled:
+			if fast_simulation or not enemy_presentation_enabled:
 				_resolve_enemy_activation(next_unit)
 			else:
 				var enemy_plan := _plan_ai_activation(next_unit)
@@ -1097,7 +1109,7 @@ func _resolve_planned_ai_activation_fast(unit, plan: Dictionary) -> Dictionary:
 func _present_enemy_activation(unit, plan: Dictionary) -> void:
 	if unit == null or not _is_unit_in_battle(unit):
 		return
-	if auto_battle:
+	if fast_simulation:
 		_resolve_planned_ai_activation_fast(unit, plan)
 		return
 
@@ -1599,7 +1611,7 @@ func _resolve_attack(attacker, target, preview: Dictionary, part_name := "", see
 	var attack_res := _resolve_attack_result(attacker, target, preview, part_name, seed)
 	if (
 		attack_presentation_enabled
-		and not auto_battle
+		and not fast_simulation
 		and not _is_activating
 		and str(attacker.get("team", "")) == "player"
 	):
@@ -1697,7 +1709,7 @@ func _present_attack_then_finish(attacker, target, result: Dictionary) -> void:
 
 
 func _present_attack_feedback(attacker, target, result: Dictionary) -> void:
-	if not attack_presentation_enabled or auto_battle:
+	if not attack_presentation_enabled or fast_simulation:
 		return
 
 	attack_presentation_active = true
@@ -3576,7 +3588,10 @@ func _next_simulation_seed() -> int:
 
 
 func run_auto_battle(max_activations: int = 150, initial_seed: int = 1337) -> Dictionary:
+	var prev_auto_battle := auto_battle
+	var prev_fast_simulation := fast_simulation
 	auto_battle = true
+	fast_simulation = true
 	simulation_seed = initial_seed
 	var activations: int = 0
 	var player_wasted_turns: int = 0
@@ -3615,7 +3630,8 @@ func run_auto_battle(max_activations: int = 150, initial_seed: int = 1337) -> Di
 
 		activations += 1
 	var summary: Dictionary = _battle_summary(activations, player_wasted_turns, enemy_wasted_turns)
-	auto_battle = false
+	auto_battle = prev_auto_battle
+	fast_simulation = prev_fast_simulation
 	return summary
 
 
@@ -3711,7 +3727,11 @@ func _set_auto_battle(enabled: bool) -> void:
 	last_action_message = "Auto Battle: ON" if auto_battle else "Auto Battle: OFF"
 	if auto_battle and not _is_battle_over() and not _input_locked():
 		if active_unit != null and str(active_unit.get("team", "")) == "player":
-			_resolve_ai_activation(active_unit)
+			if fast_simulation:
+				_resolve_ai_activation(active_unit)
+			else:
+				var plan := _plan_ai_activation(active_unit)
+				_present_enemy_activation.call_deferred(active_unit, plan)
 	queue_redraw()
 
 

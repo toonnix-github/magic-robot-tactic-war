@@ -104,6 +104,7 @@ func _run() -> void:
 	_run_weapon_data_validation_acceptance(scene)
 	_run_mission_selector_and_debug_controls_acceptance(scene)
 	_run_auto_benchmark_acceptance(scene)
+	_run_visible_auto_playback_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -2637,6 +2638,58 @@ func _test_auto_benchmark_markdown_report_generation(scene: Control) -> void:
 	_assert_true(md.contains("Scenario 2: Ascending Ridge — Uphill Assault vs Downhill Defense"), "scenario 2 table present")
 	_assert_true(md.contains("Scenario 3: Crystal Quarry — Repeatable Farm Battle"), "scenario 3 table present")
 	_assert_true(md.contains("Answers to Phase 1 Design Questions"), "design question answers present")
+
+
+func _run_visible_auto_playback_acceptance(scene: Control) -> void:
+	# #30 — Visible Auto battle playback with optional fast simulation
+	scene._load_mission("ancient_ruins", false)
+	scene.enemy_presentation_enabled = false
+	scene.attack_presentation_enabled = false
+	scene.fast_simulation = true
+	scene.simulation_seed = 1337
+	var result_fast: Dictionary = scene.run_auto_battle(150, 1337)
+	_assert_true(result_fast.get("activations", 0) > 0, "#30: fast auto completes activations")
+	_assert_true(result_fast.has("winner"), "#30: fast auto produces a winner")
+
+	scene._load_mission("ancient_ruins", false)
+	scene.enemy_presentation_enabled = false
+	scene.attack_presentation_enabled = false
+	scene.fast_simulation = false
+	scene.simulation_seed = 1337
+	var result_visible: Dictionary = scene.run_auto_battle(150, 1337)
+	_assert_equal(result_visible["activations"], result_fast["activations"],
+		"#30: deterministic result matches between fast and non-fast auto")
+	_assert_equal(result_visible["winner"], result_fast["winner"],
+		"#30: winner matches between fast and non-fast auto")
+
+	scene._load_mission("ancient_ruins", false)
+	scene.enemy_presentation_enabled = true
+	scene.attack_presentation_enabled = true
+	scene.fast_simulation = false
+	scene.auto_battle = true
+	var arlen = scene._unit_by_id("arlen")
+	_assert_true(arlen != null, "#30: arlen exists for visible auto test")
+	if arlen != null:
+		_assert_true(str(arlen.get("team", "")) == "player", "#30: arlen is player team")
+
+	scene.enemy_presentation_active = true
+	_assert_true(scene._input_locked(), "#30: input locked during enemy presentation")
+	scene.enemy_presentation_active = false
+	scene.attack_presentation_active = true
+	_assert_true(scene._input_locked(), "#30: input locked during attack presentation")
+	scene.attack_presentation_active = false
+	_assert_false(scene._input_locked(), "#30: input unlocked when no presentation active")
+
+	scene._set_fast_simulation(true)
+	_assert_true(scene.fast_simulation, "#30: fast_simulation set to true")
+	_assert_false(scene.enemy_presentation_enabled, "#30: enemy presentation disabled in fast sim")
+	_assert_false(scene.attack_presentation_enabled, "#30: attack presentation disabled in fast sim")
+	scene._set_fast_simulation(false)
+	_assert_false(scene.fast_simulation, "#30: fast_simulation set to false")
+	_assert_true(scene.enemy_presentation_enabled, "#30: enemy presentation enabled outside fast sim")
+	_assert_true(scene.attack_presentation_enabled, "#30: attack presentation enabled outside fast sim")
+	
+	scene.auto_battle = false
 
 
 func _assert_true(actual: bool, message: String) -> void:

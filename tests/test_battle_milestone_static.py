@@ -398,6 +398,24 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn("player_damage_dealt", self.source)
         self.assertIn("player_damage_taken", self.source)
 
+    def test_visible_auto_battle_playback_separates_auto_from_fast_sim(self):
+        """#30 — auto_battle controls turn ownership, fast_simulation controls presentation bypass."""
+        # Presentation bypass gates must check fast_simulation, not auto_battle
+        # _present_enemy_activation bypass
+        self.assertIn("if fast_simulation:", self.source)
+        # _present_attack_feedback bypass
+        self.assertIn("if not attack_presentation_enabled or fast_simulation:", self.source)
+        # _resolve_attack presentation condition uses fast_simulation
+        self.assertIn("and not fast_simulation", self.source)
+        # _begin_next_activation enemy branch uses fast_simulation
+        self.assertIn("if fast_simulation or not enemy_presentation_enabled:", self.source)
+        # Player Auto branch: visible presentation when not fast_simulation
+        self.assertIn("_present_enemy_activation.call_deferred(next_unit, player_plan)", self.source)
+        # _set_auto_battle uses visible presentation when not fast_simulation
+        self.assertIn("_present_enemy_activation.call_deferred(active_unit, plan)", self.source)
+        # Auto toggle allowed during input lock
+        self.assertIn('debug_rects.get("auto_toggle", Rect2()).has_point(press_position)', self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
