@@ -700,6 +700,25 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertNotIn('PRIMARY_ACTIONS := ["Move", "Attack", "Wait", "Weapon"', self.source)
 
 
+    def test_phase2_orb_installation_apis_exist(self):
+        """#39 - Orb installation per mech part."""
+        model_source = (ROOT / "src" / "data" / "mech_build_model.gd").read_text(encoding="utf-8")
+        hangar_source = (ROOT / "src" / "ui" / "hangar_screen.gd").read_text(encoding="utf-8")
+        
+        for hook in [
+            "func install_orb",
+            "func remove_orb",
+        ]:
+            self.assertIn(hook, model_source)
+            
+        for hook in [
+            "func available_orb_options",
+            "func install_orb",
+            "func remove_orb",
+        ]:
+            self.assertIn(hook, hangar_source)
+
+
 if __name__ == "__main__":
     unittest.main()
 

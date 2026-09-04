@@ -114,6 +114,7 @@ func _run() -> void:
 	await _run_phase2_hangar_shell_acceptance(scene)
 	_run_phase2_part_swap_tradeoffs_acceptance(scene)
 	_run_phase2_weapon_offhand_rules_acceptance(scene)
+	_run_phase2_orb_installation_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -3259,6 +3260,62 @@ func _test_phase2_attack_has_no_weapon_choice_command(scene: Control) -> void:
 	_assert_false(scene.PRIMARY_ACTIONS.has("Item"), "#38: off-hand does not add item command")
 
 
+func _run_phase2_orb_installation_acceptance(scene: Control) -> void:
+	var GameDataScript = load("res://src/data/game_data.gd")
+	var model = preload("res://src/data/mech_build_model.gd").new()
+	var HangarScreenScript = load("res://src/ui/hangar_screen.gd")
+
+	for method in ["install_orb", "remove_orb"]:
+		_assert_true(model.has_method(method), "#39: build model exposes %s" % method)
+	if not _failures.is_empty(): return
+
+	_test_phase2_install_orb(scene, model)
+	_test_phase2_remove_orb(scene, model)
+	_test_phase2_hangar_orb_flow(scene, model, HangarScreenScript)
+	_test_phase2_battle_uses_configured_orb_loadout_and_host_part_destruction(scene, model)
+
+
+func _test_phase2_install_orb(scene: Control, model) -> void:
+	var build: Dictionary = model.prototype_builds()["sera"]
+	var updated = model.install_orb(build, "Head", "lightning_r", scene.PART_NAMES)
+	_assert_equal(updated["orbs"]["Head"], "lightning_r", "#39: install_orb sets Orb correctly")
+	_assert_true(model.validate_build(updated, scene.WEAPON_DATA, scene.ORB_DATA, scene.PART_NAMES)["valid"], "#39: build with orb valid")
+
+
+func _test_phase2_remove_orb(scene: Control, model) -> void:
+	var build: Dictionary = model.prototype_builds()["sera"]
+	build = model.install_orb(build, "Head", "lightning_r", scene.PART_NAMES)
+	var removed = model.remove_orb(build, "Head", scene.PART_NAMES)
+	_assert_false(removed["orbs"].has("Head"), "#39: remove_orb clears Orb slot")
+
+
+func _test_phase2_hangar_orb_flow(scene: Control, model, HangarScreenScript) -> void:
+	var hangar = HangarScreenScript.new()
+	hangar._ready()
+	hangar.select_unit("sera")
+	_assert_true(hangar.highlight_part("Head"), "#39: Hangar highlights Head")
+	var options = hangar.available_orb_options("Head")
+	_assert_true(options.size() > 0, "#39: Hangar exposes orb choices")
+	_assert_true(hangar.install_orb("Head", "lightning_r"), "#39: Hangar commits orb install")
+	_assert_equal(hangar.current_build_summary()["orb_slots"]["Head"], "lightning_r", "#39: Hangar updates model after orb install")
+	_assert_true(hangar.install_orb("Head", "water_r"), "#39: Hangar replaces existing orb")
+	_assert_equal(hangar.current_build_summary()["orb_slots"]["Head"], "water_r", "#39: Hangar updates model after orb replace")
+	_assert_true(hangar.remove_orb("Head"), "#39: Hangar removes orb")
+	_assert_equal(hangar.current_build_summary()["orb_slots"]["Head"], "", "#39: Hangar updates model after orb remove")
+	hangar.queue_free()
+
+
+func _test_phase2_battle_uses_configured_orb_loadout_and_host_part_destruction(scene: Control, model) -> void:
+	scene._load_mission("ancient_ruins", false)
+	var build: Dictionary = model.prototype_builds()["sera"]
+	build = model.install_orb(build, "Head", "lightning_r", scene.PART_NAMES)
+	var loadout: Dictionary = model.battle_loadout_for_build(build, scene.WEAPON_DATA, scene.ORB_DATA, scene.PART_NAMES)
+	scene.configure_player_loadouts({"sera": loadout})
+	var sera = scene._unit_by_id("sera")
+	_assert_equal(sera["parts"]["Head"]["orb"], "lightning_r", "#39: battle unit equips configured Orb on Head")
+	scene._damage_part(sera, "Head", 100)
+	_assert_true(bool(sera["parts"]["Head"]["orb_disabled"]), "#39: destroying host part disables configured Orb")
+
 func _assert_true(actual: bool, message: String) -> void:
 
 
@@ -3277,3 +3334,4 @@ func _assert_false(actual: bool, message: String) -> void:
 func _assert_equal(actual, expected, message: String) -> void:
 	if actual != expected:
 		_failures.append("%s: expected %s but got %s" % [message, expected, actual])
+
