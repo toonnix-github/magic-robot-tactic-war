@@ -112,6 +112,7 @@ func _run() -> void:
 	_run_phase1_architecture_acceptance(scene)
 	_run_phase2_build_model_acceptance(scene)
 	await _run_phase2_hangar_shell_acceptance(scene)
+	_run_phase2_part_swap_tradeoffs_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -3079,6 +3080,72 @@ func _test_phase2_hangar_layout_bounds(hangar: Control) -> void:
 	_assert_equal(metrics["design_size"], Vector2(1280, 590), "#36: Hangar targets fixed landscape resolution")
 	_assert_true(bool(metrics["within_design_bounds"]), "#36: Hangar layout stays inside landscape bounds")
 	_assert_true(float(metrics["part_row_height"]) >= 48.0, "#36: part rows remain readable on mobile landscape")
+
+
+func _run_phase2_part_swap_tradeoffs_acceptance(scene: Control) -> void:
+	# #37 — Part swapping with meaningful trade-offs and stat deltas.
+	var model = MechBuildModelScript.new()
+	for method in [
+		"part_catalog",
+		"build_stats",
+		"part_delta",
+		"swap_part",
+		"strictly_superior_options"
+	]:
+		_assert_true(model.has_method(method), "#37: build model exposes %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_phase2_part_catalog_has_sidegrades(scene, model)
+	_test_phase2_part_delta_uses_existing_stats(scene, model)
+	_test_phase2_part_swap_preserves_orb_slot(scene, model)
+	_test_phase2_hangar_part_swap_flow(scene, model)
+
+
+func _test_phase2_part_catalog_has_sidegrades(scene: Control, model) -> void:
+	for part_name in scene.PART_NAMES:
+		var options: Array = model.part_catalog(part_name)
+		_assert_true(options.size() >= 2, "#37: %s has multiple prototype options" % part_name)
+		_assert_equal(model.strictly_superior_options(part_name), [], "#37: %s catalog has no strictly superior option" % part_name)
+
+
+func _test_phase2_part_delta_uses_existing_stats(scene: Control, model) -> void:
+	var build: Dictionary = model.prototype_builds()["arlen"]
+	var delta: Dictionary = model.part_delta(build, "Legs", "sprinter_legs", scene.PART_NAMES)
+	_assert_equal(delta["part_name"], "Legs", "#37: delta names the highlighted part")
+	_assert_equal(delta["from_part"], "aegis_legs", "#37: delta records current part")
+	_assert_equal(delta["to_part"], "sprinter_legs", "#37: delta records candidate part")
+	_assert_true(delta["display_lines"].has("Move 3 -> 4"), "#37: delta shows Move increase")
+	_assert_true(delta["display_lines"].has("Legs HP 100 -> 72"), "#37: delta shows HP trade-off")
+	_assert_true(int(delta["stat_delta"]["dodge"]) > 0, "#37: sprinter legs improve Dodge")
+	_assert_true(int(delta["stat_delta"]["max_hp"]) < 0, "#37: sprinter legs reduce durability")
+
+
+func _test_phase2_part_swap_preserves_orb_slot(scene: Control, model) -> void:
+	var build: Dictionary = model.prototype_builds()["brann"]
+	var swapped: Dictionary = model.swap_part(build, "Left Arm", "guard_left_arm", scene.PART_NAMES)
+	_assert_equal(swapped["parts"]["Left Arm"], "guard_left_arm", "#37: part swap updates authoritative build part")
+	_assert_equal(swapped["orbs"]["Left Arm"], "earth_ssr", "#37: part swap preserves Orb slot association")
+	var validation: Dictionary = model.validate_build(swapped, scene.WEAPON_DATA, scene.ORB_DATA, scene.PART_NAMES)
+	_assert_true(bool(validation.get("valid", false)), "#37: swapped build remains valid")
+
+
+func _test_phase2_hangar_part_swap_flow(scene: Control, model) -> void:
+	var hangar := HangarScreenScript.new()
+	hangar._ready()
+	hangar.select_unit("arlen")
+	_assert_true(hangar.highlight_part("Legs"), "#37: Hangar can highlight Legs")
+	var options: Array = hangar.available_part_options("Legs")
+	_assert_true(options.size() >= 2, "#37: Hangar exposes part choices")
+	var preview: Dictionary = hangar.preview_part_delta("Legs", "sprinter_legs")
+	_assert_true(preview["display_lines"].has("Move 3 -> 4"), "#37: Hangar previews stat delta before commit")
+	_assert_true(hangar.swap_part("Legs", "sprinter_legs"), "#37: Hangar commits selected part")
+	var summary: Dictionary = hangar.current_build_summary()
+	_assert_equal(summary["parts"]["Legs"], "sprinter_legs", "#37: Hangar updates model-backed build after swap")
+	var rows: Array = hangar.part_rows()
+	_assert_equal(rows[4]["part_id"], "sprinter_legs", "#37: Hangar part rows refresh after swap")
+	_assert_equal(model.build_stats(hangar.builds["arlen"])["move"], 4, "#37: swapped build updates derived Move")
+	hangar.queue_free()
 
 
 func _assert_true(actual: bool, message: String) -> void:
