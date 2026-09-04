@@ -3472,9 +3472,9 @@ func _test_phase2_left_panel_tracks_active_unit(scene: Control) -> void:
 
 func _test_phase2_inspecting_enemy_tracks_right_panel_without_changing_turn(scene: Control) -> void:
 	scene._load_mission("ancient_ruins", false)
-	var enemy = scene._unit_by_id("goblin_spear")
+	var enemy = scene._unit_by_id("enemy_spear")
 	scene.battle_hud.inspect_unit(scene, enemy)
-	_assert_equal(scene.battle_hud.inspected_unit(scene)["id"], "goblin_spear", "#42: Right panel tracks inspected enemy")
+	_assert_equal(scene.battle_hud.inspected_unit(scene)["id"], "enemy_spear", "#42: Right panel tracks inspected enemy")
 	_assert_equal(scene.active_unit["id"], "arlen", "#42: Inspecting enemy does not transfer turn ownership")
 	_assert_equal(scene.battle_hud.current_unit(scene)["id"], "arlen", "#42: Left panel remains current active unit")
 
@@ -3490,7 +3490,7 @@ func _test_phase2_inspecting_ally_tracks_right_panel_without_changing_turn(scene
 
 func _test_phase2_both_panels_reflect_part_and_orb_status(scene: Control) -> void:
 	scene._load_mission("ancient_ruins", false)
-	var enemy = scene._unit_by_id("goblin_spear")
+	var enemy = scene._unit_by_id("enemy_spear")
 	scene.battle_hud.inspect_unit(scene, enemy)
 	scene._damage_part(enemy, "Left Arm", 100)
 	var inspected = scene.battle_hud.inspected_unit(scene)

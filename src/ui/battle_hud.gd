@@ -140,7 +140,7 @@ func draw_enemy_inspection_panel(scene) -> void:
 	var header_color: Color = Color(0.85, 0.65, 0.40) if scene.turn_state == scene.TurnState.SELECTING_ATTACK else Color(0.56, 0.63, 0.67)
 	scene.draw_string(scene._font(), scene._p(976, 148), header_title, HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(10), header_color)
 
-	scene.draw_string(scene._font(), scene._p(976, 170), str(target["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(16), Color(0.95, 0.97, 0.97))
+	scene.draw_string(scene._font(), scene._p(976, 170), str(target.get("name", "")), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(16), Color(0.95, 0.97, 0.97))
 	var wep_desc: String = str(target.get("weapon", ""))
 	var handedness: String = str(scene.WEAPON_HANDEDNESS.get(wep_desc, ""))
 	if handedness != "":
