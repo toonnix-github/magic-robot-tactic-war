@@ -1,40 +1,79 @@
 extends RefCounted
 class_name BattleHud
 
-func draw_selected_unit_panel(scene) -> void:
+
+func current_unit(scene):
+	if scene == null:
+		return null
+	if scene.active_unit != null:
+		return scene.active_unit
+	return scene.selected_unit
+
+
+func inspected_unit(scene):
+	if scene == null:
+		return null
+	if scene.get("inspected_unit") != null and scene.inspected_unit != null and scene.inspected_unit != current_unit(scene):
+		return scene.inspected_unit
+	if scene.selected_unit != null and scene.selected_unit != current_unit(scene):
+		return scene.selected_unit
+	return null
+
+
+func draw_current_unit_panel(scene) -> void:
+	var unit = current_unit(scene)
+	if unit == null:
+		return
+
 	var rect: Rect2 = scene._r(30, 30, 235, 92)
 	scene._draw_panel(rect)
-	if scene.selected_unit == null:
-		return
 
 	var portrait_center: Vector2 = scene._p(74, 76)
 	var portrait_radius: float = min(28.0 * scene._scale().x, 28.0 * scene._scale().y)
 	scene.draw_circle(portrait_center, portrait_radius, Color(0.18, 0.25, 0.29))
 	scene.draw_arc(portrait_center, portrait_radius, 0.0, TAU, 40, Color(0.42, 0.50, 0.54), 2.0, true)
-	scene._draw_centered_text(Rect2(portrait_center - Vector2(portrait_radius, portrait_radius), Vector2(portrait_radius * 2.0, portrait_radius * 2.0)), str(scene.selected_unit["letter"]), 16, Color(0.86, 0.90, 0.92))
+	scene._draw_centered_text(Rect2(portrait_center - Vector2(portrait_radius, portrait_radius), Vector2(portrait_radius * 2.0, portrait_radius * 2.0)), str(unit["letter"]), 16, Color(0.86, 0.90, 0.92))
 
-	scene.draw_string(scene._font(), scene._p(115, 58), str(scene.selected_unit["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(18), Color(0.95, 0.97, 0.97))
-	var passive: Dictionary = scene._pilot_passive_for(scene.selected_unit)
-	var sub_text: String = "%s / %s" % [scene.selected_unit["mech"], scene.selected_unit["weapon"]]
+	scene.draw_string(scene._font(), scene._p(115, 54), str(unit["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(18), Color(0.95, 0.97, 0.97))
+	var passive: Dictionary = scene._pilot_passive_for(unit)
+	var wep_desc: String = str(unit.get("weapon", ""))
+	var handedness: String = str(scene.WEAPON_HANDEDNESS.get(wep_desc, ""))
+	if handedness != "":
+		wep_desc += " · " + handedness
+	if bool(unit.get("weapon_disabled", false)):
+		wep_desc += " (DIS)"
+
+	var off_hand: String = str(unit.get("off_hand", ""))
+	if off_hand != "":
+		if bool(unit.get("off_hand_disabled", false)):
+			off_hand += " (DIS)"
+		wep_desc += " / " + off_hand
+
+	var sub_text: String = "%s · %s" % [unit.get("mech", ""), wep_desc]
+	scene.draw_string(scene._font(), scene._p(115, 72), sub_text, HORIZONTAL_ALIGNMENT_LEFT, 140.0 * scene._scale().x, scene._font_size(10), Color(0.62, 0.69, 0.73))
 	if not passive.is_empty():
-		sub_text += " · %s" % str(passive.get("name", ""))
-	scene.draw_string(scene._font(), scene._p(115, 79), sub_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(12), Color(0.62, 0.69, 0.73))
-	if scene._is_active_unit(scene.selected_unit):
-		scene.draw_string(scene._font(), scene._p(222, 55), "ACTIVE", HORIZONTAL_ALIGNMENT_RIGHT, 25.0 * scene._scale().x, scene._font_size(9), Color(0.96, 0.86, 0.48))
-	scene._draw_bar(scene._r(115, 92, 122, 8), scene._overall_hp_ratio(scene.selected_unit), Color(0.46, 0.65, 0.56))
+		scene.draw_string(scene._font(), scene._p(115, 87), str(passive.get("name", "")), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), Color(0.86, 0.77, 0.52))
+	if scene._is_active_unit(unit):
+		scene.draw_string(scene._font(), scene._p(222, 50), "ACTIVE", HORIZONTAL_ALIGNMENT_RIGHT, 30.0 * scene._scale().x, scene._font_size(9), Color(0.96, 0.86, 0.48))
+	scene._draw_bar(scene._r(115, 96, 122, 8), scene._overall_hp_ratio(unit), Color(0.46, 0.65, 0.56))
+
+
+func draw_selected_unit_panel(scene) -> void:
+	draw_current_unit_panel(scene)
 
 
 func draw_part_status_panel(scene) -> void:
-	if scene.selected_unit == null:
+	var unit = current_unit(scene)
+	if unit == null:
 		return
 
-	var has_shield: bool = int(scene.selected_unit.get("shield_max_hp", 0)) > 0
+	var has_shield: bool = int(unit.get("shield_max_hp", 0)) > 0
 	var panel_h: float = 142.0 if has_shield else 126.0
 	scene._draw_panel(scene._r(30, 396, 235, panel_h))
 	scene.draw_string(scene._font(), scene._p(48, 416), "PART STATUS", HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(10), Color(0.56, 0.63, 0.67))
 	var y: float = 436.0
 	for part_name in scene.PART_NAMES:
-		var part: Dictionary = scene.selected_unit["parts"][part_name]
+		var part: Dictionary = unit["parts"][part_name]
 		var p_hp: int = int(part.get("hp", 0))
 		var destroyed: bool = bool(part.get("destroyed", false)) or p_hp <= 0
 		var label_color: Color = Color(0.78, 0.82, 0.84) if not destroyed else Color(0.88, 0.48, 0.46)
@@ -46,23 +85,24 @@ func draw_part_status_panel(scene) -> void:
 			if destroyed or bool(part.get("orb_disabled", false)):
 				orb_col = Color(0.40, 0.40, 0.40)
 			scene.draw_circle(scene._p(40, y - 3.0), 2.5 * min(scene._scale().x, scene._scale().y), orb_col)
-		scene._draw_bar(scene._r(96, y - 8.0, 68, 7), scene._part_hp_ratio(scene.selected_unit, part_name), Color(0.46, 0.65, 0.56) if not destroyed else Color(0.76, 0.32, 0.31))
-		scene.draw_string(scene._font(), scene._p(170, y), part_hp_text(scene.selected_unit, part_name, scene.PART_MAX_HP), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), label_color)
+		scene._draw_bar(scene._r(96, y - 8.0, 68, 7), scene._part_hp_ratio(unit, part_name), Color(0.46, 0.65, 0.56) if not destroyed else Color(0.76, 0.32, 0.31))
+		scene.draw_string(scene._font(), scene._p(170, y), part_hp_text(unit, part_name, scene.PART_MAX_HP), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), label_color)
 		y += 15.0
 
 	if has_shield:
-		var s_hp: int = int(scene.selected_unit.get("shield_hp", 0))
-		var s_max: int = int(scene.selected_unit.get("shield_max_hp", 0))
-		var s_active: bool = scene._shield_is_active(scene.selected_unit)
+		var s_hp: int = int(unit.get("shield_hp", 0))
+		var s_max: int = int(unit.get("shield_max_hp", 0))
+		var s_active: bool = scene._shield_is_active(unit)
 		var s_col: Color = Color(0.53, 0.71, 0.75) if s_active else Color(0.76, 0.32, 0.31)
 		scene.draw_string(scene._font(), scene._p(48, y), "Shield", HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(10), s_col)
 		scene._draw_bar(scene._r(96, y - 8.0, 68, 7), float(s_hp) / float(s_max) if s_max > 0 else 0.0, Color(0.40, 0.60, 0.75) if s_active else Color(0.76, 0.32, 0.31))
-		scene.draw_string(scene._font(), scene._p(170, y), shield_hp_text(scene.selected_unit, Callable(scene, "_shield_is_active")), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), s_col)
+		scene.draw_string(scene._font(), scene._p(170, y), shield_hp_text(unit, Callable(scene, "_shield_is_active")), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), s_col)
 
 
 func inspect_target(scene, target) -> Dictionary:
 	if target == null:
 		return {}
+	scene.inspected_unit = target
 	scene.selected_unit = target
 	if scene.active_unit != null:
 		return scene._preview_attack_target(target)
@@ -73,6 +113,10 @@ func inspect_target(scene, target) -> Dictionary:
 func inspect_unit(scene, unit) -> void:
 	if unit == null:
 		return
+	if unit == current_unit(scene):
+		scene.inspected_unit = null
+	else:
+		scene.inspected_unit = unit
 	scene.selected_unit = unit
 	if scene.active_unit != null and scene.turn_state == scene.TurnState.SELECTING_ATTACK:
 		scene._preview_attack_target(unit)
@@ -80,21 +124,31 @@ func inspect_unit(scene, unit) -> void:
 		scene.queue_redraw()
 
 
+func draw_inspected_unit_panel(scene) -> void:
+	draw_enemy_inspection_panel(scene)
+
+
 func draw_enemy_inspection_panel(scene) -> void:
-	if scene.selected_unit == null or scene.selected_unit == scene.active_unit:
-		return
-	if scene.selected_unit["team"] != "enemy" and scene.turn_state != scene.TurnState.SELECTING_ATTACK:
+	var target = inspected_unit(scene)
+	if target == null or target == current_unit(scene):
 		return
 
 	scene._draw_panel(scene._r(960, 126, 310, 385))
-	var data: Dictionary = scene._target_inspection_data(scene.selected_unit)
-	var is_enemy: bool = str(scene.selected_unit.get("team", "")) == "enemy"
+	var data: Dictionary = scene._target_inspection_data(target)
+	var is_enemy: bool = str(target.get("team", "")) == "enemy"
 	var header_title: String = "TARGET INSPECTION" if scene.turn_state == scene.TurnState.SELECTING_ATTACK else ("ENEMY INTEL" if is_enemy else "ALLY INTEL")
 	var header_color: Color = Color(0.85, 0.65, 0.40) if scene.turn_state == scene.TurnState.SELECTING_ATTACK else Color(0.56, 0.63, 0.67)
 	scene.draw_string(scene._font(), scene._p(976, 148), header_title, HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(10), header_color)
 
-	scene.draw_string(scene._font(), scene._p(976, 170), str(scene.selected_unit["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(16), Color(0.95, 0.97, 0.97))
-	scene.draw_string(scene._font(), scene._p(976, 188), "%s · %s" % [scene.selected_unit["mech"], scene.selected_unit["weapon"]], HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(11), Color(0.62, 0.69, 0.73))
+	scene.draw_string(scene._font(), scene._p(976, 170), str(target["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(16), Color(0.95, 0.97, 0.97))
+	var wep_desc: String = str(target.get("weapon", ""))
+	var handedness: String = str(scene.WEAPON_HANDEDNESS.get(wep_desc, ""))
+	if handedness != "":
+		wep_desc += " · " + handedness
+	var off_hand: String = str(target.get("off_hand", ""))
+	if off_hand != "":
+		wep_desc += " / " + off_hand
+	scene.draw_string(scene._font(), scene._p(976, 188), "%s · %s" % [target.get("mech", ""), wep_desc], HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(11), Color(0.62, 0.69, 0.73))
 	scene.draw_string(scene._font(), scene._p(976, 204), str(data.get("terrain_desc", "")), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(10), Color(0.70, 0.75, 0.77))
 
 	var y: float = 220.0
@@ -106,7 +160,7 @@ func draw_enemy_inspection_panel(scene) -> void:
 		var label_col: Color = Color(0.78, 0.82, 0.84) if not destroyed else Color(0.88, 0.48, 0.46)
 		scene.draw_string(scene._font(), scene._p(976, y), short_part_name(part_name), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(10), label_col)
 		scene._draw_bar(scene._r(1030, y - 8.0, 130, 7), float(p_hp) / float(p_max) if p_max > 0 else 0.0, Color(0.46, 0.65, 0.56) if not destroyed else Color(0.76, 0.32, 0.31))
-		scene.draw_string(scene._font(), scene._p(1170, y), part_hp_text(scene.selected_unit, part_name, scene.PART_MAX_HP), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), label_col)
+		scene.draw_string(scene._font(), scene._p(1170, y), part_hp_text(target, part_name, scene.PART_MAX_HP), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), label_col)
 		y += 15.0
 
 	if bool(data.get("has_shield", false)):
@@ -115,7 +169,7 @@ func draw_enemy_inspection_panel(scene) -> void:
 		var s_active: bool = bool(data["shield_active"])
 		scene.draw_string(scene._font(), scene._p(976, y), "Shield", HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(10), Color(0.53, 0.71, 0.75) if s_active else Color(0.76, 0.32, 0.31))
 		scene._draw_bar(scene._r(1030, y - 8.0, 130, 7), float(s_hp) / float(s_max) if s_max > 0 else 0.0, Color(0.40, 0.60, 0.75) if s_active else Color(0.76, 0.32, 0.31))
-		scene.draw_string(scene._font(), scene._p(1170, y), shield_hp_text(scene.selected_unit, Callable(scene, "_shield_is_active")), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), Color(0.53, 0.71, 0.75) if s_active else Color(0.76, 0.32, 0.31))
+		scene.draw_string(scene._font(), scene._p(1170, y), shield_hp_text(target, Callable(scene, "_shield_is_active")), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), Color(0.53, 0.71, 0.75) if s_active else Color(0.76, 0.32, 0.31))
 		y += 15.0
 
 	for consequence in data.get("consequences", []):

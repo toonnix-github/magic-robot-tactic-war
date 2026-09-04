@@ -70,6 +70,7 @@ var units := []
 
 var active_unit = null
 var selected_unit = null
+var inspected_unit = null
 var selected_action := "Move"
 var reachable_tiles := {}
 var targetable_tiles := {}
@@ -288,11 +289,11 @@ func _gui_input(event: InputEvent) -> void:
 func _draw() -> void:
 	_draw_background()
 	_draw_battlefield()
-	battle_hud.draw_selected_unit_panel(self)
+	battle_hud.draw_current_unit_panel(self)
 	_draw_initiative_strip()
 	_draw_mission_panel()
 	battle_hud.draw_part_status_panel(self)
-	battle_hud.draw_enemy_inspection_panel(self)
+	battle_hud.draw_inspected_unit_panel(self)
 	_draw_action_bar()
 	_draw_floating_texts()
 	_draw_event_feed()
@@ -498,6 +499,7 @@ func _begin_activation(unit) -> void:
 
 	active_unit = unit
 	selected_unit = unit
+	inspected_unit = null
 	unit["has_moved"] = false
 	unit["has_attacked"] = false
 	unit["activation_complete"] = false
