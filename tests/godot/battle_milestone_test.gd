@@ -219,13 +219,9 @@ func _run_sword_acceptance(scene: Control) -> void:
 
 
 func _run_spear_acceptance(scene: Control) -> void:
-	var required_methods := [
-		"_spear_direction",
-		"_line_attack_targets",
-		"_resolve_spear_attack",
-	]
-	for method in required_methods:
-		_assert_true(scene.has_method(method), "Spear API exists: %s" % method)
+	_assert_true(scene.has_method("_spear_direction"), "Spear scene geometry API exists")
+	_assert_true(scene.has_method("_line_attack_targets"), "Spear scene target lookup API exists")
+	_assert_true(scene.combat_controller.has_method("resolve_spear_attack"), "Spear combat resolution lives in CombatController")
 	if not _failures.is_empty():
 		return
 
@@ -237,12 +233,8 @@ func _run_spear_acceptance(scene: Control) -> void:
 
 
 func _run_rifle_acceptance(scene: Control) -> void:
-	var required_methods := [
-		"_resolve_rifle_attack",
-		"_volley_part_seed",
-	]
-	for method in required_methods:
-		_assert_true(scene.has_method(method), "Rifle API exists: %s" % method)
+	_assert_true(scene.combat_controller.has_method("resolve_rifle_attack"), "Rifle combat resolution lives in CombatController")
+	_assert_true(scene.has_method("_volley_part_seed"), "Rifle seed compatibility API exists")
 	if not _failures.is_empty():
 		return
 
@@ -262,15 +254,11 @@ func _run_sniper_acceptance(scene: Control) -> void:
 
 
 func _run_shield_acceptance(scene: Control) -> void:
-	var required_methods := [
-		"_shield_is_active",
-		"_can_shield_intercept",
-		"_intercepting_shield_for",
-		"_damage_shield",
-		"_resolve_blockable_shot",
-	]
-	for method in required_methods:
-		_assert_true(scene.has_method(method), "Shield API exists: %s" % method)
+	_assert_true(scene.has_method("_shield_is_active"), "Shield state API exists")
+	_assert_true(scene.has_method("_can_shield_intercept"), "Shield geometry API exists")
+	_assert_true(scene.has_method("_intercepting_shield_for"), "Shield lookup API exists")
+	_assert_true(scene.has_method("_damage_shield"), "Shield damage compatibility API exists")
+	_assert_true(scene.combat_controller.has_method("resolve_blockable_shot"), "Shield/blockable combat resolution lives in CombatController")
 	if not _failures.is_empty():
 		return
 
@@ -306,18 +294,14 @@ func _run_terrain_acceptance(scene: Control) -> void:
 
 
 func _run_orb_acceptance(scene: Control) -> void:
-	var required_methods := [
-		"_install_orb",
-		"_orb_data_for",
-		"_active_orbs",
-		"_orb_effects",
-		"_orb_adjusted_damage",
-		"_resolve_orb_proc",
-		"_apply_status",
-		"_has_status",
-	]
-	for method in required_methods:
-		_assert_true(scene.has_method(method), "Orb API exists: %s" % method)
+	_assert_true(scene.has_method("_install_orb"), "Orb install API exists")
+	_assert_true(scene.has_method("_orb_data_for"), "Orb data lookup API exists")
+	_assert_true(scene.has_method("_active_orbs"), "Orb active list compatibility API exists")
+	_assert_true(scene.has_method("_orb_adjusted_damage"), "Orb damage compatibility API exists")
+	_assert_true(scene.has_method("_has_status"), "Status read compatibility API exists")
+	_assert_true(scene.combat_controller.has_method("orb_effects"), "Orb effect aggregation lives in CombatController")
+	_assert_true(scene.combat_controller.has_method("resolve_orb_proc"), "Orb proc resolution lives in CombatController")
+	_assert_true(scene.combat_controller.has_method("apply_status"), "Status mutation lives in CombatController")
 	if not _failures.is_empty():
 		return
 
@@ -921,7 +905,7 @@ func _test_shield_valid_geometry_intercepts_protected_ally(scene: Control) -> vo
 	var fixture := _set_player_shield_fixture(scene)
 	var protected_before := _part_hp_snapshot(fixture["protected"])
 	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["protected"])
-	var result: Dictionary = scene._resolve_blockable_shot(fixture["attacker"], fixture["protected"], preview, "", 11, 35, 11)
+	var result: Dictionary = _combat_blockable_shot(scene, fixture["attacker"], fixture["protected"], preview, "", 11, 35, 11)
 	_assert_true(result["intercepted"], "valid shield geometry intercepts protected ally")
 	_assert_equal(result["target_id"], "brann", "intercept redirects damage to shield bearer")
 	_assert_equal(result["part_name"], "Shield", "intercepted damage lands on Shield HP")
@@ -932,7 +916,7 @@ func _test_shield_invalid_angle_does_not_intercept(scene: Control) -> void:
 	var fixture := _set_player_shield_fixture(scene, "Sniper", Vector2i(4, 4))
 	var protected_before := _part_hp_snapshot(fixture["protected"])
 	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["protected"])
-	var result: Dictionary = scene._resolve_blockable_shot(fixture["attacker"], fixture["protected"], preview, "", 11, 35, 11)
+	var result: Dictionary = _combat_blockable_shot(scene, fixture["attacker"], fixture["protected"], preview, "", 11, 35, 11)
 	_assert_false(result.get("intercepted", false), "off-angle shield does not intercept")
 	_assert_true(_changed_part_count(protected_before, _part_hp_snapshot(fixture["protected"])) > 0, "invalid angle lets target take normal damage")
 
@@ -941,7 +925,7 @@ func _test_shield_breaks_mid_rifle_volley_then_damage_continues(scene: Control) 
 	var fixture := _set_player_shield_fixture(scene, "Rifle")
 	var protected_before := _part_hp_snapshot(fixture["protected"])
 	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["protected"])
-	var result: Dictionary = scene._resolve_rifle_attack(fixture["attacker"], fixture["protected"], preview, 11)
+	var result: Dictionary = _combat_rifle_attack(scene, fixture["attacker"], fixture["protected"], preview, 11)
 	_assert_equal(fixture["shield"]["shield_hp"], 0, "Rifle volley breaks Shield HP")
 	_assert_true(fixture["shield"]["shield_disabled"], "broken Shield disables interception")
 	_assert_true(result["shots"][0]["intercepted"], "first Rifle shot is intercepted")
@@ -954,7 +938,7 @@ func _test_destroyed_shield_never_intercepts(scene: Control) -> void:
 	scene._damage_shield(fixture["shield"], 999)
 	var protected_before := _part_hp_snapshot(fixture["protected"])
 	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["protected"])
-	var result: Dictionary = scene._resolve_blockable_shot(fixture["attacker"], fixture["protected"], preview, "", 11, 35, 11)
+	var result: Dictionary = _combat_blockable_shot(scene, fixture["attacker"], fixture["protected"], preview, "", 11, 35, 11)
 	_assert_false(result.get("intercepted", false), "destroyed shield does not intercept")
 	_assert_true(_changed_part_count(protected_before, _part_hp_snapshot(fixture["protected"])) > 0, "destroyed shield lets damage hit protected target")
 
@@ -963,10 +947,51 @@ func _test_shield_interception_works_for_enemy_team(scene: Control) -> void:
 	var fixture := _set_enemy_shield_fixture(scene)
 	var protected_before := _part_hp_snapshot(fixture["protected"])
 	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["protected"])
-	var result: Dictionary = scene._resolve_blockable_shot(fixture["attacker"], fixture["protected"], preview, "", 11, 10, 11)
+	var result: Dictionary = _combat_blockable_shot(scene, fixture["attacker"], fixture["protected"], preview, "", 11, 10, 11)
 	_assert_true(result["intercepted"], "enemy shield can intercept for enemy ally")
 	_assert_equal(result["target_id"], "enemy_rifle", "enemy shield bearer receives intercepted hit")
 	_assert_equal(_changed_part_count(protected_before, _part_hp_snapshot(fixture["protected"])), 0, "enemy protected unit takes no damage from intercepted shot")
+
+
+func _combat_blockable_shot(scene: Control, attacker, target, preview: Dictionary, part_name: String, hit_seed: int, damage: int, part_seed: int) -> Dictionary:
+	return scene.combat_controller.resolve_blockable_shot(
+		attacker,
+		target,
+		preview,
+		part_name,
+		hit_seed,
+		damage,
+		part_seed,
+		scene.PART_NAMES,
+		scene._weapon_data_for(attacker),
+		Callable(scene, "_intercepting_shield_for"),
+		Callable(scene, "_should_hit_shield"),
+		Callable(scene, "_terrain_adjusted_damage"),
+		Callable(scene, "_calculate_attack_damage"),
+		Callable(scene, "_damage_part"),
+		Callable(scene, "_damage_shield"),
+		Callable(scene, "_pilot_shield_damage_reduction"),
+		Callable(scene, "_combat_resolve_orb_proc")
+	)
+
+
+func _combat_rifle_attack(scene: Control, attacker, target, preview: Dictionary, seed: int) -> Dictionary:
+	return scene.combat_controller.resolve_rifle_attack(
+		attacker,
+		target,
+		preview,
+		seed,
+		scene.PART_NAMES,
+		scene._weapon_data_for(attacker),
+		Callable(scene, "_intercepting_shield_for"),
+		Callable(scene, "_should_hit_shield"),
+		Callable(scene, "_terrain_adjusted_damage"),
+		Callable(scene, "_calculate_attack_damage"),
+		Callable(scene, "_damage_part"),
+		Callable(scene, "_damage_shield"),
+		Callable(scene, "_pilot_shield_damage_reduction"),
+		Callable(scene, "_combat_resolve_orb_proc")
+	)
 
 
 func _test_height_advantage_caps_at_plus_fifteen(scene: Control) -> void:
@@ -1047,8 +1072,8 @@ func _test_orb_passive_changes_combat_damage(scene: Control) -> void:
 func _test_orb_proc_is_seeded_and_applies_status(scene: Control) -> void:
 	var fixture := _set_orb_attack_fixture(scene)
 	_assert_true(scene._install_orb(fixture["attacker"], "Left Arm", "lightning_r"), "Lightning R Orb installs")
-	var first: Dictionary = scene._resolve_orb_proc(fixture["attacker"], fixture["target"], 12)
-	var second: Dictionary = scene._resolve_orb_proc(fixture["attacker"], fixture["target"], 12)
+	var first: Dictionary = scene._combat_resolve_orb_proc(fixture["attacker"], fixture["target"], 12)
+	var second: Dictionary = scene._combat_resolve_orb_proc(fixture["attacker"], fixture["target"], 12)
 	_assert_equal(first, second, "Orb proc result is reproduced by deterministic seed")
 	_assert_true(first["triggered"], "seeded proc can trigger")
 	_assert_equal(first["status"], "Shock", "Lightning proc applies configured status")
@@ -1541,11 +1566,11 @@ func _run_attack_presentation_acceptance(scene: Control) -> void:
 		"_resolve_attack_result",
 		"_build_attack_feedback_sequence",
 		"_attack_feedback_line",
-		"_present_attack_feedback",
 		"_present_attack_then_finish",
 	]
 	for method in required_methods:
 		_assert_true(scene.has_method(method), "Attack presentation API exists: %s" % method)
+	_assert_true(scene.battle_presenter.has_method("present_attack_feedback"), "Attack feedback pipeline lives in BattlePresenter")
 	if not _failures.is_empty():
 		return
 
@@ -1659,7 +1684,7 @@ func _test_attack_presentation_does_not_change_deterministic_result(scene: Contr
 
 	scene.attack_presentation_enabled = true
 	scene.attack_feedback_step_seconds = 0.001
-	await scene._present_attack_feedback(fixture["attacker"], fixture["target"], result)
+	await scene.battle_presenter.present_attack_feedback(scene, fixture["attacker"], fixture["target"], result)
 
 	_assert_equal(scene._build_attack_feedback_sequence(fixture["attacker"], fixture["target"], result), sequence, "presentation uses already-resolved deterministic attack data")
 	_assert_equal(_part_hp_snapshot(fixture["target"]), snapshot_before, "presentation timing does not alter damage")
@@ -1893,14 +1918,18 @@ func _test_move_confirm_attack_remains_valid(scene: Control) -> void:
 
 
 func _run_enemy_inspection_acceptance(scene: Control) -> void:
-	var required_methods := [
-		"_inspect_target",
-		"_inspect_unit",
+	var required_scene_methods := [
 		"_target_inspection_data",
-		"_draw_enemy_inspection_panel",
 	]
-	for method in required_methods:
+	for method in required_scene_methods:
 		_assert_true(scene.has_method(method), "enemy-inspection API exists: %s" % method)
+	var required_hud_methods := [
+		"inspect_target",
+		"inspect_unit",
+		"draw_enemy_inspection_panel",
+	]
+	for method in required_hud_methods:
+		_assert_true(scene.battle_hud.has_method(method), "enemy-inspection HUD API exists: %s" % method)
 	if not _failures.is_empty():
 		return
 
@@ -1920,14 +1949,14 @@ func _test_inspect_two_enemies_without_consuming_action(scene: Control) -> void:
 	scene._select_action("Attack")
 	_assert_equal(scene.turn_state, scene.TurnState.SELECTING_ATTACK, "in attack mode")
 
-	scene._inspect_target(enemy1)
+	scene.battle_hud.inspect_target(scene, enemy1)
 	_assert_equal(scene.selected_unit["id"], "enemy_blade", "enemy 1 inspected")
 	_assert_equal(scene.active_unit["id"], "arlen", "active unit unchanged after inspecting enemy 1")
 	_assert_false(arlen["has_attacked"], "action not consumed by inspecting enemy 1")
 	_assert_false(arlen["has_moved"], "move not consumed by inspecting enemy 1")
 	_assert_equal(scene.turn_state, scene.TurnState.SELECTING_ATTACK, "still in attack mode")
 
-	scene._inspect_target(enemy2)
+	scene.battle_hud.inspect_target(scene, enemy2)
 	_assert_equal(scene.selected_unit["id"], "enemy_spear", "enemy 2 inspected immediately")
 	_assert_equal(scene.active_unit["id"], "arlen", "active unit unchanged after inspecting enemy 2")
 	_assert_false(arlen["has_attacked"], "action not consumed by inspecting enemy 2")
@@ -1996,11 +2025,11 @@ func _test_enemy_inspection_never_changes_active_unit_or_initiative(scene: Contr
 	var active_before: String = scene.active_unit["id"]
 	var timeline_before: Array = scene.initiative_timeline.duplicate()
 
-	scene._inspect_unit(scene._unit_by_id("commander"))
+	scene.battle_hud.inspect_unit(scene, scene._unit_by_id("commander"))
 	_assert_equal(scene.active_unit["id"], active_before, "active unit unchanged after ally/enemy inspection")
 	_assert_equal(scene.initiative_timeline, timeline_before, "initiative timeline unchanged after inspection")
 
-	scene._inspect_target(scene._unit_by_id("enemy_blade"))
+	scene.battle_hud.inspect_target(scene, scene._unit_by_id("enemy_blade"))
 	_assert_equal(scene.active_unit["id"], active_before, "active unit unchanged after target inspection")
 	_assert_equal(scene.initiative_timeline, timeline_before, "initiative timeline unchanged after target inspection")
 
@@ -2151,7 +2180,7 @@ func _test_visible_orb_proc_in_normal_combat(scene: Control) -> void:
 	var target = scene._unit_by_id("enemy_blade")
 
 	# Fire SR has 35% Burn proc. With seed 0: 0 % 100 = 0 < 35 -> procs!
-	var proc: Dictionary = scene._resolve_orb_proc(sera, target, 0)
+	var proc: Dictionary = scene._combat_resolve_orb_proc(sera, target, 0)
 	_assert_true(proc["triggered"], "Sera Fire SR proc triggers deterministically")
 	_assert_equal(proc["status"], "Burn", "Fire SR procs Burn")
 	_assert_true(scene._has_status(target, "Burn"), "target has Burn status applied")
@@ -2170,7 +2199,7 @@ func _test_visible_orb_proc_in_normal_combat(scene: Control) -> void:
 func _test_burn_deterministic_gameplay_effect(scene: Control) -> void:
 	scene._load_mission("ancient_ruins")
 	var enemy = scene._unit_by_id("enemy_blade")
-	scene._apply_status(enemy, "Burn")
+	scene.combat_controller.apply_status(enemy, "Burn", scene.turn_log)
 	_assert_true(scene._has_status(enemy, "Burn"), "enemy starts with Burn")
 
 	var body_before: int = int(enemy["parts"]["Body"]["hp"])
@@ -2185,7 +2214,7 @@ func _test_burn_deterministic_gameplay_effect(scene: Control) -> void:
 	# Lethal Burn test
 	var target = scene._unit_by_id("enemy_spear")
 	target["parts"]["Body"]["hp"] = 5
-	scene._apply_status(target, "Burn")
+	scene.combat_controller.apply_status(target, "Burn", scene.turn_log)
 	scene._begin_activation(target)
 	_assert_equal(target["parts"]["Body"]["hp"], 0, "lethal Burn reduces Body HP to 0")
 	_assert_true(bool(target["defeated"]), "lethal Burn marks unit defeated")
@@ -2204,7 +2233,7 @@ func _test_destroying_host_part_disables_orb_immediately(scene: Control) -> void
 	_assert_equal(scene._orb_damage_modifier_percent(sera), 0, "passive damage bonus lost immediately when host part destroyed")
 	_assert_equal(scene._active_orbs(sera).size(), 0, "no active orbs remaining on Sera")
 
-	var proc: Dictionary = scene._resolve_orb_proc(sera, enemy, 0)
+	var proc: Dictionary = scene._combat_resolve_orb_proc(sera, enemy, 0)
 	_assert_false(proc["triggered"], "disabled Orb cannot trigger proc")
 
 
@@ -2295,7 +2324,21 @@ func _test_brann_passive_reinforces_shield_defense(scene: Control) -> void:
 	var enemy = scene._unit_by_id("enemy_blade")
 	enemy["grid"] = brann["grid"] + Vector2i(1, 0)
 	var preview: Dictionary = scene._attack_preview(enemy, brann)
-	var res: Dictionary = scene._resolve_shield_damage(enemy, brann, brann, preview, 0, 30, false)
+	var res: Dictionary = scene.combat_controller.resolve_shield_damage(
+		enemy,
+		brann,
+		brann,
+		preview,
+		0,
+		30,
+		false,
+		scene._weapon_data_for(enemy),
+		Callable(scene, "_terrain_adjusted_damage"),
+		Callable(scene, "_calculate_attack_damage"),
+		Callable(scene, "_damage_shield"),
+		Callable(scene, "_pilot_shield_damage_reduction"),
+		Callable(scene, "_combat_resolve_orb_proc")
+	)
 	_assert_equal(res["damage_applied"], 25, "Shield damage absorbed by Guardian Stance (30 - 5 = 25)")
 	scene._set_unit_pilot(brann, "")
 	_assert_equal(scene._pilot_shield_damage_reduction(brann), 0, "removing pilot removes shield reduction")
@@ -2729,7 +2772,7 @@ func _run_combat_impact_acceptance(scene: Control) -> void:
 	var preview_miss: Dictionary = scene._attack_preview(fixture_miss["attacker"], fixture_miss["target"])
 	var result_miss: Dictionary = scene._resolve_attack_result(fixture_miss["attacker"], fixture_miss["target"], preview_miss, "", 95)
 	
-	await scene._present_attack_feedback(fixture_miss["attacker"], fixture_miss["target"], result_miss)
+	await scene.battle_presenter.present_attack_feedback(scene, fixture_miss["attacker"], fixture_miss["target"], result_miss)
 	_assert_true(scene.event_feed_messages.size() > 0, "#31: miss produces event feed message")
 	var miss_feed: String = str(scene.event_feed_messages.back().get("text", "")) if scene.event_feed_messages.size() > 0 else ""
 	_assert_true(miss_feed.to_lower().contains("miss"), "#31: event feed mentions miss")
@@ -2748,7 +2791,7 @@ func _run_combat_impact_acceptance(scene: Control) -> void:
 	scene.fast_simulation = false
 	var preview_hit: Dictionary = scene._attack_preview(fixture_hit["attacker"], fixture_hit["target"])
 	var result_hit: Dictionary = scene._resolve_attack_result(fixture_hit["attacker"], fixture_hit["target"], preview_hit, "", 1)
-	await scene._present_attack_feedback(fixture_hit["attacker"], fixture_hit["target"], result_hit)
+	await scene.battle_presenter.present_attack_feedback(scene, fixture_hit["attacker"], fixture_hit["target"], result_hit)
 	
 	var hit_messages: Array = scene.event_feed_messages.map(func(m): return str(m.get("text", "")))
 	_assert_true(hit_messages.any(func(m): return m.contains("attacks")), "#31: hit produces attack announcement")
