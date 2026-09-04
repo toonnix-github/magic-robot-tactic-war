@@ -32,7 +32,7 @@ Independent tickets do NOT need to be artificially serialized. They may be devel
 If tickets are functionally independent but both substantially modify the same file, mark them as **parallel-limited** rather than fully parallel-safe. Do not hide merge-risk from the user.
 
 For each ticket:
-1. Read this file, the ticket body, relevant roadmap/design docs, and referenced tickets before coding.
+1. Read this file, `SKILL.md`, the ticket body, relevant roadmap/design docs, and referenced tickets before coding.
 2. Implement only the current ticket scope. Do not pull unrelated future gameplay into the change unless a tiny shared abstraction is strictly necessary.
 3. **MANDATORY TDD:** You MUST use strict Test-Driven Development (Red-Green-Refactor). Write the failing Python static tests and Godot acceptance tests FIRST, run them to verify they fail, and ONLY THEN write the implementation code to make them pass.
 4. Run the Godot project/tests and fix regressions.
@@ -134,6 +134,47 @@ Supporting inspection, preview, confirmation and combat feedback are not additio
 - Avoid hard-coding map-specific logic into core combat systems.
 - Keep all balance numbers easy to edit in data files/resources.
 - Reduce shared-file contention before scaling parallel AI development.
+- `SKILL.md` is mandatory architecture guidance for all implementation work.
+
+## Mandatory Decoupled Architecture
+All implementation work must preserve or improve functional decoupling. Do not recreate a monolith as Phase 2 grows.
+
+This rule is about **responsibility ownership**, not creating one file per function. Every new or materially changed function must have one clear subsystem owner and should live in that subsystem rather than in a convenient global scene script.
+
+Required ownership boundaries:
+- combat rules, attack/damage resolution, parts and statuses -> `src/combat/`
+- movement, pathing, terrain, height, cover and LOS -> grid/combat grid module
+- AI planning, scoring and tactical decisions -> `src/ai/`
+- battle playback, timing, animation and combat feedback -> `src/presentation/`
+- battle HUD, inspection and player-facing UI input -> `src/ui/`
+- authoritative weapons, pilots, Orbs, missions, builds and configuration -> `src/data/`
+- scene lifecycle and top-level coordination only -> `src/main.gd`
+
+For every new or modified function:
+- keep one primary responsibility;
+- prefer explicit inputs/outputs over reaching into unrelated subsystem internals;
+- prefer pure functions when mutation is unnecessary;
+- avoid hidden side effects and circular dependencies;
+- never recompute authoritative gameplay outcomes in UI/presentation code;
+- never place UI/presentation behavior inside combat simulation code;
+- do not add feature logic to `main.gd` merely because it has access to all state;
+- avoid cosmetic wrappers that leave the real implementation in `main.gd`;
+- if proper decoupling requires a broad cross-cutting refactor, create a separate refactor ticket rather than hiding it inside unrelated feature work.
+
+Before implementation, perform this parallel-work test:
+> Could another agent change a neighboring subsystem without editing the same implementation file or understanding this function's internals?
+
+If the answer is no, improve the boundary first unless the ticket is explicitly a cross-cutting integration task.
+
+Tests should protect important ownership boundaries, not only file/class existence. Where regression risk is meaningful, verify that subsystem behavior is actually delegated to its intended module and that old monolithic implementations do not silently return to `main.gd`.
+
+Before declaring a ticket complete, verify:
+1. every new function has a clear module owner;
+2. `main.gd` did not gain subsystem implementation that belongs elsewhere;
+3. simulation, UI, presentation, AI and data concerns remain separated;
+4. no circular dependency was introduced;
+5. neighboring agents can work with minimal shared-file contention;
+6. regression and deterministic tests remain green.
 
 ## Suggested Structure
 - `src/combat/` simulation, actions, initiative, damage, targeting
