@@ -1,12 +1,12 @@
 ; Engine configuration file.
-; Phase 1 graybox combat prototype.
+; Phase 2 build-your-mech prototype.
 
 config_version=5
 
 [application]
 
 config/name="Magic Robot Tactic War"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/hangar.tscn"
 
 [display]
 
