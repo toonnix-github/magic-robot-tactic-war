@@ -38,6 +38,7 @@ jobs:
       - name: Run Godot headless tests
         run: |
           "$GODOT_BIN" --headless --path . -s res://tests/godot/battle_milestone_test.gd
+          "$GODOT_BIN" --headless --path . -s res://tests/godot/visible_auto_playback_test.gd
 
       - name: Enforce GDScript coverage
         run: |
