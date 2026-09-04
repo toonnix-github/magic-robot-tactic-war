@@ -35,7 +35,10 @@ func _run() -> void:
 	_assert_true(reachable.has("3,1"), "allies may be traversed")
 
 	scene._handle_grid_tap(scene._tile_center(Vector2i(3, 1)))
-	_assert_equal(arlen["grid"], Vector2i(3, 1), "tap on reachable tile moves selected unit")
+	_assert_equal(scene.turn_state, scene.TurnState.MOVE_PREVIEW, "tap on reachable tile enters move preview")
+	_assert_equal(arlen["grid"], Vector2i(1, 1), "tap alone does not move active unit")
+	_assert_true(scene._confirm_move(), "confirming preview commits movement")
+	_assert_equal(arlen["grid"], Vector2i(3, 1), "tap on reachable tile moves selected unit after confirm")
 
 	arlen["grid"] = Vector2i(1, 1)
 	mira["grid"] = Vector2i(8, 5)
@@ -93,6 +96,7 @@ func _run() -> void:
 	await _run_enemy_presentation_acceptance(scene)
 	await _run_attack_presentation_acceptance(scene)
 	_run_attack_overlay_acceptance(scene)
+	_run_movement_preview_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -1761,6 +1765,121 @@ func _test_phase1_strict_turn_rules_enforced(scene: Control) -> void:
 	_assert_false(scene._can_move(mira), "non-active unit cannot move")
 	_assert_false(scene._can_attack(mira), "non-active unit cannot attack")
 	_assert_false(scene._can_wait(mira), "non-active unit cannot wait")
+
+
+func _run_movement_preview_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_preview_move_destination",
+		"_confirm_move",
+		"_cancel_move_preview",
+		"_clear_move_preview",
+		"_calculate_move_path",
+		"_draw_movement_preview",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "movement-preview API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_destination_tap_alone_never_consumes_movement(scene)
+	_test_cancel_move_preserves_original_grid(scene)
+	_test_confirm_move_moves_once_and_prevents_second_move(scene)
+	_test_different_destination_can_be_previewed(scene)
+	_test_illegal_destination_cannot_enter_confirm_state(scene)
+	_test_move_confirm_attack_remains_valid(scene)
+
+
+func _test_destination_tap_alone_never_consumes_movement(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var arlen = scene._unit_by_id("arlen")
+	arlen["grid"] = Vector2i(2, 3)
+	scene._begin_activation(arlen)
+	var dest := Vector2i(3, 3)
+	_assert_equal(scene.turn_state, scene.TurnState.SELECTING_MOVE, "Arlen starts in selecting move")
+	scene._handle_grid_tap(scene._tile_center(dest))
+	_assert_equal(scene.turn_state, scene.TurnState.MOVE_PREVIEW, "tapping destination enters MOVE_PREVIEW")
+	_assert_equal(scene.preview_move_destination, dest, "preview destination is set")
+	_assert_false(arlen["has_moved"], "destination tap alone never sets has_moved")
+	_assert_equal(arlen["grid"], Vector2i(2, 3), "active unit remains on original tile during preview")
+	_assert_false(scene.preview_move_path.is_empty(), "preview move path is calculated")
+	scene.notification(CanvasItem.NOTIFICATION_DRAW)
+
+
+func _test_cancel_move_preserves_original_grid(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var arlen = scene._unit_by_id("arlen")
+	arlen["grid"] = Vector2i(2, 3)
+	scene._begin_activation(arlen)
+	scene._preview_move_destination(Vector2i(3, 3))
+	_assert_equal(scene.turn_state, scene.TurnState.MOVE_PREVIEW, "in move preview")
+	scene._cancel_move_preview()
+	_assert_equal(scene.turn_state, scene.TurnState.SELECTING_MOVE, "cancelling preview returns to selecting move")
+	_assert_equal(arlen["grid"], Vector2i(2, 3), "cancelling preserves original grid")
+	_assert_false(arlen["has_moved"], "cancelling preserves has_moved = false")
+	_assert_true(scene._can_move(arlen), "move action remains available after cancel")
+	_assert_true(scene.preview_move_destination == null, "preview destination cleared on cancel")
+
+
+func _test_confirm_move_moves_once_and_prevents_second_move(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var arlen = scene._unit_by_id("arlen")
+	arlen["grid"] = Vector2i(2, 3)
+	scene._begin_activation(arlen)
+	var dest := Vector2i(3, 3)
+	scene._preview_move_destination(dest)
+	_assert_true(scene._confirm_move(), "confirm move succeeds")
+	_assert_equal(arlen["grid"], dest, "active unit moved to confirmed destination")
+	_assert_true(arlen["has_moved"], "has_moved is true after confirm")
+	_assert_equal(scene.turn_state, scene.TurnState.MOVE_COMPLETE, "turn_state is MOVE_COMPLETE")
+	_assert_false(scene._can_move(arlen), "second move in same activation is prevented")
+	_assert_false(scene._confirm_move(), "cannot confirm move again after movement complete")
+
+
+func _test_different_destination_can_be_previewed(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var arlen = scene._unit_by_id("arlen")
+	arlen["grid"] = Vector2i(2, 3)
+	scene._begin_activation(arlen)
+	var dest1 := Vector2i(3, 3)
+	var dest2 := Vector2i(2, 4)
+	scene._preview_move_destination(dest1)
+	_assert_equal(scene.preview_move_destination, dest1, "first destination previewed")
+	scene._preview_move_destination(dest2)
+	_assert_equal(scene.preview_move_destination, dest2, "destination updated to second choice without committing")
+	_assert_equal(arlen["grid"], Vector2i(2, 3), "unit still at original tile")
+	_assert_false(arlen["has_moved"], "has_moved still false after switching preview")
+
+
+func _test_illegal_destination_cannot_enter_confirm_state(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var arlen = scene._unit_by_id("arlen")
+	var mira = scene._unit_by_id("mira")
+	arlen["grid"] = Vector2i(2, 3)
+	mira["grid"] = Vector2i(2, 4)
+	scene._begin_activation(arlen)
+	var occupied_dest: Vector2i = mira["grid"]
+	_assert_false(scene._preview_move_destination(occupied_dest), "cannot preview occupied destination")
+	_assert_true(scene.preview_move_destination == null, "preview destination remains null")
+	var unreachable_dest := Vector2i(9, 6)
+	_assert_false(scene._preview_move_destination(unreachable_dest), "cannot preview unreachable destination")
+	_assert_true(scene.preview_move_destination == null, "preview destination still null")
+	_assert_false(scene._confirm_move(), "cannot confirm without valid preview")
+
+
+func _test_move_confirm_attack_remains_valid(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	var arlen = scene._unit_by_id("arlen")
+	var enemy = scene._unit_by_id("enemy_blade")
+	arlen["grid"] = Vector2i(2, 3)
+	enemy["grid"] = Vector2i(4, 3)
+	scene._begin_activation(arlen)
+	scene._preview_move_destination(Vector2i(3, 3))
+	_assert_true(scene._confirm_move(), "move confirmed")
+	_assert_equal(scene.turn_state, scene.TurnState.MOVE_COMPLETE, "move complete")
+	_assert_true(scene._can_attack(arlen), "attack remains available after move confirmation")
+	scene._select_action("Attack")
+	_assert_equal(scene.turn_state, scene.TurnState.SELECTING_ATTACK, "can transition to attack selection")
+	_assert_true(scene._confirm_attack_target(enemy), "attack can be confirmed after move")
 
 
 func _assert_true(actual: bool, message: String) -> void:

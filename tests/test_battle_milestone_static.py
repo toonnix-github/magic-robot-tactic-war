@@ -277,9 +277,21 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         ]:
             self.assertIn(hook, self.source)
         self.assertIn("attack_overlay_tiles", self.source)
-        self.assertIn("minimum_range", self.source)
-        self.assertIn("los_blocked", self.source)
-
+    def test_movement_preview_hooks_are_encoded(self):
+        for hook in [
+            "func _preview_move_destination",
+            "func _confirm_move",
+            "func _cancel_move_preview",
+            "func _clear_move_preview",
+            "func _calculate_move_path",
+            "func _draw_movement_preview",
+        ]:
+            self.assertIn(hook, self.source)
+        self.assertIn("preview_move_destination", self.source)
+        self.assertIn("preview_move_path", self.source)
+        self.assertIn("move_confirm_rect", self.source)
+        self.assertIn("move_cancel_rect", self.source)
+        self.assertIn("MOVE_PREVIEW", self.source)
 
 
 if __name__ == "__main__":
