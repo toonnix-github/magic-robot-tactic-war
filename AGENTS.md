@@ -4,9 +4,9 @@
 Magic Robot Tactic War is a mobile-first landscape tactical RPG combining modular mechs, pilots, elemental Orbs, part-based damage, and short grid battles.
 
 ## Current Goal
-Build ONLY the Phase 1 graybox combat prototype. Do not add town building, story systems, gacha, crafting, account systems, multiplayer, monetization, polished art, or live-service features.
+Build ONLY the Phase 1 graybox combat prototype and its final readability/presentation fixes. Do not add town building, story systems, gacha, crafting, account systems, multiplayer, monetization, polished art, or live-service features.
 
-Phase 1 core combat implementation through issue #16 is complete. The current focus is **Phase 1 Closure and Battle Readability**: issues #18 through #29.
+Phase 1 core combat implementation and closure through issue #29 are complete. The current focus is final Phase 1 presentation polish: issues #30 and #31.
 
 ## Technology
 - Engine: Godot 4.x
@@ -15,20 +15,32 @@ Phase 1 core combat implementation through issue #16 is complete. The current fo
 - Standard battle map: 7 rows x 10 columns.
 - Prefer data-driven definitions for maps, weapons, units, Orbs, and missions.
 
-## Ticket Execution Order
-`docs/phase1-closure-roadmap.md` is the active implementation roadmap for the remainder of Phase 1.
+## Ticket Execution and Parallel Work
+`docs/phase1-closure-roadmap.md` remains the historical Phase 1 closure roadmap. Current post-closure fixes are tracked directly by issue.
 
-Codex must work the remaining Phase 1 issues in order from #18 through #29 unless the user explicitly changes priority.
+Every new implementation ticket must include an **Execution / Dependency** section that explicitly states:
+- functional dependencies on other tickets, if any;
+- whether the ticket can be developed independently;
+- whether it is safe for a separate sub-agent / AI worker to implement in parallel;
+- expected shared-file or merge-conflict risk;
+- any integration step that must happen after another ticket lands.
+
+Independent tickets do NOT need to be artificially serialized. They may be developed in parallel when both are true:
+1. there is no functional dependency; and
+2. they are unlikely to make overlapping edits to the same monolithic files or shared state.
+
+If tickets are functionally independent but both substantially modify the same file, mark them as **parallel-limited** rather than fully parallel-safe. Do not hide merge-risk from the user.
 
 For each ticket:
-1. Read this file, the ticket body, `docs/phase1-closure-roadmap.md`, and all referenced design docs before coding.
-2. Implement only the current ticket scope. Do not pull future-ticket gameplay into the current change unless a tiny shared abstraction is strictly necessary.
+1. Read this file, the ticket body, relevant roadmap/design docs, and referenced tickets before coding.
+2. Implement only the current ticket scope. Do not pull unrelated future gameplay into the change unless a tiny shared abstraction is strictly necessary.
 3. Add/update deterministic tests covering the ticket acceptance criteria where practical.
 4. Run the Godot project/tests and fix regressions.
 5. Ensure the GitHub Regression workflow remains green.
 6. Commit with the issue number in the commit message.
-7. Push the completed work to `prototype/combat-v01` before starting the next ticket.
+7. Push completed work to the working branch before integration.
 8. Do not silently invent a new game rule when requirements conflict; preserve the source-of-truth design and surface the conflict.
+9. When working in parallel, keep changes narrowly scoped and avoid opportunistic refactors that increase merge conflicts.
 
 ## Design Source of Truth
 Read these before implementing or changing combat behavior or battle presentation:
@@ -38,7 +50,8 @@ Read these before implementing or changing combat behavior or battle presentatio
 4. `docs/ui/battle-screen-v0.1.md`
 5. `docs/ui/battle-screen-v0.1.svg`
 6. `docs/phase1-ticket-roadmap.md` for historical core implementation order
-7. `docs/phase1-closure-roadmap.md` for current active work
+7. `docs/phase1-closure-roadmap.md` for historical closure work
+8. Current open GitHub issues for post-closure changes
 
 If implementation conflicts with those files, the docs win unless they are intentionally updated in the same change.
 
@@ -55,24 +68,22 @@ Key rules:
 - turn/action legality must be enforced in simulation state, not only by hiding/disabling UI buttons
 
 ## UX Source of Truth
-The Phase 1 battle composition must follow `docs/ui/battle-screen-v0.1.svg` and its companion Markdown guidance, plus the active closure tickets #18-#23.
+The Phase 1 battle composition must follow `docs/ui/battle-screen-v0.1.svg` and its companion Markdown guidance, plus the active presentation issues.
 
 Key constraints:
 - mobile landscape, approximately modern iPhone-wide ratio
 - battlefield visually dominates the screen
 - 7x10 grid is readable without permanent row/column labels
 - terrain elevation is shown through stepped geometry rather than H0/H1/H2 text in normal player UI
-- compact selected-unit panel at top left
-- compact initiative strip near top center
-- compact mission/turn panel at top right
-- part status is contextual rather than a permanent stat wall
 - primary action bar contains only Move / Attack / Wait in Phase 1
 - no minimap, virtual joystick, giant skill bar, or decorative HUD that steals battlefield space
 - normal manual play must visibly present enemy movement and attack outcomes instead of teleporting state
 - movement destination selection must support preview + explicit Confirm/Cancel before consuming Move
 - Attack mode must visualize the weapon's attack area and legal/illegal targeting reasons
 - target inspection must expose enough enemy detail for deliberate tactical choice
-- visible HP bars must include numeric current/max values where required by closure tickets
+- visible HP bars must include numeric current/max values where required
+- Auto Battle means AI-controlled visible play; Fast Simulation is the explicit presentation-skipping mode
+- attack impact feedback should communicate hit/miss, damage, affected part, destruction and triggered effects without requiring debug logs
 
 Treat the SVG as a hierarchy/composition reference rather than final art. Graybox shapes and placeholder unit markers are expected during Phase 1.
 
@@ -92,8 +103,9 @@ Supporting inspection, preview, confirmation and combat feedback are not additio
 - Simulation is authoritative and deterministic.
 - Presentation timing must never alter RNG, legal actions, damage values or initiative order.
 - Normal manual play presents movement and attacks in a readable sequence before advancing.
-- Debug/fast Auto simulation may skip presentation.
-- Block state-changing player input while enemy/action presentation is resolving.
+- Auto Battle with Fast Simulation OFF also presents movement and attacks visibly.
+- Fast Simulation may skip presentation for benchmarks/debugging.
+- Block state-changing player input while enemy/action/Auto presentation is resolving.
 
 ## Engineering Principles
 - Combat rules must be testable without rendering.
@@ -101,12 +113,14 @@ Supporting inspection, preview, confirmation and combat feedback are not additio
 - Prefer small composable systems over large scene scripts.
 - Avoid hard-coding map-specific logic into core combat systems.
 - Keep all balance numbers easy to edit in data files/resources.
+- Reduce shared-file contention before scaling parallel AI development.
 
 ## Suggested Structure
 - `src/combat/` simulation, actions, initiative, damage, targeting
 - `src/grid/` coordinates, movement, height, line of sight
 - `src/data/` resource/data definitions and loaders
 - `src/ui/` battle HUD and input
+- `src/presentation/` movement playback, attack feedback, floating combat text, event feed
 - `scenes/` Godot scenes
 - `data/maps/`, `data/weapons/`, `data/orbs/`, `data/units/`
 - `tests/` deterministic combat tests
@@ -127,12 +141,14 @@ Before Phase 1 is considered complete, the game should support:
 - at least 3 playable prototype missions
 - deterministic auto-battle simulation for testing
 - visible enemy movement and attack resolution
+- visible Auto battle playback when Fast Simulation is OFF
 - attack range visualization and targeting explanation
 - movement preview + confirmation
 - enemy inspection for target decisions
 - numeric part/Shield HP values
 - default Orb loadouts and at least one real status effect
 - data-driven pilot passives
+- concise impact feedback / floating damage / triggered-effect event text
 - benchmark evidence that preparation/build quality matters in Auto
 - green regression workflow at Phase 1 head
 
