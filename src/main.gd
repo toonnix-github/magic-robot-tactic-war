@@ -386,6 +386,9 @@ var current_debug_seed: int = 1337
 var mission_selector_open: bool = false
 var fast_simulation: bool = false
 var last_configured_loadouts: Dictionary = {}
+var event_feed_messages: Array[Dictionary] = []
+var floating_texts: Array[Dictionary] = []
+var unit_shakes: Dictionary = {}
 var debug_rects: Dictionary = {}
 var mission_selector_rects: Dictionary = {}
 
@@ -396,6 +399,55 @@ func _ready() -> void:
 	_load_mission("ancient_ruins")
 	print("Magic Robot Tactic War combat prototype v%s" % PROTOTYPE_VERSION)
 	print("Graybox battle milestone loaded: 7x10 grid, selection, movement, and Phase 1 HUD.")
+
+
+func _process(delta: float) -> void:
+	var needs_redraw := false
+	
+	if event_feed_messages.size() > 0:
+		for i in range(event_feed_messages.size() - 1, -1, -1):
+			event_feed_messages[i]["time"] -= delta
+			if event_feed_messages[i]["time"] <= 0:
+				event_feed_messages.remove_at(i)
+		needs_redraw = true
+		
+	if floating_texts.size() > 0:
+		for i in range(floating_texts.size() - 1, -1, -1):
+			floating_texts[i]["time"] -= delta
+			if floating_texts[i]["time"] <= 0:
+				floating_texts.remove_at(i)
+		needs_redraw = true
+		
+	if unit_shakes.size() > 0:
+		var keys = unit_shakes.keys()
+		for k in keys:
+			unit_shakes[k] -= delta
+			if unit_shakes[k] <= 0:
+				unit_shakes.erase(k)
+		needs_redraw = true
+		
+	if needs_redraw:
+		queue_redraw()
+
+
+func _add_event_message(text: String, duration: float = 3.0) -> void:
+	if fast_simulation: return
+	event_feed_messages.append({"text": text, "time": duration, "max_time": duration})
+	if event_feed_messages.size() > 5:
+		event_feed_messages.pop_front()
+	queue_redraw()
+
+
+func _add_floating_text(grid: Vector2i, text: String, color: Color, duration: float = 1.0) -> void:
+	if fast_simulation: return
+	floating_texts.append({"grid": grid, "text": text, "color": color, "time": duration, "max_time": duration})
+	queue_redraw()
+
+
+func _start_unit_shake(unit_id: String, duration: float = 0.3) -> void:
+	if fast_simulation: return
+	unit_shakes[unit_id] = duration
+	queue_redraw()
 
 
 func _load_mission(mission_id: String, swapped_sides: bool = false) -> void:
@@ -412,6 +464,9 @@ func _load_mission(mission_id: String, swapped_sides: bool = false) -> void:
 	attack_presentation_active = false
 	attack_feedback_attacker_id = ""
 	attack_feedback_target_id = ""
+	event_feed_messages.clear()
+	floating_texts.clear()
+	unit_shakes.clear()
 	last_action_message = "Ready"
 	_create_terrain()
 	_create_units()
@@ -550,6 +605,8 @@ func _draw() -> void:
 	_draw_part_status_panel()
 	_draw_enemy_inspection_panel()
 	_draw_action_bar()
+	_draw_floating_texts()
+	_draw_event_feed()
 	_draw_debug_control_bar()
 	_draw_mission_selector_overlay()
 
@@ -1719,6 +1776,41 @@ func _present_attack_feedback(attacker, target, result: Dictionary) -> void:
 	for line in attack_feedback_queue:
 		last_action_message = line
 		attack_feedback_log.append(line)
+		
+		# Parse the structured string to trigger UI effects synchronously
+		if line.contains(" -> "):
+			# Example: "Arlen / Spear -> Enemy Blade"
+			var parts = line.split(" -> ")
+			var attacker_info = parts[0].split(" / ")
+			if attacker_info.size() == 2:
+				_add_event_message("%s attacks %s with %s" % [attacker_info[0].strip_edges(), parts[1].strip_edges(), attacker_info[1].strip_edges()])
+		elif line.contains("MISS"):
+			var tgt = target if target != null else _unit_by_id(attack_feedback_target_id)
+			if tgt != null:
+				_add_floating_text(tgt["grid"], "MISS", Color.WHITE)
+			_add_event_message("Missed!", 2.0)
+		elif line.contains("HIT / ") or line.contains("SHIELD INTERCEPT / "):
+			var split_idx = line.find("HIT / ")
+			if split_idx == -1: split_idx = line.find("SHIELD INTERCEPT / ")
+			var payload = line.substr(split_idx).split(" / ")[1]
+			# payload is like "Body -12" or "Enemy Shield -12"
+			var dmg_idx = payload.rfind("-")
+			if dmg_idx != -1:
+				var dmg_str = payload.substr(dmg_idx)
+				var tgt = target if target != null else _unit_by_id(attack_feedback_target_id)
+				if tgt != null:
+					_start_unit_shake(tgt["id"])
+					_add_floating_text(tgt["grid"], dmg_str, Color(0.9, 0.3, 0.3))
+					var target_name = str(tgt.get("name", "Target"))
+					var part_name = payload.substr(0, dmg_idx).strip_edges()
+					_add_event_message("%s · %s %s" % [target_name, part_name, dmg_str])
+		elif line.contains("DESTROYED") or line.contains("DEFEATED") or line.contains("BROKEN"):
+			_add_event_message(line, 4.0)
+		elif line.begins_with("ORB PROC / "):
+			var proc = line.split(" / ")[1]
+			var attacker_name = _unit_name_for_id(attack_feedback_attacker_id)
+			_add_event_message("%s triggered %s" % [attacker_name, proc])
+			
 		queue_redraw()
 		await get_tree().create_timer(attack_feedback_step_seconds).timeout
 	attack_feedback_queue.clear()
@@ -3107,6 +3199,8 @@ func _draw_cover(grid: Vector2i) -> void:
 
 func _draw_unit(unit) -> void:
 	var center := _tile_center(unit["grid"])
+	if unit_shakes.has(unit["id"]):
+		center += Vector2(randf_range(-4.0, 4.0), randf_range(-4.0, 4.0)) * _scale()
 	var radius := _unit_radius()
 
 	if _is_active_unit(unit):
@@ -3749,6 +3843,31 @@ func _set_fast_simulation(enabled: bool) -> void:
 
 func _toggle_fast_simulation() -> void:
 	_set_fast_simulation(not fast_simulation)
+
+
+func _draw_floating_texts() -> void:
+	for ft in floating_texts:
+		var center: Vector2 = _tile_center(ft["grid"])
+		# Drift upward based on lifetime
+		var progress: float = 1.0 - (ft["time"] / ft["max_time"])
+		center.y -= progress * 40.0 * _scale().y
+		_draw_centered_text(Rect2(center - Vector2(100, 20), Vector2(200, 40)), ft["text"], 16, ft["color"])
+
+
+func _draw_event_feed() -> void:
+	if event_feed_messages.is_empty():
+		return
+	var feed_width: float = 300.0 * _scale().x
+	var row_height: float = 24.0 * _scale().y
+	var start_y: float = 65.0 * _scale().y
+	var start_x: float = (size.x - feed_width) / 2.0
+	
+	for i in range(event_feed_messages.size()):
+		var msg: Dictionary = event_feed_messages[i]
+		var rect := Rect2(start_x, start_y + (i * row_height), feed_width, row_height)
+		# Draw a compact dark background
+		draw_rect(rect, Color(0, 0, 0, 0.6))
+		_draw_centered_text(rect, msg["text"], 12, Color.WHITE)
 
 
 func _draw_debug_control_bar() -> void:

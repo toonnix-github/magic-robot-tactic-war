@@ -105,6 +105,7 @@ func _run() -> void:
 	_run_mission_selector_and_debug_controls_acceptance(scene)
 	_run_auto_benchmark_acceptance(scene)
 	_run_visible_auto_playback_acceptance(scene)
+	await _run_combat_impact_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -2690,6 +2691,71 @@ func _run_visible_auto_playback_acceptance(scene: Control) -> void:
 	_assert_true(scene.attack_presentation_enabled, "#30: attack presentation enabled outside fast sim")
 	
 	scene.auto_battle = false
+
+
+func _run_combat_impact_acceptance(scene: Control) -> void:
+	# #31 — Combat impact animation and concise combat event feed
+	var required_methods := [
+		"_add_event_message",
+		"_add_floating_text",
+		"_start_unit_shake",
+		"_draw_event_feed",
+		"_draw_floating_texts"
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "#31: Presentation method exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	scene._load_mission("ancient_ruins", false)
+	scene.enemy_presentation_enabled = true
+	scene.attack_presentation_enabled = true
+	scene.fast_simulation = false
+	scene.auto_battle = false
+
+	var fixture_miss := _attack_presentation_fixture(scene, "Sniper")
+	scene.enemy_presentation_enabled = true
+	scene.attack_presentation_enabled = true
+	scene.fast_simulation = false
+	
+	scene.event_feed_messages.clear()
+	scene.floating_texts.clear()
+	scene.unit_shakes.clear()
+	scene.attack_feedback_step_seconds = 0.001
+	
+	# Force a miss
+	scene.set_debug_seed(95)
+	var preview_miss: Dictionary = scene._attack_preview(fixture_miss["attacker"], fixture_miss["target"])
+	var result_miss: Dictionary = scene._resolve_attack_result(fixture_miss["attacker"], fixture_miss["target"], preview_miss, "", 95)
+	
+	await scene._present_attack_feedback(fixture_miss["attacker"], fixture_miss["target"], result_miss)
+	_assert_true(scene.event_feed_messages.size() > 0, "#31: miss produces event feed message")
+	var miss_feed: String = str(scene.event_feed_messages.back().get("text", "")) if scene.event_feed_messages.size() > 0 else ""
+	_assert_true(miss_feed.to_lower().contains("miss"), "#31: event feed mentions miss")
+	_assert_true(scene.floating_texts.size() > 0, "#31: miss produces floating text")
+	var miss_float: String = str(scene.floating_texts.back().get("text", "")) if scene.floating_texts.size() > 0 else ""
+	_assert_true(miss_float == "MISS", "#31: floating text says MISS")
+	_assert_false(scene.unit_shakes.has(fixture_miss["target"]["id"]), "#31: miss does NOT shake target")
+
+	scene.event_feed_messages.clear()
+	scene.floating_texts.clear()
+	
+	# Force a hit
+	var fixture_hit := _attack_presentation_fixture(scene, "Sniper")
+	scene.enemy_presentation_enabled = true
+	scene.attack_presentation_enabled = true
+	scene.fast_simulation = false
+	var preview_hit: Dictionary = scene._attack_preview(fixture_hit["attacker"], fixture_hit["target"])
+	var result_hit: Dictionary = scene._resolve_attack_result(fixture_hit["attacker"], fixture_hit["target"], preview_hit, "", 1)
+	await scene._present_attack_feedback(fixture_hit["attacker"], fixture_hit["target"], result_hit)
+	
+	var hit_messages: Array = scene.event_feed_messages.map(func(m): return str(m.get("text", "")))
+	_assert_true(hit_messages.any(func(m): return m.contains("attacks")), "#31: hit produces attack announcement")
+	_assert_true(hit_messages.any(func(m): return m.contains("-")), "#31: hit produces damage announcement")
+	
+	var hit_floats: Array = scene.floating_texts.map(func(f): return str(f.get("text", "")))
+	_assert_true(hit_floats.any(func(f): return f.begins_with("-")), "#31: hit produces numeric floating damage")
+	_assert_true(scene.unit_shakes.has(fixture_hit["target"]["id"]), "#31: hit DOES shake target")
 
 
 func _assert_true(actual: bool, message: String) -> void:

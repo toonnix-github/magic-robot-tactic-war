@@ -417,6 +417,21 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn('debug_rects.get("auto_toggle", Rect2()).has_point(press_position)', self.source)
 
 
+    def test_combat_impact_and_event_feed_structures(self):
+        """#31 — Verify UI structures for combat impact and event feed."""
+        # Variables
+        self.assertIn("var event_feed_messages", self.source)
+        self.assertIn("var floating_texts", self.source)
+        self.assertIn("var unit_shakes", self.source)
+        
+        # Functions
+        self.assertIn("func _add_event_message", self.source)
+        self.assertIn("func _add_floating_text", self.source)
+        self.assertIn("func _start_unit_shake", self.source)
+        self.assertIn("func _draw_event_feed", self.source)
+        self.assertIn("func _draw_floating_texts", self.source)
+
+
 if __name__ == "__main__":
     unittest.main()
 
