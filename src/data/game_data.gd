@@ -1,6 +1,8 @@
 extends RefCounted
 class_name GameData
 
+const MechBuildModelScript := preload("res://src/data/mech_build_model.gd")
+
 const PROTOTYPE_VERSION := "0.1"
 const GRID_COLUMNS := 10
 const GRID_ROWS := 7
@@ -16,10 +18,12 @@ const PLACEHOLDER_WEAPON_RANGES := {
 	"Spear": 2,
 	"Sniper": 6,
 	"Rifle": 5,
-	"Shield": 1,
 	"Blade": 1,
 	"Commander": 5,
 }
+
+const WEAPON_HANDEDNESS := MechBuildModelScript.WEAPON_HANDEDNESS
+const OFF_HAND_EQUIPMENT_DATA := MechBuildModelScript.OFF_HAND_EQUIPMENT_DATA
 
 const WEAPON_DATA := {
 	"Sword": {
@@ -67,19 +71,6 @@ const WEAPON_DATA := {
 		"pattern": "volley",
 		"blockable": true,
 		"part_weights": {"Head": 20, "Body": 20, "Left Arm": 20, "Right Arm": 20, "Legs": 20},
-	},
-	"Shield": {
-		"name": "Shield",
-		"range_min": 1,
-		"range_max": 1,
-		"damage": PLACEHOLDER_ATTACK_DAMAGE,
-		"hit_percent": PLACEHOLDER_HIT_PERCENT,
-		"allow_manual_part": true,
-		"pattern": "single",
-		"blockable": false,
-		"shield_max_hp": 25,
-		"shield_hit_weight": 55,
-		"part_weights": {"Body": 100},
 	},
 	"Commander": {
 		"name": "Commander",
@@ -291,7 +282,8 @@ const PLAYER_UNIT_DATA := [
 		"id": "brann",
 		"name": "Brann",
 		"mech": "Bulwark-04",
-		"weapon": "Shield",
+		"weapon": "Sword",
+		"off_hand": "Shield",
 		"team": "player",
 		"letter": "B",
 		"grid": Vector2i(2, 6),
@@ -431,7 +423,8 @@ const MISSION_ENEMY_UNIT_DATA := {
 			"id": "enemy_ridge_guard",
 			"name": "Ridge Guard",
 			"mech": "Bulwark Frame",
-			"weapon": "Shield",
+			"weapon": "Sword",
+			"off_hand": "Shield",
 			"team": "enemy",
 			"letter": "G",
 			"grid": Vector2i(6, 3),
@@ -524,7 +517,8 @@ const SENSIBLE_LOADOUT := {
 		},
 	},
 	"brann": {
-		"weapon": "Shield",
+		"weapon": "Sword",
+		"off_hand": "Shield",
 		"pilot": "brann",
 		"clear_orbs": true,
 		"orbs": {
@@ -547,7 +541,7 @@ const MISMATCHED_LOADOUT := {
 		"orbs": {},
 	},
 	"sera": {
-		"weapon": "Shield",
+		"weapon": "Sword",
 		"pilot": "sera",
 		"clear_orbs": true,
 		"orbs": {},

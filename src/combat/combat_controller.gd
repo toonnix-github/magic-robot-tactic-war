@@ -431,8 +431,12 @@ func apply_part_consequence(unit, part_name: String, turn_log: Array, head_destr
 		unit["defeated"] = true
 		unit["in_battle"] = false
 		turn_log.append("%s:defeated" % unit["id"])
-	elif part_name == unit["weapon_mount_part"]:
+	elif unit.get("weapon_required_parts", [unit.get("weapon_mount_part", "Right Arm")]).has(part_name):
 		unit["weapon_disabled"] = true
+	elif part_name == str(unit.get("off_hand_part", "Left Arm")):
+		unit["off_hand_disabled"] = true
+		if str(unit.get("off_hand", "")) == "Shield":
+			unit["shield_disabled"] = true
 
 
 func active_orbs(unit, part_names: Array, orb_data: Dictionary) -> Array:

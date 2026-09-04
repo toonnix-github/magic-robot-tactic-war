@@ -8,6 +8,7 @@ const CombatControllerScript := preload("res://src/combat/combat_controller.gd")
 const BattleAIScript := preload("res://src/ai/battle_ai.gd")
 const BattlePresenterScript := preload("res://src/presentation/battle_presenter.gd")
 const BattleHudScript := preload("res://src/ui/battle_hud.gd")
+const MechBuildModelScript := preload("res://src/data/mech_build_model.gd")
 
 const PROTOTYPE_VERSION := "0.1"
 const GRID_COLUMNS := 10
@@ -27,6 +28,8 @@ const ENEMY_ACTIVATION_HIGHLIGHT_SECONDS := 0.12
 const ENEMY_MOVE_STEP_SECONDS := 0.12
 const PLACEHOLDER_WEAPON_RANGES := GameDataScript.PLACEHOLDER_WEAPON_RANGES
 const WEAPON_DATA := GameDataScript.WEAPON_DATA
+const WEAPON_HANDEDNESS := GameDataScript.WEAPON_HANDEDNESS
+const OFF_HAND_EQUIPMENT_DATA := GameDataScript.OFF_HAND_EQUIPMENT_DATA
 const ORB_DATA := GameDataScript.ORB_DATA
 
 const BURN_DAMAGE := 10
@@ -111,6 +114,7 @@ var unit_shakes: Dictionary = {}
 var debug_rects: Dictionary = {}
 var mission_selector_rects: Dictionary = {}
 var game_data = GameDataScript.new()
+var mech_build_model = MechBuildModelScript.new()
 var grid_controller = GridControllerScript.new()
 var combat_controller = CombatControllerScript.new()
 var battle_ai = BattleAIScript.new()
@@ -304,13 +308,12 @@ func _create_units() -> void:
 		unit["base_move_range"] = MOVE_RANGE
 		unit["current_move_range"] = MOVE_RANGE
 		unit["dodge"] = 10
-		unit["weapon_mount_part"] = _weapon_mount_part(unit)
 		unit["weapon_disabled"] = false
 		unit["pilot_id"] = ""
-		var weapon_data := _weapon_data_for(unit)
-		unit["shield_max_hp"] = int(weapon_data.get("shield_max_hp", 0))
-		unit["shield_hp"] = int(unit["shield_max_hp"])
-		unit["shield_disabled"] = int(unit["shield_max_hp"]) <= 0
+		unit["off_hand"] = str(unit.get("off_hand", ""))
+		unit["off_hand_part"] = "Left Arm"
+		unit["off_hand_disabled"] = false
+		_configure_unit_equipment_state(unit)
 		unit["defeated"] = false
 		unit["in_battle"] = true
 		unit["statuses"] = []
@@ -1258,14 +1261,7 @@ func _set_unit_pilot(unit, pilot_id: String) -> bool:
 	if unit == null:
 		return false
 	unit["pilot_id"] = pilot_id
-	var weapon_data := _weapon_data_for(unit)
-	var shield_bonus: int = 0
-	var passive := _pilot_passive_for(unit)
-	if not passive.is_empty():
-		shield_bonus = int(passive.get("shield_max_hp_bonus", 0))
-	unit["shield_max_hp"] = int(weapon_data.get("shield_max_hp", 0)) + shield_bonus
-	unit["shield_hp"] = int(unit["shield_max_hp"])
-	unit["shield_disabled"] = int(unit["shield_max_hp"]) <= 0
+	_configure_unit_equipment_state(unit)
 	return true
 
 
@@ -1354,10 +1350,60 @@ func _movement_range_for(unit) -> int:
 	return max(0, int(unit.get("current_move_range", MOVE_RANGE)))
 
 
+func _weapon_handedness_for(unit) -> String:
+	if unit == null:
+		return ""
+	return str(WEAPON_HANDEDNESS.get(str(unit.get("weapon", "")), ""))
+
+
+func _weapon_required_parts(unit) -> Array:
+	if _weapon_handedness_for(unit) == "2H":
+		return ["Left Arm", "Right Arm"]
+	return ["Right Arm"]
+
+
 func _weapon_mount_part(unit) -> String:
-	if unit != null and str(unit["weapon"]) == "Shield":
-		return "Left Arm"
 	return "Right Arm"
+
+
+func _off_hand_data_for(unit) -> Dictionary:
+	if unit == null:
+		return {}
+	var off_hand := str(unit.get("off_hand", ""))
+	if OFF_HAND_EQUIPMENT_DATA.has(off_hand):
+		return OFF_HAND_EQUIPMENT_DATA[off_hand]
+	return {}
+
+
+func _has_off_hand_shield(unit) -> bool:
+	return unit != null and str(unit.get("off_hand", "")) == "Shield" and not bool(unit.get("off_hand_disabled", false))
+
+
+func _configure_unit_equipment_state(unit) -> void:
+	if unit == null:
+		return
+	var weapon_name := str(unit.get("weapon", ""))
+	var off_hand := str(unit.get("off_hand", ""))
+	if str(WEAPON_HANDEDNESS.get(weapon_name, "")) == "2H":
+		off_hand = ""
+	elif not OFF_HAND_EQUIPMENT_DATA.has(off_hand):
+		off_hand = ""
+	unit["weapon"] = weapon_name
+	unit["off_hand"] = off_hand
+	unit["weapon_mount_part"] = _weapon_mount_part(unit)
+	unit["weapon_required_parts"] = _weapon_required_parts(unit)
+	unit["off_hand_part"] = "Left Arm"
+	if not unit.has("off_hand_disabled"):
+		unit["off_hand_disabled"] = false
+
+	var shield_data := _off_hand_data_for(unit)
+	var shield_bonus: int = 0
+	var passive := _pilot_passive_for(unit)
+	if not passive.is_empty():
+		shield_bonus = int(passive.get("shield_max_hp_bonus", 0))
+	unit["shield_max_hp"] = int(shield_data.get("shield_max_hp", 0)) + shield_bonus
+	unit["shield_hp"] = int(unit["shield_max_hp"])
+	unit["shield_disabled"] = int(unit["shield_max_hp"]) <= 0 or bool(unit.get("off_hand_disabled", false))
 
 
 func _weapon_data_for(unit) -> Dictionary:
@@ -1396,6 +1442,7 @@ func _shield_is_active(unit) -> bool:
 	return (
 		unit != null
 		and _is_unit_in_battle(unit)
+		and _has_off_hand_shield(unit)
 		and int(unit.get("shield_max_hp", 0)) > 0
 		and int(unit.get("shield_hp", 0)) > 0
 		and not bool(unit.get("shield_disabled", false))
@@ -1405,7 +1452,7 @@ func _shield_is_active(unit) -> bool:
 func _should_hit_shield(target, weapon_data: Dictionary, seed: int) -> bool:
 	if not _shield_is_active(target) or not bool(weapon_data.get("blockable", false)):
 		return false
-	var shield_data := _weapon_data_for(target)
+	var shield_data := _off_hand_data_for(target)
 	return absi(seed) % 100 < int(shield_data.get("shield_hit_weight", 0))
 
 
@@ -2297,18 +2344,13 @@ func configure_player_loadouts(loadouts: Dictionary) -> void:
 			var cfg: Dictionary = loadouts[unit_id]
 			if cfg.has("pilot"):
 				_set_unit_pilot(unit, str(cfg["pilot"]))
-			if cfg.has("weapon") or cfg.has("pilot"):
+			if cfg.has("weapon") or cfg.has("off_hand") or cfg.has("pilot"):
 				if cfg.has("weapon"):
 					unit["weapon"] = cfg["weapon"]
-					unit["weapon_mount_part"] = _weapon_mount_part(unit)
-				var weapon_data := _weapon_data_for(unit)
-				var shield_bonus: int = 0
-				var passive := _pilot_passive_for(unit)
-				if not passive.is_empty():
-					shield_bonus = int(passive.get("shield_max_hp_bonus", 0))
-				unit["shield_max_hp"] = int(weapon_data.get("shield_max_hp", 0)) + shield_bonus
-				unit["shield_hp"] = int(unit["shield_max_hp"])
-				unit["shield_disabled"] = int(unit["shield_max_hp"]) <= 0
+				if cfg.has("off_hand"):
+					unit["off_hand"] = str(cfg["off_hand"])
+					unit["off_hand_disabled"] = false
+				_configure_unit_equipment_state(unit)
 			if cfg.has("clear_orbs") and bool(cfg["clear_orbs"]):
 				for p_name in PART_NAMES:
 					if unit["parts"].has(p_name):
@@ -3021,7 +3063,7 @@ func generate_benchmark_report_markdown(results: Dictionary) -> String:
 	lines.append("   - **Yes.** The Sensible build achieved an 80% win rate (4/5 seeds) with an average of 47.4 activations and 2.6 surviving mechs. The Mismatched build won only 40% (2/5 seeds) with 3 full team wipes and required an average of 72.2 activations (up to 125 activations in seed 777).")
 	lines.append("")
 	lines.append("2. **Do different loadouts produce meaningfully different battle behavior?**")
-	lines.append("   - **Yes.** In the Mismatched build, Mira's Hawkeye passive is completely inactive (Sword range 1 vs min distance 4), Sera's Elemental Resonance is wasted on Shield (no weapon attacks or procs), and Brann's Guardian Stance has no shield to protect. This led to far more wasted turns where units held position without dealing damage.")
+	lines.append("   - **Yes.** In the Mismatched build, Mira's Hawkeye passive is completely inactive (Sword range 1 vs min distance 4), Sera's Elemental Resonance lacks Orb support, and Brann's Guardian Stance has no shield to protect. This led to far more wasted turns where units held position without dealing damage.")
 	lines.append("")
 	lines.append("3. **Does height influence outcome/efficiency without determining every result by itself?**")
 	lines.append("   - **Yes.** Downhill defense completed battles faster in 4 out of 5 seeds (avg 37.4 activations vs 43.0 uphill) and took less damage on high ground due to the +15% height accuracy advantage. However, tactical volatility remains (e.g. seed 1337 loss), proving elevation influences efficiency without creating a scripted deterministic win.")
