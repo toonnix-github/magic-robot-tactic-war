@@ -382,6 +382,22 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn("mission_selector_open", self.source)
         self.assertIn("fast_simulation", self.source)
 
+    def test_auto_benchmark_suite_and_metrics_are_encoded(self):
+        for hook in [
+            "func run_auto_benchmark_suite",
+            "func generate_benchmark_report_markdown",
+            "func _is_player_id",
+            "func _calculate_log_metrics",
+        ]:
+            self.assertIn(hook, self.source)
+        self.assertIn("BENCHMARK_SEEDS", self.source)
+        self.assertIn("SENSIBLE_LOADOUT", self.source)
+        self.assertIn("MISMATCHED_LOADOUT", self.source)
+        self.assertIn("player_wasted_turns", self.source)
+        self.assertIn("enemy_wasted_turns", self.source)
+        self.assertIn("player_damage_dealt", self.source)
+        self.assertIn("player_damage_taken", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

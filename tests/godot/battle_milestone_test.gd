@@ -103,6 +103,7 @@ func _run() -> void:
 	_run_pilot_passives_acceptance(scene)
 	_run_weapon_data_validation_acceptance(scene)
 	_run_mission_selector_and_debug_controls_acceptance(scene)
+	_run_auto_benchmark_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -2551,6 +2552,91 @@ func _test_mission_selector_overlay_toggle_and_content(scene: Control) -> void:
 	scene._toggle_mission_selector()
 	_assert_true(scene.mission_selector_open, "mission selector toggled open")
 	scene._close_mission_selector()
+
+
+func _run_auto_benchmark_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"run_auto_benchmark_suite",
+		"generate_benchmark_report_markdown",
+		"_is_player_id",
+		"_calculate_log_metrics",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "auto benchmark API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_auto_benchmark_constants_and_loadouts(scene)
+	_test_auto_benchmark_suite_execution_and_metrics(scene)
+	_test_auto_benchmark_sensible_vs_mismatched_divergence(scene)
+	_test_auto_benchmark_markdown_report_generation(scene)
+
+
+func _test_auto_benchmark_constants_and_loadouts(scene: Control) -> void:
+	_assert_equal(scene.BENCHMARK_SEEDS.size(), 5, "five benchmark seeds defined")
+	_assert_true(scene.BENCHMARK_SEEDS.has(1337), "benchmark seeds contains standard seed 1337")
+
+	_assert_true(scene.SENSIBLE_LOADOUT.has("arlen"), "sensible loadout contains arlen")
+	_assert_true(scene.SENSIBLE_LOADOUT.has("mira"), "sensible loadout contains mira")
+	_assert_true(scene.SENSIBLE_LOADOUT.has("sera"), "sensible loadout contains sera")
+	_assert_true(scene.SENSIBLE_LOADOUT.has("brann"), "sensible loadout contains brann")
+
+	_assert_equal(scene.SENSIBLE_LOADOUT["mira"]["weapon"], "Sniper", "sensible mira uses Sniper with Hawkeye")
+	_assert_equal(scene.SENSIBLE_LOADOUT["sera"]["weapon"], "Rifle", "sensible sera uses Rifle with Elemental Resonance")
+	_assert_equal(scene.SENSIBLE_LOADOUT["brann"]["weapon"], "Shield", "sensible brann uses Shield with Guardian Stance")
+
+	_assert_equal(scene.MISMATCHED_LOADOUT["mira"]["weapon"], "Sword", "mismatched mira uses Sword disabling Hawkeye")
+	_assert_equal(scene.MISMATCHED_LOADOUT["sera"]["weapon"], "Shield", "mismatched sera uses Shield with no procs")
+	_assert_equal(scene.MISMATCHED_LOADOUT["brann"]["weapon"], "Spear", "mismatched brann uses Spear with no shield")
+
+
+func _test_auto_benchmark_suite_execution_and_metrics(scene: Control) -> void:
+	var results: Dictionary = scene.run_auto_benchmark_suite([42, 1337])
+	_assert_true(results.has("scenarios"), "suite results contain scenarios")
+	var scenarios: Dictionary = results["scenarios"]
+	_assert_true(scenarios.has("ancient_ruins_sensible"), "scenario ancient_ruins_sensible present")
+	_assert_true(scenarios.has("ancient_ruins_mismatched"), "scenario ancient_ruins_mismatched present")
+	_assert_true(scenarios.has("crystal_quarry_auto"), "scenario crystal_quarry_auto present")
+	_assert_true(scenarios.has("ascending_ridge_uphill"), "scenario ascending_ridge_uphill present")
+	_assert_true(scenarios.has("ascending_ridge_downhill"), "scenario ascending_ridge_downhill present")
+
+	var sens: Dictionary = scenarios["ancient_ruins_sensible"]
+	_assert_equal(sens["runs"].size(), 2, "sensible scenario executed 2 test seeds")
+	var r0: Dictionary = sens["runs"][0]
+	_assert_true(r0.has("player_damage_dealt"), "run summary contains player_damage_dealt")
+	_assert_true(r0.has("player_damage_taken"), "run summary contains player_damage_taken")
+	_assert_true(r0.has("player_wasted_turns"), "run summary contains player_wasted_turns")
+	_assert_true(r0.has("enemy_wasted_turns"), "run summary contains enemy_wasted_turns")
+	_assert_true(r0.has("player_destroyed_parts"), "run summary contains player_destroyed_parts")
+	_assert_true(r0.has("enemy_destroyed_parts"), "run summary contains enemy_destroyed_parts")
+	_assert_true(int(r0["player_damage_dealt"]) > 0, "player dealt positive damage in run")
+
+
+func _test_auto_benchmark_sensible_vs_mismatched_divergence(scene: Control) -> void:
+	scene._load_mission("ancient_ruins")
+	scene.configure_player_loadouts(scene.SENSIBLE_LOADOUT)
+	var sens_res: Dictionary = scene.run_auto_battle(150, 1337)
+
+	scene._load_mission("ancient_ruins")
+	scene.configure_player_loadouts(scene.MISMATCHED_LOADOUT)
+	var mis_res: Dictionary = scene.run_auto_battle(150, 1337)
+
+	_assert_equal(sens_res["winner"], "player", "sensible build wins on seed 1337")
+	_assert_equal(mis_res["winner"], "enemy", "mismatched build loses on seed 1337")
+	_assert_true(sens_res["activations"] < mis_res["activations"], "sensible build wins in fewer activations than mismatched build")
+	_assert_true(sens_res["player_wasted_turns"] < mis_res["player_wasted_turns"], "sensible build wastes fewer turns")
+	_assert_true(sens_res["player_damage_taken"] < mis_res["player_damage_taken"], "sensible build takes less damage")
+
+
+func _test_auto_benchmark_markdown_report_generation(scene: Control) -> void:
+	var results: Dictionary = scene.run_auto_benchmark_suite([42])
+	var md: String = scene.generate_benchmark_report_markdown(results)
+	_assert_true(md.contains("# Phase 1 Auto Benchmark & Replay Evidence Report"), "report header is present")
+	_assert_true(md.contains("Build first, command second"), "report contains core premise")
+	_assert_true(md.contains("Scenario 1: Ancient Ruins — Sensible vs Mismatched Build"), "scenario 1 table present")
+	_assert_true(md.contains("Scenario 2: Ascending Ridge — Uphill Assault vs Downhill Defense"), "scenario 2 table present")
+	_assert_true(md.contains("Scenario 3: Crystal Quarry — Repeatable Farm Battle"), "scenario 3 table present")
+	_assert_true(md.contains("Answers to Phase 1 Design Questions"), "design question answers present")
 
 
 func _assert_true(actual: bool, message: String) -> void:
