@@ -718,6 +718,23 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         ]:
             self.assertIn(hook, hangar_source)
 
+    def test_phase2_build_summary_and_signals_apis_exist(self):
+        """#40 - Build summary and role/readability signals."""
+        model_source = (ROOT / "src" / "data" / "mech_build_model.gd").read_text(encoding="utf-8")
+        hangar_source = (ROOT / "src" / "ui" / "hangar_screen.gd").read_text(encoding="utf-8")
+
+        for hook in [
+            "func build_signals",
+        ]:
+            self.assertIn(hook, model_source)
+
+        for hook in [
+            "func build_signals",
+            "func current_build_signals",
+        ]:
+            self.assertIn(hook, hangar_source)
+        self.assertIn("build_model.build_signals", hangar_source)
+
 
 if __name__ == "__main__":
     unittest.main()

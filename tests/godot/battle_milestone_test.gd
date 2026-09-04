@@ -115,6 +115,7 @@ func _run() -> void:
 	_run_phase2_part_swap_tradeoffs_acceptance(scene)
 	_run_phase2_weapon_offhand_rules_acceptance(scene)
 	_run_phase2_orb_installation_acceptance(scene)
+	_run_phase2_build_summary_and_signals_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -3315,6 +3316,63 @@ func _test_phase2_battle_uses_configured_orb_loadout_and_host_part_destruction(s
 	_assert_equal(sera["parts"]["Head"]["orb"], "lightning_r", "#39: battle unit equips configured Orb on Head")
 	scene._damage_part(sera, "Head", 100)
 	_assert_true(bool(sera["parts"]["Head"]["orb_disabled"]), "#39: destroying host part disables configured Orb")
+
+
+func _run_phase2_build_summary_and_signals_acceptance(scene: Control) -> void:
+	var model = preload("res://src/data/mech_build_model.gd").new()
+	var HangarScreenScript = load("res://src/ui/hangar_screen.gd")
+
+	_assert_true(model.has_method("build_signals"), "#40: build model exposes build_signals")
+	if not _failures.is_empty():
+		return
+
+	_test_phase2_build_signals_content(scene, model)
+	_test_phase2_build_signals_react_to_changes(scene, model)
+	_test_phase2_hangar_signals_flow(scene, model, HangarScreenScript)
+
+
+func _test_phase2_build_signals_content(scene: Control, model) -> void:
+	var build: Dictionary = model.prototype_builds()["mira"]
+	var signals: Dictionary = model.build_signals(build, scene.WEAPON_DATA, scene.ORB_DATA, scene.PART_NAMES)
+	_assert_true(signals.has("summary_line"), "#40: signals include summary_line")
+	_assert_true(signals.has("role_tags"), "#40: signals include role_tags")
+	_assert_true(signals.has("key_stats"), "#40: signals include key_stats")
+	_assert_true(signals["summary_line"].contains("Sniper"), "#40: summary line contains weapon identity")
+	_assert_true(signals["summary_line"].contains("2H"), "#40: summary line contains handedness")
+	_assert_true(signals["summary_line"].contains("Move"), "#40: summary line contains Move signal")
+
+
+func _test_phase2_build_signals_react_to_changes(scene: Control, model) -> void:
+	var build: Dictionary = model.prototype_builds()["mira"]
+	var initial_signals: Dictionary = model.build_signals(build, scene.WEAPON_DATA, scene.ORB_DATA, scene.PART_NAMES)
+	var initial_move: int = int(initial_signals["key_stats"]["move"])
+
+	var modified: Dictionary = model.swap_part(build, "Legs", "sprinter_legs", scene.PART_NAMES)
+	var modified_signals: Dictionary = model.build_signals(modified, scene.WEAPON_DATA, scene.ORB_DATA, scene.PART_NAMES)
+	_assert_equal(int(modified_signals["key_stats"]["move"]), initial_move + 1, "#40: signals reflect updated Move")
+
+	# Shield off-hand reaction
+	var sera_build: Dictionary = model.prototype_builds()["sera"]
+	var sera_shield: Dictionary = sera_build.duplicate(true)
+	sera_shield["off_hand"] = "Shield"
+	var shield_signals: Dictionary = model.build_signals(sera_shield, scene.WEAPON_DATA, scene.ORB_DATA, scene.PART_NAMES)
+	_assert_true(shield_signals["role_tags"].has("Shield Guard") or shield_signals["summary_line"].contains("Shield"), "#40: signals reflect Shield off-hand")
+
+
+func _test_phase2_hangar_signals_flow(scene: Control, model, HangarScreenScript) -> void:
+	var hangar = HangarScreenScript.new()
+	hangar._ready()
+	hangar.select_unit("mira")
+	_assert_true(hangar.has_method("current_build_signals"), "#40: hangar exposes current_build_signals")
+	var sigs: Dictionary = hangar.current_build_signals()
+	_assert_true(sigs.has("summary_line"), "#40: hangar returns build signals")
+	_assert_true(sigs["summary_line"].contains("Sniper"), "#40: hangar signals match current unit build")
+
+	hangar.swap_part("Legs", "sprinter_legs")
+	var updated_sigs: Dictionary = hangar.current_build_signals()
+	_assert_equal(int(updated_sigs["key_stats"]["move"]), 4, "#40: hangar signals update immediately on part change")
+	hangar.queue_free()
+
 
 func _assert_true(actual: bool, message: String) -> void:
 
