@@ -25,309 +25,21 @@ const COVER_DODGE_BONUS := 10
 const COVER_DAMAGE_REDUCTION_PERCENT := 10
 const ENEMY_ACTIVATION_HIGHLIGHT_SECONDS := 0.12
 const ENEMY_MOVE_STEP_SECONDS := 0.12
-const PLACEHOLDER_WEAPON_RANGES := {
-	"Sword": 1,
-	"Spear": 2,
-	"Sniper": 6,
-	"Rifle": 5,
-	"Shield": 1,
-	"Blade": 1,
-	"Commander": 5,
-}
-const WEAPON_DATA := {
-	"Sword": {
-		"name": "Sword",
-		"range_min": 1,
-		"range_max": 1,
-		"damage": 45,
-		"hit_percent": 80,
-		"allow_manual_part": false,
-		"pattern": "single",
-		"blockable": false,
-		"part_weights": {"Head": 20, "Body": 20, "Left Arm": 20, "Right Arm": 20, "Legs": 20},
-	},
-	"Spear": {
-		"name": "Spear",
-		"range_min": 1,
-		"range_max": 2,
-		"damage": 30,
-		"secondary_damage": 22,
-		"hit_percent": PLACEHOLDER_HIT_PERCENT,
-		"allow_manual_part": false,
-		"pattern": "line_2",
-		"blockable": false,
-		"part_weights": {"Head": 20, "Body": 20, "Left Arm": 20, "Right Arm": 20, "Legs": 20},
-	},
-	"Sniper": {
-		"name": "Sniper",
-		"range_min": 2,
-		"range_max": 6,
-		"damage": 35,
-		"hit_percent": PLACEHOLDER_HIT_PERCENT,
-		"allow_manual_part": false,
-		"pattern": "single",
-		"blockable": true,
-		"part_weights": {"Head": 30, "Body": 10, "Left Arm": 20, "Right Arm": 20, "Legs": 20},
-	},
-	"Rifle": {
-		"name": "Rifle",
-		"range_min": 1,
-		"range_max": 5,
-		"damage": 10,
-		"shot_count": 4,
-		"hit_percent": PLACEHOLDER_HIT_PERCENT,
-		"allow_manual_part": false,
-		"pattern": "volley",
-		"blockable": true,
-		"part_weights": {"Head": 20, "Body": 20, "Left Arm": 20, "Right Arm": 20, "Legs": 20},
-	},
-	"Shield": {
-		"name": "Shield",
-		"range_min": 1,
-		"range_max": 1,
-		"damage": PLACEHOLDER_ATTACK_DAMAGE,
-		"hit_percent": PLACEHOLDER_HIT_PERCENT,
-		"allow_manual_part": true,
-		"pattern": "single",
-		"blockable": false,
-		"shield_max_hp": 25,
-		"shield_hit_weight": 55,
-		"part_weights": {"Body": 100},
-	},
-	"Commander": {
-		"name": "Commander",
-		"range_min": 1,
-		"range_max": 5,
-		"damage": PLACEHOLDER_ATTACK_DAMAGE,
-		"hit_percent": PLACEHOLDER_HIT_PERCENT,
-		"allow_manual_part": true,
-		"pattern": "single",
-		"blockable": true,
-		"part_weights": {"Body": 100},
-	},
-}
-const ORB_DATA := {
-	"fire_n": {
-		"name": "Fire Spark",
-		"element": "Fire",
-		"rarity": "N",
-		"effects": [
-			{"type": "damage_percent", "percent": 10},
-		],
-	},
-	"water_r": {
-		"name": "Water Veil",
-		"element": "Water",
-		"rarity": "R",
-		"effects": [
-			{"type": "hit_bonus", "amount": 5},
-			{"type": "proc_status", "status": "Chill", "chance_percent": 25},
-		],
-	},
-	"lightning_r": {
-		"name": "Lightning Fork",
-		"element": "Lightning",
-		"rarity": "R",
-		"effects": [
-			{"type": "hit_bonus", "amount": 5},
-			{"type": "proc_status", "status": "Shock", "chance_percent": 50},
-		],
-	},
-	"fire_sr": {
-		"name": "Fire Brand",
-		"element": "Fire",
-		"rarity": "SR",
-		"effects": [
-			{"type": "damage_percent", "percent": 10},
-			{"type": "hit_bonus", "amount": 5},
-			{"type": "proc_status", "status": "Burn", "chance_percent": 35},
-		],
-	},
-	"earth_ssr": {
-		"name": "Earth Bulwark",
-		"element": "Earth",
-		"rarity": "SSR",
-		"effects": [
-			{"type": "damage_percent", "percent": 5},
-			{"type": "hit_bonus", "amount": 5},
-			{"type": "dodge_bonus", "amount": 5},
-			{"type": "defense_bonus", "amount": 5},
-			{"type": "proc_status", "status": "Rooted", "chance_percent": 20},
-		],
-	},
-}
+const PLACEHOLDER_WEAPON_RANGES := GameDataScript.PLACEHOLDER_WEAPON_RANGES
+const WEAPON_DATA := GameDataScript.WEAPON_DATA
+const ORB_DATA := GameDataScript.ORB_DATA
 
 const BURN_DAMAGE := 10
 
-const DEFAULT_ORB_LOADOUTS := {
-	"arlen": {
-		"Right Arm": "fire_n",
-	},
-	"mira": {
-		"Right Arm": "water_r",
-		"Head": "lightning_r",
-	},
-	"sera": {
-		"Right Arm": "fire_sr",
-	},
-	"brann": {
-		"Left Arm": "earth_ssr",
-	},
-}
-
-const PILOT_DATA := {
-	"arlen": {
-		"id": "arlen",
-		"name": "Arlen",
-		"title": "Breaker",
-		"passive": {
-			"id": "part_breaker",
-			"name": "Part Breaker",
-			"desc": "Attacks against damaged enemy parts deal +15% bonus damage.",
-			"part_pressure_damage_percent": 15,
-		},
-	},
-	"mira": {
-		"id": "mira",
-		"name": "Mira",
-		"title": "Sharpshooter",
-		"passive": {
-			"id": "hawkeye",
-			"name": "Hawkeye",
-			"desc": "Attacks at distance 4 or greater gain +15% hit chance.",
-			"long_range_hit_bonus": 15,
-			"min_distance": 4,
-		},
-	},
-	"sera": {
-		"id": "sera",
-		"name": "Sera",
-		"title": "Spellweaver",
-		"passive": {
-			"id": "elemental_resonance",
-			"name": "Elemental Resonance",
-			"desc": "Increases Orb proc chance by +15%.",
-			"orb_proc_bonus_percent": 15,
-		},
-	},
-	"brann": {
-		"id": "brann",
-		"name": "Brann",
-		"title": "Iron Wall",
-		"passive": {
-			"id": "guardian_stance",
-			"name": "Guardian Stance",
-			"desc": "Shield absorbs +5 damage and gains +15 Shield Max HP.",
-			"shield_damage_reduction": 5,
-			"shield_max_hp_bonus": 15,
-		},
-	},
-}
-
-const MISSIONS_DATA := {
-	"ancient_ruins": {
-		"id": "ancient_ruins",
-		"name": "Ancient Ruins",
-		"objective": "defeat_commander",
-		"objective_label": "Defeat Commander",
-		"purpose": "Baseline 7x10 combat, cover positions, stepped elevation up to H2.",
-		"commander_id": "commander",
-		"cover_tiles": [Vector2i(3, 2), Vector2i(5, 4), Vector2i(6, 2), Vector2i(8, 1)],
-	},
-	"crystal_quarry": {
-		"id": "crystal_quarry",
-		"name": "Crystal Quarry",
-		"objective": "defeat_all",
-		"objective_label": "Defeat All Enemies",
-		"purpose": "Steeper terrain, H3 chokepoints, defeat-all objective, loot rewards.",
-		"cover_tiles": [Vector2i(3, 1), Vector2i(3, 5), Vector2i(5, 3), Vector2i(7, 2)],
-		"loot_table": {
-			"credits": 500,
-			"arcane_ore": 15,
-			"orb_fragments": 8,
-			"orb_drops": [
-				{"orb": "Fire Orb", "weight": 35},
-				{"orb": "Water Orb", "weight": 25},
-				{"orb": "Electric Orb", "weight": 25},
-				{"orb": "Earth Orb", "weight": 15},
-			],
-		},
-	},
-	"ascending_ridge": {
-		"id": "ascending_ridge",
-		"name": "Ascending Ridge",
-		"objective": "defeat_commander",
-		"objective_label": "Defeat Commander",
-		"purpose": "Continuous slope H0-H4; test uphill assault vs downhill defense.",
-		"commander_id": "commander",
-		"cover_tiles": [Vector2i(3, 2), Vector2i(5, 4), Vector2i(7, 1), Vector2i(7, 5)],
-	},
-}
-
-const BENCHMARK_SEEDS: Array[int] = [42, 101, 777, 1337, 9999]
-
-const SENSIBLE_LOADOUT := {
-	"arlen": {
-		"weapon": "Sword",
-		"pilot": "arlen",
-		"clear_orbs": true,
-		"orbs": {
-			"Right Arm": "fire_n",
-		},
-	},
-	"mira": {
-		"weapon": "Sniper",
-		"pilot": "mira",
-		"clear_orbs": true,
-		"orbs": {
-			"Right Arm": "water_r",
-			"Head": "lightning_r",
-		},
-	},
-	"sera": {
-		"weapon": "Rifle",
-		"pilot": "sera",
-		"clear_orbs": true,
-		"orbs": {
-			"Right Arm": "fire_sr",
-		},
-	},
-	"brann": {
-		"weapon": "Shield",
-		"pilot": "brann",
-		"clear_orbs": true,
-		"orbs": {
-			"Left Arm": "earth_ssr",
-		},
-	},
-}
-
-const MISMATCHED_LOADOUT := {
-	"arlen": {
-		"weapon": "Sniper",
-		"pilot": "arlen",
-		"clear_orbs": true,
-		"orbs": {},
-	},
-	"mira": {
-		"weapon": "Sword",
-		"pilot": "mira",
-		"clear_orbs": true,
-		"orbs": {},
-	},
-	"sera": {
-		"weapon": "Shield",
-		"pilot": "sera",
-		"clear_orbs": true,
-		"orbs": {},
-	},
-	"brann": {
-		"weapon": "Spear",
-		"pilot": "brann",
-		"clear_orbs": true,
-		"orbs": {},
-	},
-}
+const DEFAULT_ORB_LOADOUTS := GameDataScript.DEFAULT_ORB_LOADOUTS
+const PILOT_DATA := GameDataScript.PILOT_DATA
+const MISSIONS_DATA := GameDataScript.MISSIONS_DATA
+const PLAYER_UNIT_DATA := GameDataScript.PLAYER_UNIT_DATA
+const MISSION_ENEMY_UNIT_DATA := GameDataScript.MISSION_ENEMY_UNIT_DATA
+const UNIT_INITIATIVE_DATA := GameDataScript.UNIT_INITIATIVE_DATA
+const BENCHMARK_SEEDS: Array[int] = GameDataScript.BENCHMARK_SEEDS
+const SENSIBLE_LOADOUT := GameDataScript.SENSIBLE_LOADOUT
+const MISMATCHED_LOADOUT := GameDataScript.MISMATCHED_LOADOUT
 
 
 const DESIGN_SIZE := Vector2(1311.0, 603.0)
@@ -398,6 +110,7 @@ var floating_texts: Array[Dictionary] = []
 var unit_shakes: Dictionary = {}
 var debug_rects: Dictionary = {}
 var mission_selector_rects: Dictionary = {}
+var game_data = GameDataScript.new()
 var grid_controller = GridControllerScript.new()
 var combat_controller = CombatControllerScript.new()
 var battle_ai = BattleAIScript.new()
@@ -597,287 +310,9 @@ func _draw() -> void:
 
 
 func _create_units() -> void:
-	var player_units := [
-		{
-			"id": "arlen",
-			"name": "Arlen",
-			"mech": "Aegis-07",
-			"weapon": "Spear",
-			"team": "player",
-			"letter": "A",
-			"grid": Vector2i(2, 3),
-			"color": Color(0.47, 0.66, 0.56),
-			"hp": 0.80,
-			"parts": {"Head": 0.84, "Body": 0.91, "Left Arm": 0.74, "Right Arm": 0.83, "Legs": 0.78},
-		},
-		{
-			"id": "mira",
-			"name": "Mira",
-			"mech": "Longview-02",
-			"weapon": "Sniper",
-			"team": "player",
-			"letter": "M",
-			"grid": Vector2i(1, 5),
-			"color": Color(0.44, 0.58, 0.76),
-			"hp": 0.88,
-			"parts": {"Head": 0.94, "Body": 0.85, "Left Arm": 0.82, "Right Arm": 0.90, "Legs": 0.76},
-		},
-		{
-			"id": "sera",
-			"name": "Sera",
-			"mech": "Volt-13",
-			"weapon": "Rifle",
-			"team": "player",
-			"letter": "S",
-			"grid": Vector2i(0, 1),
-			"color": Color(0.59, 0.49, 0.76),
-			"hp": 0.76,
-			"parts": {"Head": 0.80, "Body": 0.78, "Left Arm": 0.69, "Right Arm": 0.74, "Legs": 0.79},
-		},
-		{
-			"id": "brann",
-			"name": "Brann",
-			"mech": "Bulwark-04",
-			"weapon": "Shield",
-			"team": "player",
-			"letter": "B",
-			"grid": Vector2i(2, 6),
-			"color": Color(0.55, 0.64, 0.61),
-			"hp": 0.92,
-			"parts": {"Head": 0.89, "Body": 0.96, "Left Arm": 0.87, "Right Arm": 0.86, "Legs": 0.91},
-		},
-	]
-
-	var enemy_units := []
-	var speed_by_id := {
-		"arlen": 10,
-		"mira": 9,
-		"sera": 8,
-		"brann": 5,
-	}
-	var initial_time_by_id := {
-		"arlen": 0.0,
-		"mira": 2.0,
-		"sera": 4.0,
-		"brann": 6.0,
-	}
-
-	if current_mission == "crystal_quarry":
-		enemy_units = [
-			{
-				"id": "scavenger_alpha",
-				"name": "Scavenger Alpha",
-				"mech": "Scav-01",
-				"weapon": "Sword",
-				"team": "enemy",
-				"letter": "A",
-				"grid": Vector2i(6, 2),
-				"color": Color(0.77, 0.43, 0.43),
-				"hp": 0.80,
-				"parts": {"Head": 0.80, "Body": 0.80, "Left Arm": 0.75, "Right Arm": 0.75, "Legs": 0.80},
-			},
-			{
-				"id": "scavenger_beta",
-				"name": "Scavenger Beta",
-				"mech": "Scav-02",
-				"weapon": "Spear",
-				"team": "enemy",
-				"letter": "B",
-				"grid": Vector2i(7, 4),
-				"color": Color(0.77, 0.43, 0.43),
-				"hp": 0.80,
-				"parts": {"Head": 0.80, "Body": 0.80, "Left Arm": 0.75, "Right Arm": 0.75, "Legs": 0.80},
-			},
-			{
-				"id": "scavenger_gamma",
-				"name": "Scavenger Gamma",
-				"mech": "Scav-03",
-				"weapon": "Rifle",
-				"team": "enemy",
-				"letter": "G",
-				"grid": Vector2i(6, 5),
-				"color": Color(0.77, 0.43, 0.43),
-				"hp": 0.80,
-				"parts": {"Head": 0.80, "Body": 0.80, "Left Arm": 0.75, "Right Arm": 0.75, "Legs": 0.80},
-			},
-			{
-				"id": "scavenger_delta",
-				"name": "Scavenger Delta",
-				"mech": "Scav-04",
-				"weapon": "Sniper",
-				"team": "enemy",
-				"letter": "D",
-				"grid": Vector2i(8, 3),
-				"color": Color(0.77, 0.43, 0.43),
-				"hp": 0.75,
-				"parts": {"Head": 0.75, "Body": 0.75, "Left Arm": 0.70, "Right Arm": 0.80, "Legs": 0.70},
-			},
-		]
-		speed_by_id["scavenger_alpha"] = 8
-		speed_by_id["scavenger_beta"] = 7
-		speed_by_id["scavenger_gamma"] = 7
-		speed_by_id["scavenger_delta"] = 5
-		initial_time_by_id["scavenger_alpha"] = 1.0
-		initial_time_by_id["scavenger_beta"] = 3.0
-		initial_time_by_id["scavenger_gamma"] = 3.5
-		initial_time_by_id["scavenger_delta"] = 5.0
-	elif current_mission == "ascending_ridge":
-		enemy_units = [
-			{
-				"id": "enemy_blade",
-				"name": "Enemy Blade",
-				"mech": "Rust Frame",
-				"weapon": "Sword",
-				"team": "enemy",
-				"letter": "E",
-				"grid": Vector2i(6, 5),
-				"color": Color(0.77, 0.43, 0.43),
-				"hp": 0.85,
-				"parts": {"Head": 0.80, "Body": 0.85, "Left Arm": 0.78, "Right Arm": 0.76, "Legs": 0.82},
-			},
-			{
-				"id": "enemy_ridge_guard",
-				"name": "Ridge Guard",
-				"mech": "Bulwark Frame",
-				"weapon": "Shield",
-				"team": "enemy",
-				"letter": "G",
-				"grid": Vector2i(6, 3),
-				"color": Color(0.77, 0.43, 0.43),
-				"hp": 0.90,
-				"parts": {"Head": 0.85, "Body": 0.90, "Left Arm": 0.85, "Right Arm": 0.85, "Legs": 0.85},
-			},
-			{
-				"id": "enemy_rifle",
-				"name": "Enemy Rifle",
-				"mech": "Range Frame",
-				"weapon": "Rifle",
-				"team": "enemy",
-				"letter": "R",
-				"grid": Vector2i(7, 4),
-				"color": Color(0.77, 0.43, 0.43),
-				"hp": 0.83,
-				"parts": {"Head": 0.77, "Body": 0.83, "Left Arm": 0.81, "Right Arm": 0.79, "Legs": 0.84},
-			},
-			{
-				"id": "enemy_sniper",
-				"name": "Enemy Sniper",
-				"mech": "Needle Frame",
-				"weapon": "Sniper",
-				"team": "enemy",
-				"letter": "N",
-				"grid": Vector2i(8, 1),
-				"color": Color(0.77, 0.43, 0.43),
-				"hp": 0.78,
-				"parts": {"Head": 0.82, "Body": 0.78, "Left Arm": 0.70, "Right Arm": 0.86, "Legs": 0.72},
-			},
-			{
-				"id": "commander",
-				"name": "Commander Kael",
-				"mech": "High Ridge",
-				"weapon": "Commander",
-				"team": "enemy",
-				"letter": "K",
-				"grid": Vector2i(9, 3),
-				"color": Color(0.72, 0.36, 0.36),
-				"hp": 0.95,
-				"parts": {"Head": 0.92, "Body": 0.95, "Left Arm": 0.90, "Right Arm": 0.90, "Legs": 0.86},
-			},
-		]
-		speed_by_id["enemy_blade"] = 8
-		speed_by_id["enemy_ridge_guard"] = 5
-		speed_by_id["enemy_rifle"] = 7
-		speed_by_id["commander"] = 6
-		speed_by_id["enemy_sniper"] = 4
-		initial_time_by_id["enemy_blade"] = 1.0
-		initial_time_by_id["enemy_ridge_guard"] = 2.5
-		initial_time_by_id["enemy_rifle"] = 3.0
-		initial_time_by_id["commander"] = 5.0
-		initial_time_by_id["enemy_sniper"] = 7.0
-	else:
-		enemy_units = [
-			{
-				"id": "enemy_blade",
-				"name": "Enemy Blade",
-				"mech": "Rust Frame",
-				"weapon": "Sword",
-				"team": "enemy",
-				"letter": "E",
-				"grid": Vector2i(7, 2),
-				"color": Color(0.77, 0.43, 0.43),
-				"hp": 0.85,
-				"parts": {"Head": 0.80, "Body": 0.85, "Left Arm": 0.78, "Right Arm": 0.76, "Legs": 0.82},
-			},
-			{
-				"id": "enemy_rifle",
-				"name": "Enemy Rifle",
-				"mech": "Range Frame",
-				"weapon": "Rifle",
-				"team": "enemy",
-				"letter": "R",
-				"grid": Vector2i(8, 4),
-				"color": Color(0.77, 0.43, 0.43),
-				"hp": 0.83,
-				"parts": {"Head": 0.77, "Body": 0.83, "Left Arm": 0.81, "Right Arm": 0.79, "Legs": 0.84},
-			},
-			{
-				"id": "enemy_sniper",
-				"name": "Enemy Sniper",
-				"mech": "Needle Frame",
-				"weapon": "Sniper",
-				"team": "enemy",
-				"letter": "N",
-				"grid": Vector2i(8, 1),
-				"color": Color(0.77, 0.43, 0.43),
-				"hp": 0.78,
-				"parts": {"Head": 0.82, "Body": 0.78, "Left Arm": 0.70, "Right Arm": 0.86, "Legs": 0.72},
-			},
-			{
-				"id": "enemy_spear",
-				"name": "Enemy Spear",
-				"mech": "Pike Frame",
-				"weapon": "Spear",
-				"team": "enemy",
-				"letter": "P",
-				"grid": Vector2i(7, 5),
-				"color": Color(0.77, 0.43, 0.43),
-				"hp": 0.82,
-				"parts": {"Head": 0.80, "Body": 0.82, "Left Arm": 0.75, "Right Arm": 0.85, "Legs": 0.80},
-			},
-			{
-				"id": "commander",
-				"name": "Commander Kael",
-				"mech": "High Ridge",
-				"weapon": "Commander",
-				"team": "enemy",
-				"letter": "K",
-				"grid": Vector2i(9, 3),
-				"color": Color(0.72, 0.36, 0.36),
-				"hp": 0.95,
-				"parts": {"Head": 0.92, "Body": 0.95, "Left Arm": 0.90, "Right Arm": 0.90, "Legs": 0.86},
-			},
-		]
-		speed_by_id["enemy_blade"] = 8
-		speed_by_id["enemy_rifle"] = 7
-		speed_by_id["enemy_spear"] = 7
-		speed_by_id["commander"] = 6
-		speed_by_id["enemy_sniper"] = 4
-		initial_time_by_id["enemy_blade"] = 1.0
-		initial_time_by_id["enemy_rifle"] = 3.0
-		initial_time_by_id["enemy_spear"] = 3.5
-		initial_time_by_id["commander"] = 5.0
-		initial_time_by_id["enemy_sniper"] = 7.0
-
-	units = player_units + enemy_units
-
-	if mission_swapped_sides:
-		for unit in units:
-			unit["grid"] = Vector2i(GRID_COLUMNS - 1 - unit["grid"].x, unit["grid"].y)
-
+	units = game_data.create_units_for_mission(current_mission, mission_swapped_sides, GRID_COLUMNS)
 
 	for unit in units:
-		unit["speed"] = speed_by_id[unit["id"]]
-		unit["initiative_time"] = initial_time_by_id[unit["id"]]
 		unit["accuracy_modifier"] = 0
 		unit["base_move_range"] = MOVE_RANGE
 		unit["current_move_range"] = MOVE_RANGE
@@ -1116,13 +551,7 @@ func _resolve_ai_activation(unit) -> Dictionary:
 
 
 func _plan_ai_activation(unit) -> Dictionary:
-	var decision := _decide_ai_action(unit)
-	var path := []
-	if decision.get("move_to") != null:
-		path = _movement_path_to(unit, decision["move_to"])
-	decision["path"] = path
-	decision["start_grid"] = unit["grid"] if unit != null else Vector2i.ZERO
-	return decision
+	return battle_ai.plan_activation(self, unit)
 
 
 func _resolve_planned_ai_activation_fast(unit, plan: Dictionary) -> Dictionary:
@@ -1149,116 +578,7 @@ func _resolve_planned_ai_activation_fast(unit, plan: Dictionary) -> Dictionary:
 
 
 func _present_enemy_activation(unit, plan: Dictionary) -> void:
-	if unit == null or not _is_unit_in_battle(unit):
-		return
-	if fast_simulation:
-		_resolve_planned_ai_activation_fast(unit, plan)
-		return
-
-	enemy_presentation_active = true
-	_is_activating = true
-	selected_unit = unit
-	active_unit = unit
-	last_action_message = "%s activates" % unit["name"]
-	enemy_presentation_log.append("%s:activate" % unit["id"])
-	queue_redraw()
-	await get_tree().create_timer(ENEMY_ACTIVATION_HIGHLIGHT_SECONDS).timeout
-
-	var path: Array = plan.get("path", [])
-	for step in path:
-		unit["grid"] = step
-		last_action_message = "%s moves" % unit["name"]
-		enemy_presentation_log.append("%s:presentation_move:(%d,%d)" % [unit["id"], step.x, step.y])
-		queue_redraw()
-		await get_tree().create_timer(ENEMY_MOVE_STEP_SECONDS).timeout
-
-	if not path.is_empty():
-		unit["has_moved"] = true
-		var final_grid: Vector2i = path[path.size() - 1]
-		turn_log.append("%s:move:(%d,%d)" % [unit["id"], final_grid.x, final_grid.y])
-		reachable_tiles.clear()
-		targetable_tiles.clear()
-		target_preview.clear()
-		turn_state = TurnState.MOVE_COMPLETE
-
-	var attacked := false
-	if str(plan.get("action", "")) == "Attack" and plan.get("target") != null and _can_attack(unit):
-		var sim_seed := _next_simulation_seed()
-		var preview := _attack_preview(unit, plan["target"])
-		if bool(preview["legal"]):
-			var attack_res := _resolve_attack_result(unit, plan["target"], preview, "", sim_seed)
-			if attack_presentation_enabled:
-				await _present_attack_feedback(unit, plan["target"], attack_res)
-			_finish_activation(unit)
-			attacked = true
-
-	if not attacked and _is_unit_in_battle(unit):
-		unit["activation_complete"] = true
-		turn_log.append("%s:enemy_wait" % unit["id"])
-		last_action_message = "%s holds position" % unit["name"]
-		_finish_activation(unit)
-
-	enemy_presentation_active = false
-	_is_activating = false
-	queue_redraw()
-	if not _is_battle_over():
-		_begin_next_activation()
-
-
-func _decide_ai_action(unit) -> Dictionary:
-	if unit == null or not _is_unit_in_battle(unit):
-		return {"action": "Wait", "move_to": null, "target": null}
-
-	var opponents := _opponents_of(unit)
-	if opponents.is_empty():
-		return {"action": "Wait", "move_to": null, "target": null}
-
-	var can_move_now := _can_move(unit)
-	var candidate_tiles: Array[Vector2i] = [unit["grid"]]
-	if can_move_now:
-		var reachable := _calculate_reachable_tiles(unit)
-		for key in reachable.keys():
-			candidate_tiles.append(_grid_from_key(key))
-
-	var best_attack_option: Dictionary = {}
-	var original_grid: Vector2i = unit["grid"]
-
-	for tile in candidate_tiles:
-		unit["grid"] = tile
-		var valid_targets := _valid_attack_targets(unit)
-		for target in valid_targets:
-			var preview := _attack_preview(unit, target)
-			if not bool(preview.get("legal", false)):
-				continue
-			var score := _score_attack_option(unit, target, tile, preview)
-			if best_attack_option.is_empty() or score > float(best_attack_option["score"]):
-				best_attack_option = {
-					"score": score,
-					"move_to": tile if tile != original_grid else null,
-					"target": target,
-					"preview": preview,
-					"action": "Attack",
-				}
-
-	unit["grid"] = original_grid
-
-	if not best_attack_option.is_empty():
-		return best_attack_option
-
-	if can_move_now and candidate_tiles.size() > 1:
-		var target_opponent = _primary_objective_target(unit)
-		if target_opponent != null:
-			var best_move_tile: Vector2i = original_grid
-			var best_move_score := -999999.0
-			for tile in candidate_tiles:
-				var score := _score_move_tile(unit, tile, target_opponent["grid"])
-				if score > best_move_score:
-					best_move_score = score
-					best_move_tile = tile
-			if best_move_tile != original_grid:
-				return {"action": "Wait", "move_to": best_move_tile, "target": null}
-
-	return {"action": "Wait", "move_to": null, "target": null}
+	await battle_presenter.present_enemy_activation(self, unit, plan)
 
 
 func _score_attack_option(attacker, target, candidate_grid: Vector2i, preview: Dictionary) -> float:
@@ -1780,61 +1100,21 @@ func _present_attack_feedback(attacker, target, result: Dictionary) -> void:
 
 
 func _build_attack_feedback_sequence(attacker, target, result: Dictionary) -> Array[String]:
-	var sequence: Array[String] = []
-	var attacker_name := _unit_name_for_id(str(result.get("attacker_id", "")))
-	if attacker != null:
-		attacker_name = str(attacker["name"])
-	var target_name := _unit_name_for_id(str(result.get("original_target_id", result.get("target_id", ""))))
-	if target != null:
-		target_name = str(target["name"])
-	sequence.append("%s / %s -> %s" % [attacker_name, str(result.get("weapon", "Attack")), target_name])
-
-	if result.has("shots"):
-		for shot in result["shots"]:
-			sequence.append(_attack_feedback_line(attacker, target, shot, "SHOT %d" % int(shot.get("shot_index", 0))))
-			_append_attack_feedback_consequences(sequence, shot)
-	elif result.has("results"):
-		for lane_result in result["results"]:
-			sequence.append(_attack_feedback_line(attacker, _unit_by_id(str(lane_result.get("target_id", ""))), lane_result, "TILE %d" % int(lane_result.get("tile_index", 0))))
-			_append_attack_feedback_consequences(sequence, lane_result)
-	else:
-		sequence.append(_attack_feedback_line(attacker, target, result))
-		_append_attack_feedback_consequences(sequence, result)
-
-	return sequence
+	return battle_presenter.build_attack_feedback_sequence(
+		attacker,
+		target,
+		result,
+		Callable(self, "_unit_name_for_id"),
+		Callable(self, "_unit_by_id")
+	)
 
 
 func _attack_feedback_line(attacker, target, result: Dictionary, label := "") -> String:
-	var prefix := "%s / " % label if label != "" else ""
-	if not bool(result.get("hit", false)):
-		return "%sMISS" % prefix
-
-	var part_name := str(result.get("part_name", "Part"))
-	var damage := int(result.get("damage_applied", 0))
-	if part_name == "Shield":
-		var shield_name := _unit_name_for_id(str(result.get("target_id", "")))
-		if bool(result.get("intercepted", false)):
-			return "%sSHIELD INTERCEPT / %s Shield -%d" % [prefix, shield_name, damage]
-		return "%sHIT / %s Shield -%d" % [prefix, shield_name, damage]
-	return "%sHIT / %s -%d" % [prefix, part_name, damage]
+	return battle_presenter.attack_feedback_line(attacker, target, result, Callable(self, "_unit_name_for_id"), label)
 
 
 func _append_attack_feedback_consequences(sequence: Array[String], result: Dictionary) -> void:
-	if not bool(result.get("hit", false)):
-		return
-
-	var part_name := str(result.get("part_name", ""))
-	if bool(result.get("destroyed_now", false)):
-		if part_name == "Body":
-			sequence.append("BODY DESTROYED / %s DEFEATED" % _unit_name_for_id(str(result.get("target_id", ""))))
-		elif part_name == "Shield":
-			sequence.append("SHIELD BROKEN / %s" % _unit_name_for_id(str(result.get("target_id", ""))))
-		else:
-			sequence.append("%s DESTROYED" % part_name.to_upper())
-
-	var orb_proc: Dictionary = result.get("orb_proc", {})
-	if bool(orb_proc.get("triggered", false)):
-		sequence.append("ORB PROC / %s" % str(orb_proc.get("status", "")))
+	battle_presenter.append_attack_feedback_consequences(sequence, result, Callable(self, "_unit_name_for_id"))
 
 
 func _try_wait_active_unit() -> bool:
@@ -1863,75 +1143,18 @@ func _valid_attack_targets(unit) -> Array:
 
 
 func _initialize_part_state(unit) -> void:
-	var source_parts: Dictionary = unit["parts"]
-	var part_state := {}
-	for part_name in PART_NAMES:
-		var ratio := float(source_parts[part_name])
-		part_state[part_name] = {
-			"max_hp": PART_MAX_HP,
-			"hp": int(round(ratio * float(PART_MAX_HP))),
-			"destroyed": ratio <= 0.0,
-			"orb": null,
-			"orb_disabled": false,
-		}
-	unit["parts"] = part_state
-	unit["hp"] = _overall_hp_ratio(unit)
+	combat_controller.initialize_part_state(unit, PART_NAMES, PART_MAX_HP)
 
 
 func _damage_part(unit, part_name: String, amount: int) -> Dictionary:
-	if unit == null or not unit["parts"].has(part_name):
-		return {}
-
-	var part: Dictionary = unit["parts"][part_name]
-	var hp_before := int(part["hp"])
-	var hp_after: int = max(0, hp_before - max(0, amount))
-	part["hp"] = hp_after
-	var destroyed_now := hp_before > 0 and hp_after == 0
-	if hp_before > hp_after:
-		turn_log.append("%s:damage:%s:%d" % [unit["id"], part_name, hp_before - hp_after])
-	if destroyed_now:
-		turn_log.append("%s:destroy:%s" % [unit["id"], part_name])
-	if hp_after == 0:
-		_apply_part_consequence(unit, part_name)
-
-	unit["hp"] = _overall_hp_ratio(unit)
-	return {
-		"unit_id": str(unit["id"]),
-		"part_name": part_name,
-		"damage_requested": amount,
-		"damage_applied": hp_before - hp_after,
-		"hp_before": hp_before,
-		"hp_after": hp_after,
-		"destroyed": bool(part["destroyed"]),
-		"destroyed_now": destroyed_now,
-		"orb_disabled": bool(part["orb_disabled"]),
-	}
+	var result: Dictionary = combat_controller.damage_part(unit, part_name, amount, turn_log, PART_NAMES, HEAD_DESTROYED_HIT_PENALTY)
+	if unit != null and active_unit != null and active_unit["id"] == unit["id"] and not _is_unit_in_battle(unit):
+		active_unit = null
+	return result
 
 
 func _damage_shield(unit, amount: int) -> Dictionary:
-	if unit == null or int(unit.get("shield_max_hp", 0)) <= 0:
-		return {}
-
-	var hp_before := int(unit["shield_hp"])
-	var hp_after: int = max(0, hp_before - max(0, amount))
-	unit["shield_hp"] = hp_after
-	if hp_before > hp_after:
-		turn_log.append("%s:damage:Shield:%d" % [unit["id"], hp_before - hp_after])
-	if hp_before > 0 and hp_after == 0:
-		turn_log.append("%s:destroy:Shield" % unit["id"])
-	if hp_after == 0:
-		unit["shield_disabled"] = true
-	return {
-		"unit_id": str(unit["id"]),
-		"part_name": "Shield",
-		"damage_requested": amount,
-		"damage_applied": hp_before - hp_after,
-		"hp_before": hp_before,
-		"hp_after": hp_after,
-		"destroyed": hp_after == 0,
-		"destroyed_now": hp_before > 0 and hp_after == 0,
-		"orb_disabled": false,
-	}
+	return combat_controller.damage_shield(unit, amount, turn_log)
 
 
 
@@ -1994,39 +1217,21 @@ func _shield_damage_result(unit) -> Dictionary:
 
 func _resolve_weapon_attack(attacker, target, preview: Dictionary, part_name := "", seed := 0, damage_override := -1, part_seed := -1) -> Dictionary:
 	var weapon_data := _weapon_data_for(attacker)
-	var resolved_part := part_name
-	var resolved_part_seed: int = seed if part_seed < 0 else part_seed
-	if resolved_part == "" or not bool(weapon_data["allow_manual_part"]):
-		resolved_part = _roll_part_for_weapon(weapon_data, resolved_part_seed)
-	if not PART_NAMES.has(resolved_part):
-		resolved_part = _roll_part_for_weapon(weapon_data, resolved_part_seed)
-
-	var hit_percent := int(preview["hit_percent"])
-	var hit := _roll_hit(hit_percent, seed)
-	var damage_result := _miss_damage_result(target, resolved_part)
-	var orb_proc := _empty_orb_proc()
-	if hit:
-		var damage: int = damage_override if damage_override >= 0 else int(weapon_data["damage"])
-		damage_result = _damage_part(target, resolved_part, _terrain_adjusted_damage(target, _calculate_attack_damage(attacker, damage, target, resolved_part)))
-		orb_proc = _resolve_orb_proc(attacker, target, seed)
-
-	return {
-		"attacker_id": str(attacker["id"]),
-		"target_id": str(target["id"]),
-		"weapon": str(weapon_data["name"]),
-		"part_name": str(damage_result["part_name"]),
-		"damage_requested": int(damage_result["damage_requested"]),
-		"damage_applied": int(damage_result["damage_applied"]),
-		"hp_before": int(damage_result["hp_before"]),
-		"hp_after": int(damage_result["hp_after"]),
-		"destroyed": bool(damage_result["destroyed"]),
-		"destroyed_now": bool(damage_result["destroyed_now"]),
-		"hit": hit,
-		"hit_percent": hit_percent,
-		"hit_seed": seed,
-		"part_seed": resolved_part_seed,
-		"orb_proc": orb_proc,
-	}
+	return combat_controller.resolve_weapon_attack(
+		attacker,
+		target,
+		preview,
+		part_name,
+		seed,
+		damage_override,
+		part_seed,
+		PART_NAMES,
+		weapon_data,
+		Callable(self, "_terrain_adjusted_damage"),
+		Callable(self, "_calculate_attack_damage"),
+		Callable(self, "_damage_part"),
+		Callable(self, "_resolve_orb_proc")
+	)
 
 
 func _resolve_spear_attack(attacker, target, preview: Dictionary, seed := 0) -> Dictionary:
@@ -2114,39 +1319,13 @@ func _volley_part_seed(seed: int, shot_index: int) -> int:
 
 
 func _miss_damage_result(target, part_name: String) -> Dictionary:
-	var part: Dictionary = target["parts"][part_name]
-	return {
-		"unit_id": str(target["id"]),
-		"part_name": part_name,
-		"damage_requested": 0,
-		"damage_applied": 0,
-		"hp_before": int(part["hp"]),
-		"hp_after": int(part["hp"]),
-		"destroyed": bool(part["destroyed"]),
-		"destroyed_now": false,
-		"orb_disabled": bool(part["orb_disabled"]),
-	}
+	return combat_controller.miss_damage_result(target, part_name)
 
 
 func _apply_part_consequence(unit, part_name: String) -> void:
-	var part: Dictionary = unit["parts"][part_name]
-	part["destroyed"] = true
-	part["orb_disabled"] = true
-
-	if part_name == "Head":
-		unit["accuracy_modifier"] = HEAD_DESTROYED_HIT_PENALTY
-	elif part_name == "Legs":
-		unit["current_move_range"] = 0
-		unit["dodge"] = 0
-	elif part_name == "Body":
-		unit["defeated"] = true
-		unit["in_battle"] = false
-		turn_log.append("%s:defeated" % unit["id"])
-		if active_unit != null and active_unit["id"] == unit["id"]:
-			active_unit = null
-
-	elif part_name == unit["weapon_mount_part"]:
-		unit["weapon_disabled"] = true
+	combat_controller.apply_part_consequence(unit, part_name, turn_log, HEAD_DESTROYED_HIT_PENALTY)
+	if active_unit != null and unit != null and active_unit["id"] == unit["id"] and not _is_unit_in_battle(unit):
+		active_unit = null
 
 
 func _install_orb(unit, part_name: String, orb_id: String) -> bool:
@@ -2167,21 +1346,7 @@ func _orb_data_for(orb_ref) -> Dictionary:
 
 
 func _active_orbs(unit) -> Array:
-	var active := []
-	if unit == null:
-		return active
-	for part_name in PART_NAMES:
-		var part: Dictionary = unit["parts"][part_name]
-		if part["orb"] == null or bool(part["orb_disabled"]) or bool(part["destroyed"]):
-			continue
-		var orb := _orb_data_for(part["orb"])
-		if orb.is_empty():
-			continue
-		var active_orb: Dictionary = orb.duplicate(true)
-		active_orb["id"] = str(part["orb"])
-		active_orb["host_part"] = part_name
-		active.append(active_orb)
-	return active
+	return combat_controller.active_orbs(unit, PART_NAMES, ORB_DATA)
 
 
 func _orb_effects(unit, effect_type := "") -> Array:
@@ -2255,38 +1420,19 @@ func _apply_status(unit, status: String) -> bool:
 
 
 func _has_status(unit, status: String) -> bool:
-	return unit != null and unit.has("statuses") and unit["statuses"].has(status)
+	return combat_controller.has_status(unit, status)
 
 
 func _remove_status(unit, status: String) -> bool:
-	if unit == null or not unit.has("statuses"):
-		return false
-	var index: int = unit["statuses"].find(status)
-	if index >= 0:
-		unit["statuses"].remove_at(index)
-		return true
-	return false
+	return combat_controller.remove_status(unit, status)
 
 
 func _resolve_turn_start_statuses(unit) -> Dictionary:
-	var result := {
-		"burned": false,
-		"burn_damage": 0,
-		"defeated": false,
-	}
-	if unit == null or not _is_unit_in_battle(unit):
-		return result
-
-	if _has_status(unit, "Burn"):
-		var dmg_result := _damage_part(unit, "Body", BURN_DAMAGE)
-		var damage_applied: int = int(dmg_result.get("damage_applied", 0))
-		result["burned"] = true
-		result["burn_damage"] = damage_applied
-		turn_log.append("%s:status:Burn:%d" % [unit["id"], damage_applied])
-		last_action_message = "%s takes %d Burn damage to Body" % [unit["name"], damage_applied]
-		_remove_status(unit, "Burn")
-		if not _is_unit_in_battle(unit):
-			result["defeated"] = true
+	var result: Dictionary = combat_controller.resolve_turn_start_statuses(unit, BURN_DAMAGE, turn_log, PART_NAMES, HEAD_DESTROYED_HIT_PENALTY)
+	if str(result.get("message", "")) != "":
+		last_action_message = str(result["message"])
+	if unit != null and active_unit != null and active_unit["id"] == unit["id"] and not _is_unit_in_battle(unit):
+		active_unit = null
 	return result
 
 
@@ -2405,19 +1551,11 @@ func _part_hp_ratio(unit, part_name: String) -> float:
 
 
 func _overall_hp_ratio(unit) -> float:
-	if unit == null:
-		return 0.0
-	var hp_total := 0
-	var max_total := 0
-	for part_name in PART_NAMES:
-		var part: Dictionary = unit["parts"][part_name]
-		hp_total += int(part["hp"])
-		max_total += int(part["max_hp"])
-	return float(hp_total) / max(1.0, float(max_total))
+	return combat_controller.overall_hp_ratio(unit, PART_NAMES)
 
 
 func _is_unit_in_battle(unit) -> bool:
-	return unit != null and bool(unit.get("in_battle", true)) and not bool(unit.get("defeated", false))
+	return combat_controller.is_unit_in_battle(unit)
 
 
 func _movement_range_for(unit) -> int:
@@ -3231,24 +2369,11 @@ func _draw_mission_panel() -> void:
 
 
 func _part_hp_text(unit, part_name: String) -> String:
-	if unit == null or not unit.get("parts", {}).has(part_name):
-		return "0 / 0"
-	var part: Dictionary = unit["parts"][part_name]
-	var hp := int(part.get("hp", 0))
-	var max_hp := int(part.get("max_hp", PART_MAX_HP))
-	if bool(part.get("destroyed", false)) or hp <= 0:
-		return "0 / %d DESTROYED" % max_hp
-	return "%d / %d" % [hp, max_hp]
+	return battle_hud.part_hp_text(unit, part_name, PART_MAX_HP)
 
 
 func _shield_hp_text(unit) -> String:
-	if unit == null or int(unit.get("shield_max_hp", 0)) <= 0:
-		return ""
-	var hp := int(unit.get("shield_hp", 0))
-	var max_hp := int(unit.get("shield_max_hp", 0))
-	if hp <= 0 or not _shield_is_active(unit):
-		return "0 / %d BROKEN" % max_hp
-	return "%d / %d" % [hp, max_hp]
+	return battle_hud.shield_hp_text(unit, Callable(self, "_shield_is_active"))
 
 
 func _draw_part_status_panel() -> void:
@@ -3317,86 +2442,26 @@ func _target_inspection_data(unit) -> Dictionary:
 	var terrain := _terrain_at(unit["grid"])
 	var height := _height_at(unit["grid"])
 	var has_cov := _has_cover(unit["grid"])
-	var terrain_desc := "H%d" % height
-	if has_cov:
-		terrain_desc += " · Cover"
-
-	var consequences: Array[String] = []
-	if bool(unit.get("weapon_disabled", false)):
-		consequences.append("Weapon disabled (%s)" % str(unit.get("weapon_mount_part", "Arm")))
-	if int(unit.get("accuracy_modifier", 0)) < 0:
-		consequences.append("Accuracy reduced (%+d%%)" % int(unit["accuracy_modifier"]))
-	if int(unit.get("current_move_range", 0)) == 0 and bool(unit.get("parts", {}).get("Legs", {}).get("destroyed", false)):
-		consequences.append("Legs destroyed: mobility lost")
-
-	var part_details := {}
-	for part_name in PART_NAMES:
-		var part: Dictionary = unit["parts"].get(part_name, {})
-		part_details[part_name] = {
-			"hp": int(part.get("hp", 0)),
-			"max_hp": int(part.get("max_hp", PART_MAX_HP)),
-			"destroyed": bool(part.get("destroyed", false)),
-		}
-
-	var orbs_info: Array[String] = []
-	for orb in _active_orbs(unit):
-		orbs_info.append("%s (%s)" % [str(orb.get("name", orb.get("id", ""))), str(orb.get("element", ""))])
-
-	var statuses_info: Array[String] = []
-	for st in unit.get("statuses", []):
-		if st is Dictionary:
-			statuses_info.append(str(st.get("name", st.get("id", ""))))
-		else:
-			statuses_info.append(str(st))
-
 	var pilot_data := _pilot_data_for(unit)
-	var pilot_info := {}
-	if not pilot_data.is_empty():
-		var p_passive: Dictionary = pilot_data.get("passive", {})
-		pilot_info = {
-			"id": str(pilot_data.get("id", "")),
-			"name": str(pilot_data.get("name", "")),
-			"title": str(pilot_data.get("title", "")),
-			"passive_name": str(p_passive.get("name", "")),
-			"passive_desc": str(p_passive.get("desc", "")),
-		}
-
-	var data := {
-		"id": str(unit.get("id", "")),
-		"name": str(unit.get("name", "")),
-		"mech": str(unit.get("mech", "")),
-		"weapon": str(unit.get("weapon", "")),
-		"team": str(unit.get("team", "")),
-		"grid": unit["grid"],
-		"height": height,
-		"has_cover": has_cov,
-		"terrain_desc": terrain_desc,
-		"consequences": consequences,
-		"parts": part_details,
-		"shield_hp": int(unit.get("shield_hp", 0)),
-		"shield_max_hp": int(unit.get("shield_max_hp", 0)),
-		"has_shield": int(unit.get("shield_max_hp", 0)) > 0,
-		"shield_active": _shield_is_active(unit),
-		"statuses": statuses_info,
-		"orbs": orbs_info,
-		"pilot": pilot_info,
-	}
-
+	var preview: Dictionary = {}
+	var interceptor = null
 	if active_unit != null and str(active_unit.get("id", "")) != str(unit.get("id", "")):
-		var preview: Dictionary = _attack_preview(active_unit, unit)
-		data["attack_preview"] = preview
-		var interceptor = _intercepting_shield_for(active_unit, unit, _weapon_data_for(active_unit))
-		data["shield_interceptor"] = interceptor
-		if interceptor != null:
-			data["shield_warning"] = "Protected by %s's Shield" % str(interceptor.get("name", "Ally"))
-		else:
-			data["shield_warning"] = ""
-	else:
-		data["attack_preview"] = {}
-		data["shield_interceptor"] = null
-		data["shield_warning"] = ""
+		preview = _attack_preview(active_unit, unit)
+		interceptor = _intercepting_shield_for(active_unit, unit, _weapon_data_for(active_unit))
 
-	return data
+	return battle_hud.target_inspection_data(
+		unit,
+		active_unit,
+		PART_NAMES,
+		PART_MAX_HP,
+		terrain,
+		height,
+		has_cov,
+		_active_orbs(unit),
+		pilot_data,
+		preview,
+		interceptor
+	)
 
 
 func _draw_enemy_inspection_panel() -> void:
@@ -3489,42 +2554,7 @@ func _draw_enemy_inspection_panel() -> void:
 
 
 func _draw_action_bar() -> void:
-	var bar_rect := _r(888, 521, 390, 62)
-	_draw_panel(bar_rect)
-	action_rects.clear()
-
-	if turn_state == TurnState.MOVE_PREVIEW:
-		move_confirm_rect = _r(906, 533, 205, 38)
-		move_cancel_rect = _r(1123, 533, 137, 38)
-
-		draw_rect(move_confirm_rect, Color(0.18, 0.42, 0.32), true)
-		draw_rect(move_confirm_rect, Color(0.40, 0.78, 0.58), false, 2.0)
-		_draw_centered_text(move_confirm_rect, "CONFIRM MOVE", 13, Color(0.95, 0.98, 0.96))
-
-		draw_rect(move_cancel_rect, Color(0.38, 0.22, 0.22), true)
-		draw_rect(move_cancel_rect, Color(0.72, 0.42, 0.42), false, 1.5)
-		_draw_centered_text(move_cancel_rect, "CANCEL", 13, Color(0.95, 0.90, 0.90))
-		return
-
-	move_confirm_rect = Rect2()
-	move_cancel_rect = Rect2()
-	var widths := [104.0, 104.0, 124.0]
-	var x := 906.0
-	for index in range(PRIMARY_ACTIONS.size()):
-		var action: String = PRIMARY_ACTIONS[index]
-		var rect := _r(x, 533, widths[index], 38)
-		action_rects[action] = rect
-		var active: bool = action == selected_action
-		var legal := _is_action_legal(action)
-		var color := Color(0.16, 0.27, 0.30) if action == "Move" else Color(0.42, 0.24, 0.24) if action == "Attack" else Color(0.16, 0.20, 0.23)
-		if active:
-			color = color.lightened(0.18)
-		if not legal:
-			color = Color(0.12, 0.15, 0.16)
-		draw_rect(rect, color, true)
-		draw_rect(rect, Color(0.41, 0.53, 0.58) if active and legal else Color(0.32, 0.39, 0.42), false, 1.5)
-		_draw_centered_text(rect, action.to_upper(), 13, Color(0.93, 0.96, 0.96) if legal else Color(0.48, 0.54, 0.56))
-		x += widths[index] + 11.0
+	battle_hud.draw_action_bar(self)
 
 
 func _draw_panel(rect: Rect2) -> void:

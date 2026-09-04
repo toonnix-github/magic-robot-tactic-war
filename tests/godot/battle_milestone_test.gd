@@ -1082,7 +1082,6 @@ func _test_orbs_do_not_add_action_buttons(scene: Control) -> void:
 func _run_ai_and_auto_acceptance(scene: Control) -> void:
 	var required_methods := [
 		"_resolve_ai_activation",
-		"_decide_ai_action",
 		"_score_attack_option",
 		"_score_move_tile",
 		"_opponents_of",
@@ -1095,6 +1094,7 @@ func _run_ai_and_auto_acceptance(scene: Control) -> void:
 	]
 	for method in required_methods:
 		_assert_true(scene.has_method(method), "AI / auto API exists: %s" % method)
+	_assert_true(scene.battle_ai.has_method("decide_action"), "AI decision flow lives in BattleAI")
 	if not _failures.is_empty():
 		return
 
@@ -1114,7 +1114,7 @@ func _test_enemy_ai_moves_and_attacks_legally(scene: Control) -> void:
 	target["grid"] = Vector2i(1, 1)
 
 	scene._begin_activation(enemy)
-	var decision: Dictionary = scene._decide_ai_action(enemy)
+	var decision: Dictionary = scene.battle_ai.decide_action(scene, enemy)
 	_assert_equal(decision["action"], "Attack", "AI chooses Attack when in striking distance")
 	_assert_equal(decision["move_to"], Vector2i(2, 1), "AI steps into range 1 to attack Arlen")
 	_assert_equal(decision["target"]["id"], "arlen", "AI targets Arlen")
@@ -1138,7 +1138,7 @@ func _test_ai_respects_shield_interception(scene: Control) -> void:
 	protected["grid"] = Vector2i(4, 3)
 	open_target["grid"] = Vector2i(1, 5)
 	scene._begin_activation(enemy)
-	var decision: Dictionary = scene._decide_ai_action(enemy)
+	var decision: Dictionary = scene.battle_ai.decide_action(scene, enemy)
 	_assert_equal(decision["action"], "Attack", "AI chooses Attack")
 	_assert_equal(decision["target"]["id"], "sera", "AI avoids shielded target and attacks unshielded target")
 
@@ -2779,6 +2779,23 @@ func _run_phase1_architecture_acceptance(scene: Control) -> void:
 		"battle_hud"
 	]:
 		_assert_true(scene.get(property_name) != null, "#34: scene wires %s" % property_name)
+
+	_assert_true(scene.WEAPON_DATA == scene.game_data.WEAPON_DATA, "#34: weapon data is sourced from GameData")
+	_assert_true(scene.ORB_DATA == scene.game_data.ORB_DATA, "#34: Orb data is sourced from GameData")
+	_assert_true(scene.MISSIONS_DATA == scene.game_data.MISSIONS_DATA, "#34: mission data is sourced from GameData")
+
+	for method in [
+		"initialize_part_state",
+		"damage_part",
+		"damage_shield",
+		"active_orbs",
+		"resolve_turn_start_statuses"
+	]:
+		_assert_true(scene.combat_controller.has_method(method), "#34: CombatController owns %s" % method)
+
+	_assert_true(scene.battle_ai.has_method("plan_activation"), "#34: BattleAI owns planning")
+	_assert_true(scene.battle_presenter.has_method("present_enemy_activation"), "#34: BattlePresenter owns enemy presentation sequencing")
+	_assert_true(scene.battle_hud.has_method("target_inspection_data"), "#34: BattleHud owns inspection data shaping")
 
 	scene.fast_simulation = true
 	scene.auto_battle = false

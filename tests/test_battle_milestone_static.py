@@ -10,7 +10,12 @@ MAIN_SCRIPT = ROOT / "src" / "main.gd"
 class BattleMilestoneStaticTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = MAIN_SCRIPT.read_text(encoding="utf-8")
+        cls.main_source = MAIN_SCRIPT.read_text(encoding="utf-8")
+        cls.data_source = (ROOT / "src" / "data" / "game_data.gd").read_text(encoding="utf-8")
+        gdscript_sources = []
+        for path in sorted((ROOT / "src").rglob("*.gd")):
+            gdscript_sources.append(path.read_text(encoding="utf-8"))
+        cls.source = "\n".join(gdscript_sources)
 
     def test_grid_and_movement_constants_match_phase_1(self):
         self.assertRegex(self.source, r"const\s+GRID_COLUMNS\s*:=\s*10\b")
@@ -187,7 +192,6 @@ class BattleMilestoneStaticTests(unittest.TestCase):
     def test_ai_and_auto_battle_hooks_are_encoded(self):
         for hook in [
             "func _resolve_ai_activation",
-            "func _decide_ai_action",
             "func _score_attack_option",
             "func _score_move_tile",
             "func _opponents_of",
@@ -201,6 +205,8 @@ class BattleMilestoneStaticTests(unittest.TestCase):
             self.assertIn(hook, self.source)
         self.assertIn("auto_battle", self.source)
         self.assertIn("simulation_seed", self.source)
+        ai_source = (ROOT / "src" / "ai" / "battle_ai.gd").read_text(encoding="utf-8")
+        self.assertIn("func decide_action", ai_source)
 
     def test_ancient_ruins_mission_and_objective_are_encoded(self):
         self.assertIn("const MISSIONS_DATA", self.source)
@@ -467,6 +473,76 @@ class BattleMilestoneStaticTests(unittest.TestCase):
             self.assertIn(controller_var, self.source)
         self.assertIn("grid_controller.calculate_reachable_tiles", self.source)
         self.assertIn("battle_presenter.add_event_message", self.source)
+
+    def test_phase1_authoritative_data_lives_in_game_data(self):
+        """#34 pass 2 — data/build agents should not edit main.gd data blocks."""
+        data_source = (ROOT / "src" / "data" / "game_data.gd").read_text(encoding="utf-8")
+        for data_name in [
+            "WEAPON_DATA",
+            "ORB_DATA",
+            "DEFAULT_ORB_LOADOUTS",
+            "PILOT_DATA",
+            "MISSIONS_DATA",
+            "PLAYER_UNIT_DATA",
+            "MISSION_ENEMY_UNIT_DATA",
+            "UNIT_INITIATIVE_DATA",
+            "SENSIBLE_LOADOUT",
+            "MISMATCHED_LOADOUT",
+        ]:
+            self.assertIn(f"const {data_name}", data_source, f"{data_name} must live in GameData")
+            self.assertIn(f"const {data_name} := GameDataScript.{data_name}", self.main_source)
+            self.assertNotRegex(self.main_source, rf"const\s+{data_name}\s*:=\s*\{{")
+        self.assertNotIn("var player_units := [", self.main_source)
+        self.assertNotIn("enemy_units = [", self.main_source)
+        self.assertIn("game_data.create_units_for_mission", self.main_source)
+
+    def test_phase1_modules_own_meaningful_boundaries(self):
+        """#34 pass 2 — modules must own behavior, not only exist."""
+        combat_source = (ROOT / "src" / "combat" / "combat_controller.gd").read_text(encoding="utf-8")
+        ai_source = (ROOT / "src" / "ai" / "battle_ai.gd").read_text(encoding="utf-8")
+        presenter_source = (ROOT / "src" / "presentation" / "battle_presenter.gd").read_text(encoding="utf-8")
+        hud_source = (ROOT / "src" / "ui" / "battle_hud.gd").read_text(encoding="utf-8")
+
+        for hook in [
+            "func initialize_part_state",
+            "func damage_part",
+            "func damage_shield",
+            "func miss_damage_result",
+            "func resolve_weapon_attack",
+            "func apply_part_consequence",
+            "func active_orbs",
+            "func resolve_turn_start_statuses",
+        ]:
+            self.assertIn(hook, combat_source)
+        self.assertIn("combat_controller.damage_part", self.source)
+        self.assertIn("combat_controller.resolve_weapon_attack", self.source)
+
+        for hook in [
+            "func decide_action",
+            "func plan_activation",
+            "func score_attack_option",
+            "func score_move_tile",
+        ]:
+            self.assertIn(hook, ai_source)
+        self.assertIn("battle_ai.plan_activation", self.source)
+        self.assertNotIn("func _decide_ai_action", self.source)
+
+        for hook in [
+            "func present_enemy_activation",
+            "func build_attack_feedback_sequence",
+            "func attack_feedback_line",
+        ]:
+            self.assertIn(hook, presenter_source)
+        self.assertIn("battle_presenter.build_attack_feedback_sequence", self.source)
+
+        for hook in [
+            "func part_hp_text",
+            "func shield_hp_text",
+            "func target_inspection_data",
+            "func draw_action_bar",
+        ]:
+            self.assertIn(hook, hud_source)
+        self.assertIn("battle_hud.target_inspection_data", self.source)
 
 
 if __name__ == "__main__":
