@@ -1,6 +1,7 @@
 extends SceneTree
 
 const MechBuildModelScript := preload("res://src/data/mech_build_model.gd")
+const HangarScreenScript := preload("res://src/ui/hangar_screen.gd")
 
 var _failures: Array[String] = []
 
@@ -110,6 +111,7 @@ func _run() -> void:
 	await _run_combat_impact_acceptance(scene)
 	_run_phase1_architecture_acceptance(scene)
 	_run_phase2_build_model_acceptance(scene)
+	await _run_phase2_hangar_shell_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -2958,6 +2960,125 @@ func _test_phase2_orb_slots_and_battle_loadout_are_derived(scene: Control, model
 	_assert_true(bool(loadout["has_shield"]), "#35: battle loadout exposes shield behavior")
 	_assert_equal(loadout["weapon_mount_part"], "Right Arm", "#35: battle setup can mount 1H weapon")
 	_assert_equal(loadout["orbs"]["Left Arm"], "earth_ssr", "#35: battle loadout carries Orb slots")
+
+
+func _run_phase2_hangar_shell_acceptance(scene: Control) -> void:
+	# #36 — Hangar shell and mech part overview.
+	var packed_scene: PackedScene = load("res://scenes/hangar.tscn")
+	_assert_true(packed_scene != null, "#36: Hangar scene loads")
+	_assert_true(HangarScreenScript != null, "#36: Hangar script loads")
+	if packed_scene == null:
+		return
+
+	var hangar: Control = packed_scene.instantiate() as Control
+	root.add_child(hangar)
+	await process_frame
+
+	for method in [
+		"select_unit",
+		"select_next_unit",
+		"select_previous_unit",
+		"current_build_summary",
+		"part_rows",
+		"weapon_panel_data",
+		"layout_metrics"
+	]:
+		_assert_true(hangar.has_method(method), "#36: Hangar exposes %s" % method)
+	if not _failures.is_empty():
+		hangar.queue_free()
+		return
+
+	_test_phase2_hangar_switches_between_units(hangar)
+	_test_phase2_hangar_part_rows_show_build_overview(scene, hangar)
+	_test_phase2_hangar_weapon_and_off_hand_state(hangar)
+	_test_phase2_hangar_uses_model_summary(scene, hangar)
+	_test_phase2_hangar_pointer_navigation(hangar)
+	_test_phase2_hangar_layout_bounds(hangar)
+	hangar.queue_free()
+
+
+func _test_phase2_hangar_switches_between_units(hangar: Control) -> void:
+	_assert_equal(hangar.current_unit_id, "arlen", "#36: Hangar opens on Arlen")
+	var visited: Array[String] = []
+	for _i in range(4):
+		visited.append(str(hangar.current_unit_id))
+		hangar.select_next_unit()
+	_assert_equal(visited, ["arlen", "mira", "sera", "brann"], "#36: next cycles through all four units")
+	_assert_equal(hangar.current_unit_id, "arlen", "#36: next wraps without leaving Hangar")
+
+	hangar.select_previous_unit()
+	_assert_equal(hangar.current_unit_id, "brann", "#36: previous wraps to Brann")
+	_assert_true(hangar.select_unit("sera"), "#36: direct unit selection succeeds")
+	_assert_equal(hangar.current_unit_id, "sera", "#36: direct selection updates current unit")
+	_assert_false(hangar.select_unit("unknown"), "#36: unknown unit selection is rejected")
+	_assert_equal(hangar.current_unit_id, "sera", "#36: rejected selection keeps current unit")
+
+
+func _test_phase2_hangar_part_rows_show_build_overview(scene: Control, hangar: Control) -> void:
+	hangar.select_unit("brann")
+	var rows: Array = hangar.part_rows()
+	_assert_equal(rows.size(), scene.PART_NAMES.size(), "#36: Hangar shows five primary part rows")
+	for index in range(scene.PART_NAMES.size()):
+		var row: Dictionary = rows[index]
+		_assert_equal(row["part_name"], scene.PART_NAMES[index], "#36: part row order follows source-of-truth parts")
+		_assert_true(str(row.get("part_id", "")) != "", "#36: part row has equipped part identity")
+		_assert_true(str(row.get("durability", "")).contains("HP"), "#36: part row shows durability contribution")
+		_assert_true(row.has("orb_state"), "#36: part row exposes Orb slot state")
+	_assert_equal(rows[2]["orb_id"], "earth_ssr", "#36: Left Arm row shows Brann's installed Orb")
+	_assert_equal(rows[2]["orb_state"], "Earth Bulwark", "#36: Orb slot state names installed Orb")
+
+
+func _test_phase2_hangar_weapon_and_off_hand_state(hangar: Control) -> void:
+	hangar.select_unit("arlen")
+	var arlen_panel: Dictionary = hangar.weapon_panel_data()
+	_assert_equal(arlen_panel["weapon"], "Spear", "#36: Arlen weapon appears")
+	_assert_equal(arlen_panel["weapon_handedness"], "2H", "#36: Arlen spear is shown as 2H")
+	_assert_equal(arlen_panel["arm_occupancy"], "Both Arms", "#36: 2H weapon communicates both arms occupied")
+	_assert_equal(arlen_panel["off_hand"], "Disabled by 2H weapon", "#36: 2H build explains off-hand disabled")
+
+	hangar.select_unit("brann")
+	var brann_panel: Dictionary = hangar.weapon_panel_data()
+	_assert_equal(brann_panel["weapon"], "Sword", "#36: Brann weapon appears")
+	_assert_equal(brann_panel["weapon_handedness"], "1H", "#36: Brann sword is shown as 1H")
+	_assert_equal(brann_panel["arm_occupancy"], "Right Arm weapon / Left Arm off-hand", "#36: 1H build communicates right/off-hand split")
+	_assert_equal(brann_panel["off_hand"], "Shield", "#36: Shield appears as off-hand equipment")
+
+
+func _test_phase2_hangar_uses_model_summary(scene: Control, hangar: Control) -> void:
+	hangar.select_unit("mira")
+	var summary: Dictionary = hangar.current_build_summary()
+	var model_summary: Dictionary = hangar.build_model.build_summary(
+		hangar.builds["mira"],
+		scene.WEAPON_DATA,
+		scene.ORB_DATA,
+		scene.PART_NAMES
+	)
+	_assert_equal(summary["weapon"], model_summary["weapon"], "#36: Hangar weapon reads from build model")
+	_assert_equal(summary["weapon_handedness"], model_summary["weapon_handedness"], "#36: Hangar handedness reads from build model")
+	_assert_equal(summary["orb_slots"], model_summary["orb_slots"], "#36: Hangar Orb slots read from build model")
+
+
+func _test_phase2_hangar_pointer_navigation(hangar: Control) -> void:
+	hangar.select_unit("arlen")
+	hangar.nav_rects["next"] = Rect2(Vector2(0, 0), Vector2(40, 40))
+	hangar.unit_tab_rects["brann"] = Rect2(Vector2(50, 0), Vector2(80, 40))
+	var click := InputEventMouseButton.new()
+	click.pressed = true
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.position = Vector2(10, 10)
+	hangar._gui_input(click)
+	_assert_equal(hangar.current_unit_id, "mira", "#36: pointer input can move to next unit")
+
+	click.position = Vector2(60, 10)
+	hangar._gui_input(click)
+	_assert_equal(hangar.current_unit_id, "brann", "#36: pointer input can select a unit tab")
+
+
+func _test_phase2_hangar_layout_bounds(hangar: Control) -> void:
+	var metrics: Dictionary = hangar.layout_metrics()
+	_assert_equal(metrics["design_size"], Vector2(1280, 590), "#36: Hangar targets fixed landscape resolution")
+	_assert_true(bool(metrics["within_design_bounds"]), "#36: Hangar layout stays inside landscape bounds")
+	_assert_true(float(metrics["part_row_height"]) >= 48.0, "#36: part rows remain readable on mobile landscape")
 
 
 func _assert_true(actual: bool, message: String) -> void:

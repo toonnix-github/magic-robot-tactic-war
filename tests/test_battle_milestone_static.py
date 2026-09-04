@@ -615,6 +615,37 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertNotIn("func normalize_build", self.main_source)
         self.assertNotIn("func build_summary", self.main_source)
 
+    def test_phase2_hangar_shell_reads_build_model(self):
+        """#36 — Hangar overview is a compact UI shell backed by MechBuildModel."""
+        hangar_scene = ROOT / "scenes" / "hangar.tscn"
+        hangar_script = ROOT / "src" / "ui" / "hangar_screen.gd"
+        self.assertTrue(hangar_scene.exists(), "scenes/hangar.tscn is missing")
+        self.assertTrue(hangar_script.exists(), "src/ui/hangar_screen.gd is missing")
+
+        scene_source = hangar_scene.read_text(encoding="utf-8")
+        hangar_source = hangar_script.read_text(encoding="utf-8")
+
+        self.assertIn("res://src/ui/hangar_screen.gd", scene_source)
+        self.assertIn("class_name HangarScreen", hangar_source)
+        self.assertIn('preload("res://src/data/mech_build_model.gd")', hangar_source)
+        self.assertIn("MechBuildModelScript.new()", hangar_source)
+        for hook in [
+            "func select_unit",
+            "func select_next_unit",
+            "func select_previous_unit",
+            "func current_build_summary",
+            "func part_rows",
+            "func weapon_panel_data",
+            "func layout_metrics",
+        ]:
+            self.assertIn(hook, hangar_source)
+
+        for pilot in ["arlen", "mira", "sera", "brann"]:
+            self.assertIn(f'"{pilot}"', hangar_source)
+        self.assertIn('"Both Arms"', hangar_source)
+        self.assertNotIn("const PROTOTYPE_MECH_BUILDS", hangar_source)
+        self.assertNotIn("const WEAPON_HANDEDNESS", hangar_source)
+
 
 if __name__ == "__main__":
     unittest.main()
