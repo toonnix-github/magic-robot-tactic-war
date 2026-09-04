@@ -213,9 +213,29 @@ func _draw_unit_tabs(tab_area: Rect2) -> void:
 func _draw_unit_identity(rect: Rect2) -> void:
 	_draw_panel(rect, Color(0.11, 0.14, 0.15))
 	var summary: Dictionary = current_build_summary()
+	var signals: Dictionary = current_build_signals()
 	draw_string(_font(), rect.position + Vector2(22, 34), _pilot_name(current_unit_id), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(24), Color(0.94, 0.96, 0.95))
 	draw_string(_font(), rect.position + Vector2(22, 62), str(summary.get("mech", "")), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(14), Color(0.63, 0.70, 0.71))
-	draw_string(_font(), rect.position + Vector2(22, 94), _role_line(), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(12), Color(0.86, 0.77, 0.52))
+	draw_string(_font(), rect.position + Vector2(22, 88), _role_line(), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(12), Color(0.86, 0.77, 0.52))
+
+	draw_string(_font(), rect.position + Vector2(22, 118), "BUILD SUMMARY", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.55, 0.62, 0.64))
+	var summary_text: String = str(signals.get("summary_line", ""))
+	draw_string(_font(), rect.position + Vector2(22, 138), summary_text, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 44.0, _font_size(11), Color(0.82, 0.88, 0.86))
+
+	var stats: Dictionary = signals.get("key_stats", {})
+	draw_string(_font(), rect.position + Vector2(22, 180), "MOBILITY & DEFENSE", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.55, 0.62, 0.64))
+	var stat_line1 := "Move: %d   Speed: %+d   Dodge: %d%%" % [int(stats.get("move", 3)), int(stats.get("speed", 0)), int(stats.get("dodge", 10))]
+	var stat_line2 := "Armor HP: %d   Defense: %+d" % [int(stats.get("max_hp", 0)), int(stats.get("defense", 0))]
+	if bool(stats.get("has_shield", false)):
+		stat_line2 += "   Shield: %d" % int(stats.get("shield_hp", 0))
+	draw_string(_font(), rect.position + Vector2(22, 202), stat_line1, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(11), Color(0.72, 0.79, 0.78))
+	draw_string(_font(), rect.position + Vector2(22, 222), stat_line2, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(11), Color(0.72, 0.79, 0.78))
+
+	draw_string(_font(), rect.position + Vector2(22, 256), "ROLE PROFILE", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.55, 0.62, 0.64))
+	var y := rect.position.y + 278.0
+	for tag in signals.get("role_tags", []):
+		draw_string(_font(), Vector2(rect.position.x + 22.0, y), "• " + str(tag), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(11), Color(0.56, 0.75, 0.82))
+		y += 22.0
 
 
 func _draw_weapon_panel(rect: Rect2) -> void:
@@ -359,4 +379,13 @@ func remove_orb(part_name: String) -> bool:
 	builds[current_unit_id] = build_model.remove_orb(builds[current_unit_id], part_name, [])
 	queue_redraw()
 	return true
+
+
+func build_signals(build: Dictionary = {}) -> Dictionary:
+	var target_build: Dictionary = build if not build.is_empty() else _current_build()
+	return build_model.build_signals(target_build, GameDataScript.WEAPON_DATA, GameDataScript.ORB_DATA, GameDataScript.PART_NAMES)
+
+
+func current_build_signals() -> Dictionary:
+	return build_signals()
 

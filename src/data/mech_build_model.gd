@@ -360,6 +360,7 @@ func build_summary(
 		"has_shield": off_hand == "Shield",
 		"shield_max_hp": int(off_hand_data.get("shield_max_hp", 0)),
 		"orb_slots": _orb_slots(normalized, parts),
+		"signals": build_signals(normalized, weapon_data, orb_data, parts),
 		"validation": validate_build(normalized, weapon_data, orb_data, parts),
 	}
 
@@ -458,3 +459,142 @@ func remove_orb(build: Dictionary, part_name: String, part_names: Array = []) ->
 	if updated.has("orbs") and (updated["orbs"] is Dictionary):
 		updated["orbs"].erase(part_name)
 	return updated
+
+
+func build_signals(
+	build: Dictionary,
+	weapon_data: Dictionary,
+	orb_data: Dictionary,
+	part_names: Array = []
+) -> Dictionary:
+	var normalized: Dictionary = normalize_build(build, weapon_data, orb_data, part_names)
+	var parts: Array = _part_names(part_names)
+	var stats: Dictionary = build_stats(normalized)
+	var weapon_name: String = str(normalized.get("weapon", ""))
+	var handedness: String = weapon_handedness(weapon_name)
+	var off_hand: String = str(normalized.get("off_hand", ""))
+	var has_shield: bool = off_hand == "Shield"
+	var off_hand_data: Dictionary = OFF_HAND_EQUIPMENT_DATA.get(off_hand, {})
+	var shield_hp: int = int(off_hand_data.get("shield_max_hp", 0))
+
+	var move: int = int(stats.get("move", 3))
+	var speed: int = int(stats.get("speed", 0))
+	var accuracy: int = int(stats.get("accuracy", 0))
+	var defense: int = int(stats.get("defense", 0))
+	var dodge: int = int(stats.get("dodge", 10))
+	var total_hp: int = int(stats.get("max_hp", 0))
+	var part_hp: Dictionary = stats.get("part_hp", {})
+
+	var role_tags: Array[String] = []
+	var strengths: Array[String] = []
+	var weaknesses: Array[String] = []
+	var summary_segments: Array[String] = []
+
+	# Weapon & Handedness
+	if handedness != "":
+		summary_segments.append("%s · %s" % [weapon_name, handedness])
+	elif weapon_name != "":
+		summary_segments.append(weapon_name)
+
+	# Off-hand / Shield
+	if has_shield:
+		role_tags.append("Shield Guard")
+		strengths.append("Shield Protection (%d HP)" % shield_hp)
+		summary_segments.append("Shield")
+	elif off_hand != "":
+		summary_segments.append(off_hand)
+
+	# Mobility
+	summary_segments.append("Move %d" % move)
+	if move >= 4:
+		role_tags.append("High Mobility")
+		strengths.append("High Move (%d)" % move)
+	elif move <= 2:
+		role_tags.append("Low Mobility")
+		weaknesses.append("Slow Move (%d)" % move)
+
+	# Weapon / Range profile
+	if weapon_name == "Sniper":
+		role_tags.append("Long-Range Precision")
+		if accuracy > 0:
+			summary_segments.append("Long-range Hit +%d%%" % accuracy)
+	elif weapon_name == "Spear":
+		role_tags.append("Reach Striker")
+	elif weapon_name == "Sword":
+		role_tags.append("Melee Skirmisher")
+	elif weapon_name == "Rifle":
+		role_tags.append("Mid-Range Line")
+
+	# Accuracy
+	if accuracy > 0:
+		strengths.append("Accuracy +%d%%" % accuracy)
+	elif accuracy < 0:
+		weaknesses.append("Accuracy %d%%" % accuracy)
+
+	# Speed & Dodge
+	if speed >= 2:
+		role_tags.append("Fast Initiative")
+		strengths.append("Speed +%d" % speed)
+	elif speed < 0:
+		weaknesses.append("Slow Initiative (%d)" % speed)
+
+	if dodge >= 14:
+		role_tags.append("Evasive")
+		strengths.append("High Dodge (%d%%)" % dodge)
+	elif dodge <= 6:
+		weaknesses.append("Low Dodge (%d%%)" % dodge)
+
+	# Durability analysis
+	var left_arm_hp: int = int(part_hp.get("Left Arm", 100))
+	var right_arm_hp: int = int(part_hp.get("Right Arm", 100))
+	if right_arm_hp < 80 or (handedness == "2H" and left_arm_hp < 80):
+		role_tags.append("Fragile Arms")
+		weaknesses.append("Low Arm Durability")
+		summary_segments.append("Low Arm Durability")
+	elif total_hp >= 480 or defense >= 3:
+		role_tags.append("Heavy Armor")
+		strengths.append("High Armor / Defense")
+	elif total_hp < 400:
+		role_tags.append("Light Armor")
+		weaknesses.append("Low Total Durability")
+
+	# Orbs analysis
+	var orb_effects: Array[String] = []
+	var orb_slots: Dictionary = _orb_slots(normalized, parts)
+	for part_name in orb_slots.keys():
+		var orb_id: String = str(orb_slots[part_name])
+		if orb_id != "" and orb_data.has(orb_id):
+			var o_info: Dictionary = orb_data[orb_id]
+			for eff in o_info.get("effects", []):
+				var eff_type: String = str(eff.get("type", ""))
+				if eff_type == "proc_status":
+					var status: String = str(eff.get("status", ""))
+					role_tags.append("Proc %s" % status)
+					orb_effects.append("Proc %s" % status)
+				elif eff_type == "damage_percent":
+					orb_effects.append("+%d%% Dmg" % int(eff.get("percent", 0)))
+				elif eff_type == "hit_bonus":
+					orb_effects.append("+%d Hit" % int(eff.get("amount", 0)))
+
+	var summary_line: String = " · ".join(summary_segments)
+
+	return {
+		"summary_line": summary_line,
+		"role_tags": role_tags,
+		"key_stats": {
+			"move": move,
+			"speed": speed,
+			"dodge": dodge,
+			"accuracy": accuracy,
+			"defense": defense,
+			"max_hp": total_hp,
+			"shield_hp": shield_hp,
+			"weapon": weapon_name,
+			"weapon_handedness": handedness,
+			"off_hand": off_hand,
+			"has_shield": has_shield,
+		},
+		"strengths": strengths,
+		"weaknesses": weaknesses,
+		"orb_effects": orb_effects,
+	}
