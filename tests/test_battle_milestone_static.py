@@ -242,11 +242,23 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn(":defeated", self.source)
         self.assertIn("mission_result:", self.source)
 
+    def test_enemy_presentation_hooks_are_encoded(self):
+        for hook in [
+            "func _plan_ai_activation",
+            "func _movement_path_to",
+            "func _present_enemy_activation",
+            "func _input_locked",
+            "func _resolve_planned_ai_activation_fast",
+        ]:
+            self.assertIn(hook, self.source)
+        self.assertIn("enemy_presentation_active", self.source)
+        self.assertIn("enemy_presentation_log", self.source)
+        self.assertIn("ENEMY_MOVE_STEP_SECONDS", self.source)
+
 
 
 if __name__ == "__main__":
     unittest.main()
-
 
 
 

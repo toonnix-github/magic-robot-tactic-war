@@ -13,6 +13,7 @@ func _run() -> void:
 	root.add_child(scene)
 	await process_frame
 	await process_frame
+	scene.enemy_presentation_enabled = false
 
 	_assert_equal(scene.GRID_COLUMNS, 10, "grid has 10 columns")
 	_assert_equal(scene.GRID_ROWS, 7, "grid has 7 rows")
@@ -88,6 +89,7 @@ func _run() -> void:
 	_run_crystal_quarry_acceptance(scene)
 	_run_ascending_ridge_acceptance(scene)
 	_run_phase1_stabilization_acceptance(scene)
+	await _run_enemy_presentation_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -1423,6 +1425,98 @@ func _test_phase1_attack_preview_contains_terrain_and_pattern(scene: Control) ->
 	_assert_true(preview.has("cover_dodge_modifier"), "preview has cover modifier")
 	_assert_true(preview.has("weapon_pattern"), "preview has weapon pattern")
 	_assert_equal(preview["weapon_pattern"], "line_2", "Spear has line_2 pattern")
+
+
+func _run_enemy_presentation_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_plan_ai_activation",
+		"_movement_path_to",
+		"_present_enemy_activation",
+		"_input_locked",
+		"_resolve_planned_ai_activation_fast",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "Enemy presentation API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_enemy_movement_presentation_records_each_path_step(scene)
+	_test_enemy_presentation_blocks_player_mutation(scene)
+	_test_fast_simulation_skips_enemy_presentation(scene)
+	await _test_presented_enemy_activation_matches_fast_resolution(scene)
+
+
+func _set_enemy_presentation_fixture(scene: Control) -> Dictionary:
+	scene._load_mission("ancient_ruins")
+	scene.enemy_presentation_enabled = true
+	var enemy = scene._unit_by_id("enemy_blade")
+	var target = scene._unit_by_id("arlen")
+	scene._unit_by_id("mira")["grid"] = Vector2i(0, 6)
+	scene._unit_by_id("sera")["grid"] = Vector2i(0, 5)
+	scene._unit_by_id("brann")["grid"] = Vector2i(0, 4)
+	enemy["grid"] = Vector2i(4, 1)
+	target["grid"] = Vector2i(0, 1)
+	for column in range(5):
+		scene._set_tile_terrain(Vector2i(column, 1), {"height": 0})
+	scene._begin_activation(enemy)
+	return {"enemy": enemy, "target": target}
+
+
+func _enemy_presentation_snapshot(scene: Control, enemy, target) -> Dictionary:
+	return {
+		"enemy_grid": enemy["grid"],
+		"target_parts": _part_hp_snapshot(target),
+		"turn_log": scene.turn_log.duplicate(),
+		"active_id": str(scene.active_unit["id"]) if scene.active_unit != null else "",
+		"simulation_seed": scene.simulation_seed,
+	}
+
+
+func _test_enemy_movement_presentation_records_each_path_step(scene: Control) -> void:
+	var fixture := _set_enemy_presentation_fixture(scene)
+	var plan: Dictionary = scene._plan_ai_activation(fixture["enemy"])
+	_assert_equal(plan["path"].size(), 3, "enemy moving three tiles plans three visible path steps")
+	_assert_equal(plan["path"][0], Vector2i(3, 1), "first path step is adjacent, not a teleport")
+	_assert_equal(plan["path"][1], Vector2i(2, 1), "second path step is visible")
+	_assert_equal(plan["path"][2], Vector2i(1, 1), "third path step reaches planned destination")
+
+
+func _test_enemy_presentation_blocks_player_mutation(scene: Control) -> void:
+	var fixture := _set_enemy_presentation_fixture(scene)
+	scene.enemy_presentation_active = true
+	var arlen = scene._unit_by_id("arlen")
+	_assert_true(scene._input_locked(), "enemy presentation locks player input")
+	_assert_false(scene._try_move_active_unit(arlen["grid"]), "player cannot mutate combat state during enemy presentation")
+	scene.enemy_presentation_active = false
+
+
+func _test_fast_simulation_skips_enemy_presentation(scene: Control) -> void:
+	var fixture := _set_enemy_presentation_fixture(scene)
+	scene.auto_battle = true
+	var plan: Dictionary = scene._plan_ai_activation(fixture["enemy"])
+	scene._resolve_planned_ai_activation_fast(fixture["enemy"], plan)
+	_assert_equal(scene.enemy_presentation_log.size(), 0, "fast simulation skips presentation logs")
+	_assert_false(scene.enemy_presentation_active, "fast simulation does not enter presentation state")
+	scene.auto_battle = false
+
+
+func _test_presented_enemy_activation_matches_fast_resolution(scene: Control) -> void:
+	var fast_fixture := _set_enemy_presentation_fixture(scene)
+	scene.set_debug_seed(2024)
+	var fast_plan: Dictionary = scene._plan_ai_activation(fast_fixture["enemy"])
+	scene._resolve_planned_ai_activation_fast(fast_fixture["enemy"], fast_plan)
+	var fast_snapshot := _enemy_presentation_snapshot(scene, fast_fixture["enemy"], fast_fixture["target"])
+
+	var presented_fixture := _set_enemy_presentation_fixture(scene)
+	scene.set_debug_seed(2024)
+	var presented_plan: Dictionary = scene._plan_ai_activation(presented_fixture["enemy"])
+	await scene._present_enemy_activation(presented_fixture["enemy"], presented_plan)
+	var presented_snapshot := _enemy_presentation_snapshot(scene, presented_fixture["enemy"], presented_fixture["target"])
+
+	_assert_equal(presented_plan["path"], fast_plan["path"], "same seed plans same movement path with or without presentation")
+	_assert_equal(presented_snapshot["enemy_grid"], fast_snapshot["enemy_grid"], "presented enemy ends on same grid as fast simulation")
+	_assert_equal(presented_snapshot["target_parts"], fast_snapshot["target_parts"], "presented attack result matches fast simulation")
+	_assert_equal(presented_snapshot["simulation_seed"], fast_snapshot["simulation_seed"], "presentation timing does not consume RNG")
 
 
 func _test_phase1_strict_turn_rules_enforced(scene: Control) -> void:

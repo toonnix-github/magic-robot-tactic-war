@@ -14,6 +14,8 @@ const HEIGHT_HIT_PER_LEVEL := 5
 const HEIGHT_HIT_CAP := 15
 const COVER_DODGE_BONUS := 10
 const COVER_DAMAGE_REDUCTION_PERCENT := 10
+const ENEMY_ACTIVATION_HIGHLIGHT_SECONDS := 0.12
+const ENEMY_MOVE_STEP_SECONDS := 0.12
 const PLACEHOLDER_WEAPON_RANGES := {
 	"Sword": 1,
 	"Spear": 2,
@@ -225,6 +227,9 @@ var auto_battle := false
 var simulation_seed := 1337
 var reward_seed := 4242
 var _is_activating := false
+var enemy_presentation_enabled := true
+var enemy_presentation_active := false
+var enemy_presentation_log: Array[String] = []
 
 
 
@@ -242,6 +247,8 @@ func _load_mission(mission_id: String, swapped_sides: bool = false) -> void:
 	mission_swapped_sides = swapped_sides
 	turn_number = 1
 	turn_log.clear()
+	enemy_presentation_log.clear()
+	enemy_presentation_active = false
 	last_action_message = "Ready"
 	_create_terrain()
 	_create_units()
@@ -260,6 +267,9 @@ func _notification(what: int) -> void:
 func _gui_input(event: InputEvent) -> void:
 	var press_position = _event_press_position(event)
 	if press_position == null:
+		return
+	if _input_locked():
+		accept_event()
 		return
 
 	for action in PRIMARY_ACTIONS:
@@ -615,6 +625,8 @@ func _select_unit(unit) -> void:
 
 
 func _select_action(action: String) -> void:
+	if _input_locked():
+		return
 	if not PRIMARY_ACTIONS.has(action):
 		return
 
@@ -643,6 +655,8 @@ func _select_action(action: String) -> void:
 
 
 func _handle_grid_tap(position: Vector2) -> void:
+	if _input_locked():
+		return
 	var grid = _grid_at_position(position)
 	if grid == null:
 		return
@@ -717,7 +731,13 @@ func _begin_next_activation() -> void:
 				return
 			_resolve_ai_activation(next_unit)
 		else:
-			_resolve_enemy_activation(next_unit)
+			if auto_battle or not enemy_presentation_enabled:
+				_resolve_enemy_activation(next_unit)
+			else:
+				var enemy_plan := _plan_ai_activation(next_unit)
+				_is_activating = false
+				_present_enemy_activation.call_deferred(next_unit, enemy_plan)
+				return
 		if _is_battle_over():
 			_is_activating = false
 			return
@@ -752,22 +772,39 @@ func _begin_activation(unit) -> void:
 
 
 func _resolve_enemy_activation(unit) -> void:
-	_resolve_ai_activation(unit)
+	var plan := _plan_ai_activation(unit)
+	_resolve_planned_ai_activation_fast(unit, plan)
 
 
 func _resolve_ai_activation(unit) -> Dictionary:
 	if unit == null or not _is_unit_in_battle(unit):
 		return {}
 
+	var plan := _plan_ai_activation(unit)
+	_resolve_planned_ai_activation_fast(unit, plan)
+	return plan
+
+
+func _plan_ai_activation(unit) -> Dictionary:
 	var decision := _decide_ai_action(unit)
-	var move_to = decision.get("move_to")
+	var path := []
+	if decision.get("move_to") != null:
+		path = _movement_path_to(unit, decision["move_to"])
+	decision["path"] = path
+	decision["start_grid"] = unit["grid"] if unit != null else Vector2i.ZERO
+	return decision
+
+
+func _resolve_planned_ai_activation_fast(unit, plan: Dictionary) -> Dictionary:
+	if unit == null or not _is_unit_in_battle(unit):
+		return {}
+	var move_to = plan.get("move_to")
 	if move_to != null and _can_move(unit):
 		_try_move_active_unit(move_to)
-
 	var attacked := false
-	if str(decision.get("action", "")) == "Attack" and decision.get("target") != null and _can_attack(unit):
+	if str(plan.get("action", "")) == "Attack" and plan.get("target") != null and _can_attack(unit):
 		var sim_seed := _next_simulation_seed()
-		attacked = _try_attack_active_unit(decision["target"], "", sim_seed)
+		attacked = _try_attack_active_unit(plan["target"], "", sim_seed)
 
 	if not attacked:
 		if str(unit.get("team", "")) == "enemy":
@@ -778,7 +815,58 @@ func _resolve_ai_activation(unit) -> Dictionary:
 		else:
 			_try_wait_active_unit()
 
-	return decision
+	return plan
+
+
+func _present_enemy_activation(unit, plan: Dictionary) -> void:
+	if unit == null or not _is_unit_in_battle(unit):
+		return
+	if auto_battle:
+		_resolve_planned_ai_activation_fast(unit, plan)
+		return
+
+	enemy_presentation_active = true
+	_is_activating = true
+	selected_unit = unit
+	active_unit = unit
+	last_action_message = "%s activates" % unit["name"]
+	enemy_presentation_log.append("%s:activate" % unit["id"])
+	queue_redraw()
+	await get_tree().create_timer(ENEMY_ACTIVATION_HIGHLIGHT_SECONDS).timeout
+
+	var path: Array = plan.get("path", [])
+	for step in path:
+		unit["grid"] = step
+		last_action_message = "%s moves" % unit["name"]
+		enemy_presentation_log.append("%s:presentation_move:(%d,%d)" % [unit["id"], step.x, step.y])
+		queue_redraw()
+		await get_tree().create_timer(ENEMY_MOVE_STEP_SECONDS).timeout
+
+	if not path.is_empty():
+		unit["has_moved"] = true
+		var final_grid: Vector2i = path[path.size() - 1]
+		turn_log.append("%s:move:(%d,%d)" % [unit["id"], final_grid.x, final_grid.y])
+		reachable_tiles.clear()
+		targetable_tiles.clear()
+		target_preview.clear()
+		turn_state = TurnState.MOVE_COMPLETE
+
+	var attacked := false
+	if str(plan.get("action", "")) == "Attack" and plan.get("target") != null and _can_attack(unit):
+		var sim_seed := _next_simulation_seed()
+		attacked = _try_attack_active_unit(plan["target"], "", sim_seed)
+
+	if not attacked and _is_unit_in_battle(unit):
+		unit["activation_complete"] = true
+		turn_log.append("%s:enemy_wait" % unit["id"])
+		last_action_message = "%s holds position" % unit["name"]
+		_finish_activation(unit)
+
+	enemy_presentation_active = false
+	_is_activating = false
+	queue_redraw()
+	if not _is_battle_over():
+		_begin_next_activation()
 
 
 func _decide_ai_action(unit) -> Dictionary:
@@ -882,6 +970,44 @@ func _score_move_tile(unit, candidate_grid: Vector2i, target_grid: Vector2i) -> 
 	return score
 
 
+func _movement_path_to(unit, destination: Vector2i) -> Array:
+	var path := []
+	if unit == null or not _is_unit_in_battle(unit):
+		return path
+	var start: Vector2i = unit["grid"]
+	if start == destination:
+		return path
+
+	var visited := {}
+	var previous := {}
+	var frontier := [start]
+	visited[_grid_key(start)] = true
+
+	while not frontier.is_empty():
+		var current: Vector2i = frontier.pop_front()
+		for direction in DIRECTIONS:
+			var next_grid: Vector2i = current + direction
+			var key := _grid_key(next_grid)
+			if not _is_in_bounds(next_grid) or visited.has(key):
+				continue
+			if not _can_traverse_step(current, next_grid):
+				continue
+			if _occupied_by_opponent(next_grid, str(unit["team"])):
+				continue
+			if _occupied_by_any_unit(next_grid) and next_grid != destination:
+				continue
+			visited[key] = true
+			previous[key] = current
+			if next_grid == destination:
+				var cursor := destination
+				while cursor != start:
+					path.push_front(cursor)
+					cursor = previous[_grid_key(cursor)]
+				return path
+			frontier.append(next_grid)
+	return path
+
+
 func _opponents_of(unit) -> Array:
 	var opps := []
 	if unit == null:
@@ -977,7 +1103,13 @@ func _is_action_legal(action: String) -> bool:
 	return false
 
 
+func _input_locked() -> bool:
+	return enemy_presentation_active
+
+
 func _try_move_active_unit(grid: Vector2i) -> bool:
+	if _input_locked() and not auto_battle and active_unit != null and str(active_unit.get("team", "")) == "player":
+		return false
 	if not _can_move(active_unit):
 		return false
 
@@ -1002,6 +1134,8 @@ func _try_move_active_unit(grid: Vector2i) -> bool:
 
 
 func _try_attack_active_unit(target = null, part_name := "", seed := 0) -> bool:
+	if _input_locked() and not auto_battle and active_unit != null and str(active_unit.get("team", "")) == "player":
+		return false
 	if not _can_attack(active_unit):
 		return false
 
@@ -1141,6 +1275,8 @@ func _resolve_attack(attacker, target, preview: Dictionary, part_name := "", see
 
 
 func _try_wait_active_unit() -> bool:
+	if _input_locked() and not auto_battle and active_unit != null and str(active_unit.get("team", "")) == "player":
+		return false
 	if not _can_wait(active_unit):
 		return false
 
@@ -2429,5 +2565,3 @@ func _roll_mission_loot(mission_id: String, loot_seed: int = 4242) -> Dictionary
 		"orb_fragments": orb_fragments,
 		"orb_drop": awarded_orb,
 	}
-
-
