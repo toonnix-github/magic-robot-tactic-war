@@ -7,8 +7,13 @@ on:
   pull_request:
     branches:
       - prototype/combat-v01
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -31,7 +36,10 @@ jobs:
         run: python -m unittest discover
 
       - name: Run Godot headless tests
-        run: "$GODOT_BIN" --headless --path . -s res://tests/godot/battle_milestone_test.gd
+        run: |
+          "$GODOT_BIN" --headless --path . -s res://tests/godot/battle_milestone_test.gd
 
       - name: Enforce GDScript coverage
-        run: python tools/gdscript_function_coverage.py --godot "$GODOT_BIN" --fail-under 80
+        run: |
+          python tools/gdscript_function_coverage.py --godot "$GODOT_BIN" --fail-under 80
+
