@@ -735,6 +735,25 @@ class BattleMilestoneStaticTests(unittest.TestCase):
             self.assertIn(hook, hangar_source)
         self.assertIn("build_model.build_signals", hangar_source)
 
+    def test_phase2_squad_deploy_builds_apis_exist(self):
+        """#41 - Squad preparation and deploy custom builds into battle."""
+        hangar_source = (ROOT / "src" / "ui" / "hangar_screen.gd").read_text(encoding="utf-8")
+        main_source = (ROOT / "src" / "main.gd").read_text(encoding="utf-8")
+
+        for hook in [
+            "signal deploy_requested",
+            "func squad_overview",
+            "func deploy_loadouts",
+            "func deploy",
+        ]:
+            self.assertIn(hook, hangar_source)
+
+        for hook in [
+            "func deploy_hangar_builds",
+            "func configure_player_builds",
+        ]:
+            self.assertIn(hook, main_source)
+
 
 if __name__ == "__main__":
     unittest.main()

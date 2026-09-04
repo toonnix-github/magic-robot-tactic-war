@@ -2344,6 +2344,21 @@ func configure_player_loadouts(loadouts: Dictionary) -> void:
 			var cfg: Dictionary = loadouts[unit_id]
 			if cfg.has("pilot"):
 				_set_unit_pilot(unit, str(cfg["pilot"]))
+			if cfg.has("parts") and cfg["parts"] is Dictionary:
+				var part_stats: Dictionary = mech_build_model.build_stats({"parts": cfg["parts"]})
+				unit["base_move_range"] = int(part_stats.get("move", MOVE_RANGE))
+				unit["current_move_range"] = unit["base_move_range"]
+				unit["dodge"] = int(part_stats.get("dodge", 10))
+				unit["accuracy_modifier"] = int(part_stats.get("accuracy", 0))
+				unit["defense"] = int(part_stats.get("defense", 0))
+				var p_hp: Dictionary = part_stats.get("part_hp", {})
+				for p_name in PART_NAMES:
+					if unit["parts"].has(p_name):
+						var custom_max: int = int(p_hp.get(p_name, PART_MAX_HP))
+						unit["parts"][p_name]["max_hp"] = custom_max
+						unit["parts"][p_name]["hp"] = custom_max
+						unit["parts"][p_name]["destroyed"] = custom_max <= 0
+				unit["hp"] = combat_controller.overall_hp_ratio(unit, PART_NAMES)
 			if cfg.has("weapon") or cfg.has("off_hand") or cfg.has("pilot"):
 				if cfg.has("weapon"):
 					unit["weapon"] = cfg["weapon"]
@@ -2359,6 +2374,25 @@ func configure_player_loadouts(loadouts: Dictionary) -> void:
 			if cfg.has("orbs") and cfg["orbs"] is Dictionary:
 				for part_name in cfg["orbs"]:
 					_install_orb(unit, str(part_name), str(cfg["orbs"][part_name]))
+
+
+func configure_player_builds(builds: Dictionary) -> void:
+	var loadouts: Dictionary = {}
+	for unit_id in builds.keys():
+		loadouts[unit_id] = mech_build_model.battle_loadout_for_build(
+			builds[unit_id],
+			WEAPON_DATA,
+			ORB_DATA,
+			PART_NAMES
+		)
+	configure_player_loadouts(loadouts)
+
+
+func deploy_hangar_builds(hangar) -> void:
+	if hangar == null:
+		return
+	var loadouts: Dictionary = hangar.deploy_loadouts() if hangar.has_method("deploy_loadouts") else {}
+	configure_player_loadouts(loadouts)
 
 
 func _select_mission(mission_id: String, swapped_sides: bool = false) -> void:

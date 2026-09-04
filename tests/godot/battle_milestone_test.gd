@@ -116,6 +116,7 @@ func _run() -> void:
 	_run_phase2_weapon_offhand_rules_acceptance(scene)
 	_run_phase2_orb_installation_acceptance(scene)
 	_run_phase2_build_summary_and_signals_acceptance(scene)
+	_run_phase2_squad_deploy_builds_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -3372,6 +3373,75 @@ func _test_phase2_hangar_signals_flow(scene: Control, model, HangarScreenScript)
 	var updated_sigs: Dictionary = hangar.current_build_signals()
 	_assert_equal(int(updated_sigs["key_stats"]["move"]), 4, "#40: hangar signals update immediately on part change")
 	hangar.queue_free()
+
+
+func _run_phase2_squad_deploy_builds_acceptance(scene: Control) -> void:
+	var HangarScreenScript = load("res://src/ui/hangar_screen.gd")
+	var hangar = HangarScreenScript.new()
+	hangar._ready()
+
+	_assert_true(hangar.has_signal("deploy_requested"), "#41: hangar has deploy_requested signal")
+	_assert_true(hangar.has_method("squad_overview"), "#41: hangar has squad_overview method")
+	_assert_true(hangar.has_method("deploy_loadouts"), "#41: hangar has deploy_loadouts method")
+	_assert_true(hangar.has_method("deploy"), "#41: hangar has deploy method")
+	_assert_true(scene.has_method("deploy_hangar_builds"), "#41: scene has deploy_hangar_builds method")
+	_assert_true(scene.has_method("configure_player_builds"), "#41: scene has configure_player_builds method")
+
+	if not _failures.is_empty():
+		hangar.queue_free()
+		return
+
+	_test_phase2_squad_overview_content(hangar)
+	_test_phase2_deploy_hangar_builds_to_battle(scene, hangar)
+	_test_phase2_redeploy_after_hangar_change(scene, hangar)
+	hangar.queue_free()
+
+
+func _test_phase2_squad_overview_content(hangar) -> void:
+	var overview: Array = hangar.squad_overview()
+	_assert_equal(overview.size(), 4, "#41: squad overview contains all 4 units")
+	for unit_info in overview:
+		_assert_true(unit_info.has("unit_id"), "#41: squad item has unit_id")
+		_assert_true(unit_info.has("pilot"), "#41: squad item has pilot")
+		_assert_true(unit_info.has("mech"), "#41: squad item has mech")
+		_assert_true(unit_info.has("weapon"), "#41: squad item has weapon")
+		_assert_true(unit_info.has("move"), "#41: squad item has move")
+		_assert_true(unit_info.has("summary_line"), "#41: squad item has summary_line")
+
+
+func _test_phase2_deploy_hangar_builds_to_battle(scene: Control, hangar) -> void:
+	scene._load_mission("ancient_ruins", false)
+	hangar.select_unit("arlen")
+	hangar.swap_part("Legs", "sprinter_legs")
+	hangar.install_orb("Head", "lightning_r")
+
+	hangar.select_unit("sera")
+	var sera_build = hangar.builds["sera"].duplicate(true)
+	sera_build["off_hand"] = "Shield"
+	hangar.builds["sera"] = sera_build
+
+	scene.deploy_hangar_builds(hangar)
+
+	var arlen = scene._unit_by_id("arlen")
+	_assert_equal(int(arlen["base_move_range"]), 4, "#41: Arlen deployed with sprinter_legs Move 4")
+	_assert_equal(int(arlen["parts"]["Legs"]["max_hp"]), 72, "#41: Arlen Legs part HP updated from sprinter_legs")
+	_assert_equal(arlen["parts"]["Head"]["orb"], "lightning_r", "#41: Arlen deployed with installed Head Orb")
+
+	var sera = scene._unit_by_id("sera")
+	_assert_equal(sera["off_hand"], "Shield", "#41: Sera deployed with Shield off-hand")
+	_assert_true(scene._has_off_hand_shield(sera), "#41: Sera has active off-hand Shield in battle")
+
+
+func _test_phase2_redeploy_after_hangar_change(scene: Control, hangar) -> void:
+	scene._load_mission("ancient_ruins", false)
+	hangar.select_unit("arlen")
+	hangar.swap_part("Legs", "bulwark_legs")
+
+	scene.deploy_hangar_builds(hangar)
+
+	var arlen = scene._unit_by_id("arlen")
+	_assert_equal(int(arlen["base_move_range"]), 2, "#41: Arlen re-deployed with bulwark_legs Move 2")
+	_assert_equal(int(arlen["parts"]["Legs"]["max_hp"]), 132, "#41: Arlen Legs part HP updated from bulwark_legs")
 
 
 func _assert_true(actual: bool, message: String) -> void:
