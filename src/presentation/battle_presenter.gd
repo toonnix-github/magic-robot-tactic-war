@@ -41,7 +41,7 @@ func present_enemy_activation(scene, unit, plan: Dictionary) -> void:
 		if bool(preview["legal"]):
 			var attack_res: Dictionary = scene._resolve_attack_result(unit, plan["target"], preview, "", sim_seed)
 			if scene.attack_presentation_enabled:
-				await scene._present_attack_feedback(unit, plan["target"], attack_res)
+				await present_attack_feedback(scene, unit, plan["target"], attack_res)
 			scene._finish_activation(unit)
 			attacked = true
 
@@ -56,6 +56,69 @@ func present_enemy_activation(scene, unit, plan: Dictionary) -> void:
 	scene.queue_redraw()
 	if not scene._is_battle_over():
 		scene._begin_next_activation()
+
+
+func present_attack_feedback(scene, attacker, target, result: Dictionary) -> void:
+	if not scene.attack_presentation_enabled or scene.fast_simulation:
+		return
+
+	scene.attack_presentation_active = true
+	scene.attack_feedback_attacker_id = str(attacker["id"]) if attacker != null else ""
+	scene.attack_feedback_target_id = str(target["id"]) if target != null else ""
+	scene.attack_feedback_queue = build_attack_feedback_sequence(
+		attacker,
+		target,
+		result,
+		Callable(scene, "_unit_name_for_id"),
+		Callable(scene, "_unit_by_id")
+	)
+
+	for line in scene.attack_feedback_queue:
+		scene.last_action_message = line
+		scene.attack_feedback_log.append(line)
+		apply_attack_feedback_line(scene, target, line)
+		scene.queue_redraw()
+		await scene.get_tree().create_timer(scene.attack_feedback_step_seconds).timeout
+
+	scene.attack_feedback_queue.clear()
+	scene.attack_feedback_attacker_id = ""
+	scene.attack_feedback_target_id = ""
+	scene.attack_presentation_active = false
+	scene.queue_redraw()
+
+
+func apply_attack_feedback_line(scene, target, line: String) -> void:
+	if line.contains(" -> "):
+		var parts: PackedStringArray = line.split(" -> ")
+		var attacker_info: PackedStringArray = parts[0].split(" / ")
+		if attacker_info.size() == 2:
+			scene._add_event_message("%s attacks %s with %s" % [attacker_info[0].strip_edges(), parts[1].strip_edges(), attacker_info[1].strip_edges()])
+	elif line.contains("MISS"):
+		var miss_target = target if target != null else scene._unit_by_id(scene.attack_feedback_target_id)
+		if miss_target != null:
+			scene._add_floating_text(miss_target["grid"], "MISS", Color.WHITE)
+		scene._add_event_message("Missed!", 2.0)
+	elif line.contains("HIT / ") or line.contains("SHIELD INTERCEPT / "):
+		var split_idx: int = line.find("HIT / ")
+		if split_idx == -1:
+			split_idx = line.find("SHIELD INTERCEPT / ")
+		var payload: String = line.substr(split_idx).split(" / ")[1]
+		var dmg_idx: int = payload.rfind("-")
+		if dmg_idx != -1:
+			var dmg_str: String = payload.substr(dmg_idx)
+			var hit_target = target if target != null else scene._unit_by_id(scene.attack_feedback_target_id)
+			if hit_target != null:
+				scene._start_unit_shake(hit_target["id"])
+				scene._add_floating_text(hit_target["grid"], dmg_str, Color(0.9, 0.3, 0.3))
+				var target_name: String = str(hit_target.get("name", "Target"))
+				var part_name: String = payload.substr(0, dmg_idx).strip_edges()
+				scene._add_event_message("%s · %s %s" % [target_name, part_name, dmg_str])
+	elif line.contains("DESTROYED") or line.contains("DEFEATED") or line.contains("BROKEN"):
+		scene._add_event_message(line, 4.0)
+	elif line.begins_with("ORB PROC / "):
+		var proc: String = line.split(" / ")[1]
+		var attacker_name: String = scene._unit_name_for_id(scene.attack_feedback_attacker_id)
+		scene._add_event_message("%s triggered %s" % [attacker_name, proc])
 
 
 func build_attack_feedback_sequence(attacker, target, result: Dictionary, unit_name_for_id: Callable, unit_by_id: Callable) -> Array[String]:

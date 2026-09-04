@@ -1,6 +1,191 @@
 extends RefCounted
 class_name BattleHud
 
+func draw_selected_unit_panel(scene) -> void:
+	var rect: Rect2 = scene._r(30, 30, 235, 92)
+	scene._draw_panel(rect)
+	if scene.selected_unit == null:
+		return
+
+	var portrait_center: Vector2 = scene._p(74, 76)
+	var portrait_radius: float = min(28.0 * scene._scale().x, 28.0 * scene._scale().y)
+	scene.draw_circle(portrait_center, portrait_radius, Color(0.18, 0.25, 0.29))
+	scene.draw_arc(portrait_center, portrait_radius, 0.0, TAU, 40, Color(0.42, 0.50, 0.54), 2.0, true)
+	scene._draw_centered_text(Rect2(portrait_center - Vector2(portrait_radius, portrait_radius), Vector2(portrait_radius * 2.0, portrait_radius * 2.0)), str(scene.selected_unit["letter"]), 16, Color(0.86, 0.90, 0.92))
+
+	scene.draw_string(scene._font(), scene._p(115, 58), str(scene.selected_unit["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(18), Color(0.95, 0.97, 0.97))
+	var passive: Dictionary = scene._pilot_passive_for(scene.selected_unit)
+	var sub_text: String = "%s / %s" % [scene.selected_unit["mech"], scene.selected_unit["weapon"]]
+	if not passive.is_empty():
+		sub_text += " · %s" % str(passive.get("name", ""))
+	scene.draw_string(scene._font(), scene._p(115, 79), sub_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(12), Color(0.62, 0.69, 0.73))
+	if scene._is_active_unit(scene.selected_unit):
+		scene.draw_string(scene._font(), scene._p(222, 55), "ACTIVE", HORIZONTAL_ALIGNMENT_RIGHT, 25.0 * scene._scale().x, scene._font_size(9), Color(0.96, 0.86, 0.48))
+	scene._draw_bar(scene._r(115, 92, 122, 8), scene._overall_hp_ratio(scene.selected_unit), Color(0.46, 0.65, 0.56))
+
+
+func draw_part_status_panel(scene) -> void:
+	if scene.selected_unit == null:
+		return
+
+	var has_shield: bool = int(scene.selected_unit.get("shield_max_hp", 0)) > 0
+	var panel_h: float = 142.0 if has_shield else 126.0
+	scene._draw_panel(scene._r(30, 396, 235, panel_h))
+	scene.draw_string(scene._font(), scene._p(48, 416), "PART STATUS", HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(10), Color(0.56, 0.63, 0.67))
+	var y: float = 436.0
+	for part_name in scene.PART_NAMES:
+		var part: Dictionary = scene.selected_unit["parts"][part_name]
+		var p_hp: int = int(part.get("hp", 0))
+		var destroyed: bool = bool(part.get("destroyed", false)) or p_hp <= 0
+		var label_color: Color = Color(0.78, 0.82, 0.84) if not destroyed else Color(0.88, 0.48, 0.46)
+		scene.draw_string(scene._font(), scene._p(48, y), short_part_name(part_name), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(10), label_color)
+		if part.get("orb") != null:
+			var orb_data: Dictionary = scene._orb_data_for(part["orb"])
+			var elem: String = str(orb_data.get("element", ""))
+			var orb_col: Color = Color(0.95, 0.50, 0.25) if elem == "Fire" else (Color(0.35, 0.65, 0.95) if elem == "Water" else (Color(0.95, 0.85, 0.25) if elem == "Lightning" else Color(0.65, 0.75, 0.45)))
+			if destroyed or bool(part.get("orb_disabled", false)):
+				orb_col = Color(0.40, 0.40, 0.40)
+			scene.draw_circle(scene._p(40, y - 3.0), 2.5 * min(scene._scale().x, scene._scale().y), orb_col)
+		scene._draw_bar(scene._r(96, y - 8.0, 68, 7), scene._part_hp_ratio(scene.selected_unit, part_name), Color(0.46, 0.65, 0.56) if not destroyed else Color(0.76, 0.32, 0.31))
+		scene.draw_string(scene._font(), scene._p(170, y), part_hp_text(scene.selected_unit, part_name, scene.PART_MAX_HP), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), label_color)
+		y += 15.0
+
+	if has_shield:
+		var s_hp: int = int(scene.selected_unit.get("shield_hp", 0))
+		var s_max: int = int(scene.selected_unit.get("shield_max_hp", 0))
+		var s_active: bool = scene._shield_is_active(scene.selected_unit)
+		var s_col: Color = Color(0.53, 0.71, 0.75) if s_active else Color(0.76, 0.32, 0.31)
+		scene.draw_string(scene._font(), scene._p(48, y), "Shield", HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(10), s_col)
+		scene._draw_bar(scene._r(96, y - 8.0, 68, 7), float(s_hp) / float(s_max) if s_max > 0 else 0.0, Color(0.40, 0.60, 0.75) if s_active else Color(0.76, 0.32, 0.31))
+		scene.draw_string(scene._font(), scene._p(170, y), shield_hp_text(scene.selected_unit, Callable(scene, "_shield_is_active")), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), s_col)
+
+
+func inspect_target(scene, target) -> Dictionary:
+	if target == null:
+		return {}
+	scene.selected_unit = target
+	if scene.active_unit != null:
+		return scene._preview_attack_target(target)
+	scene.queue_redraw()
+	return {}
+
+
+func inspect_unit(scene, unit) -> void:
+	if unit == null:
+		return
+	scene.selected_unit = unit
+	if scene.active_unit != null and scene.turn_state == scene.TurnState.SELECTING_ATTACK:
+		scene._preview_attack_target(unit)
+	else:
+		scene.queue_redraw()
+
+
+func draw_enemy_inspection_panel(scene) -> void:
+	if scene.selected_unit == null or scene.selected_unit == scene.active_unit:
+		return
+	if scene.selected_unit["team"] != "enemy" and scene.turn_state != scene.TurnState.SELECTING_ATTACK:
+		return
+
+	scene._draw_panel(scene._r(960, 126, 310, 385))
+	var data: Dictionary = scene._target_inspection_data(scene.selected_unit)
+	var is_enemy: bool = str(scene.selected_unit.get("team", "")) == "enemy"
+	var header_title: String = "TARGET INSPECTION" if scene.turn_state == scene.TurnState.SELECTING_ATTACK else ("ENEMY INTEL" if is_enemy else "ALLY INTEL")
+	var header_color: Color = Color(0.85, 0.65, 0.40) if scene.turn_state == scene.TurnState.SELECTING_ATTACK else Color(0.56, 0.63, 0.67)
+	scene.draw_string(scene._font(), scene._p(976, 148), header_title, HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(10), header_color)
+
+	scene.draw_string(scene._font(), scene._p(976, 170), str(scene.selected_unit["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(16), Color(0.95, 0.97, 0.97))
+	scene.draw_string(scene._font(), scene._p(976, 188), "%s · %s" % [scene.selected_unit["mech"], scene.selected_unit["weapon"]], HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(11), Color(0.62, 0.69, 0.73))
+	scene.draw_string(scene._font(), scene._p(976, 204), str(data.get("terrain_desc", "")), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(10), Color(0.70, 0.75, 0.77))
+
+	var y: float = 220.0
+	for part_name in scene.PART_NAMES:
+		var p_info: Dictionary = data["parts"][part_name]
+		var p_hp: int = int(p_info["hp"])
+		var p_max: int = int(p_info["max_hp"])
+		var destroyed: bool = bool(p_info["destroyed"])
+		var label_col: Color = Color(0.78, 0.82, 0.84) if not destroyed else Color(0.88, 0.48, 0.46)
+		scene.draw_string(scene._font(), scene._p(976, y), short_part_name(part_name), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(10), label_col)
+		scene._draw_bar(scene._r(1030, y - 8.0, 130, 7), float(p_hp) / float(p_max) if p_max > 0 else 0.0, Color(0.46, 0.65, 0.56) if not destroyed else Color(0.76, 0.32, 0.31))
+		scene.draw_string(scene._font(), scene._p(1170, y), part_hp_text(scene.selected_unit, part_name, scene.PART_MAX_HP), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), label_col)
+		y += 15.0
+
+	if bool(data.get("has_shield", false)):
+		var s_hp: int = int(data["shield_hp"])
+		var s_max: int = int(data["shield_max_hp"])
+		var s_active: bool = bool(data["shield_active"])
+		scene.draw_string(scene._font(), scene._p(976, y), "Shield", HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(10), Color(0.53, 0.71, 0.75) if s_active else Color(0.76, 0.32, 0.31))
+		scene._draw_bar(scene._r(1030, y - 8.0, 130, 7), float(s_hp) / float(s_max) if s_max > 0 else 0.0, Color(0.40, 0.60, 0.75) if s_active else Color(0.76, 0.32, 0.31))
+		scene.draw_string(scene._font(), scene._p(1170, y), shield_hp_text(scene.selected_unit, Callable(scene, "_shield_is_active")), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), Color(0.53, 0.71, 0.75) if s_active else Color(0.76, 0.32, 0.31))
+		y += 15.0
+
+	for consequence in data.get("consequences", []):
+		scene.draw_string(scene._font(), scene._p(976, y), "! " + str(consequence), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), Color(0.96, 0.76, 0.40))
+		y += 13.0
+
+	var statuses: Array = data.get("statuses", [])
+	if not statuses.is_empty():
+		scene.draw_string(scene._font(), scene._p(976, y), "Status: " + ", ".join(statuses), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), Color(0.96, 0.58, 0.35))
+		y += 13.0
+
+	var orbs: Array = data.get("orbs", [])
+	if not orbs.is_empty():
+		scene.draw_string(scene._font(), scene._p(976, y), "Orbs: " + ", ".join(orbs), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), Color(0.45, 0.75, 0.90))
+		y += 13.0
+
+	var pilot: Dictionary = data.get("pilot", {})
+	if not pilot.is_empty():
+		scene.draw_string(scene._font(), scene._p(976, y), "Pilot: %s · %s" % [str(pilot.get("name", "")), str(pilot.get("passive_name", ""))], HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), Color(0.85, 0.75, 0.95))
+		y += 13.0
+
+	if scene.turn_state == scene.TurnState.SELECTING_ATTACK and not data["attack_preview"].is_empty():
+		var preview: Dictionary = data["attack_preview"]
+		y += 4.0
+		scene.draw_line(scene._p(976, y), scene._p(1250, y), Color(0.25, 0.33, 0.36), 1.0)
+		y += 14.0
+		var legal: bool = bool(preview["legal"])
+		var hit: int = int(preview["hit_percent"])
+		var dmg: int = int(preview["damage"])
+		var h_mod: int = int(preview.get("height_hit_modifier", 0))
+		var c_mod: int = int(preview.get("cover_dodge_modifier", 0))
+		var pat: String = str(preview.get("weapon_pattern", "single"))
+		var status_text: String = "LEGAL TARGET" if legal else "INVALID TARGET"
+		var status_color: Color = Color(0.40, 0.78, 0.58) if legal else Color(0.88, 0.42, 0.42)
+		scene.draw_string(scene._font(), scene._p(976, y), status_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(10), status_color)
+		y += 14.0
+		var mod_notes: String = ""
+		if h_mod != 0:
+			mod_notes += " (H%+d%%)" % h_mod
+		if c_mod != 0:
+			mod_notes += " (Cover %+d%%)" % c_mod
+		scene.draw_string(scene._font(), scene._p(976, y), "Hit: %d%%%s · Est Dmg: %d" % [hit, mod_notes, dmg], HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(10), Color(0.93, 0.96, 0.96))
+		y += 14.0
+		scene.draw_string(scene._font(), scene._p(976, y), "Pattern: %s · Range: %d-%d" % [pat.to_upper(), int(preview.get("min_range", 1)), int(preview.get("range", 1))], HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), Color(0.62, 0.69, 0.73))
+		y += 14.0
+		if str(data.get("shield_warning", "")) != "":
+			scene.draw_string(scene._font(), scene._p(976, y), "! " + str(data["shield_warning"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, scene._font_size(9), Color(0.96, 0.86, 0.48))
+
+
+func handle_hud_input(scene, tapped_unit) -> bool:
+	if tapped_unit == null:
+		return false
+	if scene.turn_state == scene.TurnState.MOVE_PREVIEW:
+		if scene._is_active_unit(tapped_unit):
+			scene._cancel_move_preview()
+			return true
+		return false
+	if scene.selected_action == "Attack" and scene.turn_state == scene.TurnState.SELECTING_ATTACK:
+		if scene._is_active_unit(tapped_unit):
+			scene._cancel_attack_selection()
+		elif scene.selected_unit != null and scene.selected_unit["id"] == tapped_unit["id"] and scene._is_attack_target_legal(scene.active_unit, tapped_unit):
+			scene._confirm_attack_target(tapped_unit)
+		else:
+			inspect_target(scene, tapped_unit)
+		return true
+
+	inspect_unit(scene, tapped_unit)
+	return true
+
+
 func part_hp_text(unit, part_name: String, part_max_hp: int) -> String:
 	if unit == null or not unit.get("parts", {}).has(part_name):
 		return "0 / 0"

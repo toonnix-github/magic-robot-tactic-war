@@ -271,22 +271,9 @@ func _gui_input(event: InputEvent) -> void:
 
 	var tapped_unit = _unit_at_position(press_position)
 	if tapped_unit != null:
-		if turn_state == TurnState.MOVE_PREVIEW:
-			if _is_active_unit(tapped_unit):
-				_cancel_move_preview()
-				accept_event()
-				return
-		elif selected_action == "Attack" and turn_state == TurnState.SELECTING_ATTACK:
-			if _is_active_unit(tapped_unit):
-				_cancel_attack_selection()
-			elif selected_unit != null and selected_unit["id"] == tapped_unit["id"] and _is_attack_target_legal(active_unit, tapped_unit):
-				_confirm_attack_target(tapped_unit)
-			else:
-				_inspect_target(tapped_unit)
+		if battle_hud.handle_hud_input(self, tapped_unit):
 			accept_event()
 			return
-
-		_inspect_unit(tapped_unit)
 		accept_event()
 		return
 
@@ -297,11 +284,11 @@ func _gui_input(event: InputEvent) -> void:
 func _draw() -> void:
 	_draw_background()
 	_draw_battlefield()
-	_draw_selected_unit_panel()
+	battle_hud.draw_selected_unit_panel(self)
 	_draw_initiative_strip()
 	_draw_mission_panel()
-	_draw_part_status_panel()
-	_draw_enemy_inspection_panel()
+	battle_hud.draw_part_status_panel(self)
+	battle_hud.draw_enemy_inspection_panel(self)
 	_draw_action_bar()
 	_draw_floating_texts()
 	_draw_event_feed()
@@ -970,11 +957,58 @@ func _resolve_attack_result(attacker, target, preview: Dictionary, part_name := 
 	var weapon_data := _weapon_data_for(attacker)
 	var attack_res: Dictionary = {}
 	if str(weapon_data.get("pattern", "single")) == "line_2":
-		attack_res = _resolve_spear_attack(attacker, target, preview, seed)
+		attack_res = combat_controller.resolve_spear_attack(
+			attacker,
+			target,
+			preview,
+			seed,
+			PART_NAMES,
+			weapon_data,
+			Callable(self, "_spear_direction"),
+			Callable(self, "_line_attack_targets"),
+			Callable(self, "_attack_preview"),
+			Callable(self, "_terrain_adjusted_damage"),
+			Callable(self, "_calculate_attack_damage"),
+			Callable(self, "_damage_part"),
+			Callable(self, "_combat_resolve_orb_proc")
+		)
 	elif str(weapon_data.get("pattern", "single")) == "volley":
-		attack_res = _resolve_rifle_attack(attacker, target, preview, seed)
+		attack_res = combat_controller.resolve_rifle_attack(
+			attacker,
+			target,
+			preview,
+			seed,
+			PART_NAMES,
+			weapon_data,
+			Callable(self, "_intercepting_shield_for"),
+			Callable(self, "_should_hit_shield"),
+			Callable(self, "_terrain_adjusted_damage"),
+			Callable(self, "_calculate_attack_damage"),
+			Callable(self, "_damage_part"),
+			Callable(self, "_damage_shield"),
+			Callable(self, "_pilot_shield_damage_reduction"),
+			Callable(self, "_combat_resolve_orb_proc")
+		)
 	else:
-		attack_res = _resolve_blockable_shot(attacker, target, preview, part_name, seed, int(weapon_data["damage"]), seed)
+		attack_res = combat_controller.resolve_blockable_shot(
+			attacker,
+			target,
+			preview,
+			part_name,
+			seed,
+			int(weapon_data["damage"]),
+			seed,
+			PART_NAMES,
+			weapon_data,
+			Callable(self, "_intercepting_shield_for"),
+			Callable(self, "_should_hit_shield"),
+			Callable(self, "_terrain_adjusted_damage"),
+			Callable(self, "_calculate_attack_damage"),
+			Callable(self, "_damage_part"),
+			Callable(self, "_damage_shield"),
+			Callable(self, "_pilot_shield_damage_reduction"),
+			Callable(self, "_combat_resolve_orb_proc")
+		)
 
 	if attack_res.get("intercepted", false):
 		var shield_u = attack_res.get("shield_unit")
@@ -1035,68 +1069,13 @@ func _resolve_attack_result(attacker, target, preview: Dictionary, part_name := 
 
 
 func _present_attack_then_finish(attacker, target, result: Dictionary) -> void:
-	await _present_attack_feedback(attacker, target, result)
+	await battle_presenter.present_attack_feedback(self, attacker, target, result)
 	_finish_activation(attacker)
 	_is_activating = false
 	queue_redraw()
 	if not _is_battle_over():
 		_begin_next_activation()
 	presented_attack_completed.emit()
-
-
-func _present_attack_feedback(attacker, target, result: Dictionary) -> void:
-	if not attack_presentation_enabled or fast_simulation:
-		return
-
-	attack_presentation_active = true
-	attack_feedback_attacker_id = str(attacker["id"]) if attacker != null else ""
-	attack_feedback_target_id = str(target["id"]) if target != null else ""
-	attack_feedback_queue = _build_attack_feedback_sequence(attacker, target, result)
-	for line in attack_feedback_queue:
-		last_action_message = line
-		attack_feedback_log.append(line)
-		
-		# Parse the structured string to trigger UI effects synchronously
-		if line.contains(" -> "):
-			# Example: "Arlen / Spear -> Enemy Blade"
-			var parts = line.split(" -> ")
-			var attacker_info = parts[0].split(" / ")
-			if attacker_info.size() == 2:
-				_add_event_message("%s attacks %s with %s" % [attacker_info[0].strip_edges(), parts[1].strip_edges(), attacker_info[1].strip_edges()])
-		elif line.contains("MISS"):
-			var tgt = target if target != null else _unit_by_id(attack_feedback_target_id)
-			if tgt != null:
-				_add_floating_text(tgt["grid"], "MISS", Color.WHITE)
-			_add_event_message("Missed!", 2.0)
-		elif line.contains("HIT / ") or line.contains("SHIELD INTERCEPT / "):
-			var split_idx = line.find("HIT / ")
-			if split_idx == -1: split_idx = line.find("SHIELD INTERCEPT / ")
-			var payload = line.substr(split_idx).split(" / ")[1]
-			# payload is like "Body -12" or "Enemy Shield -12"
-			var dmg_idx = payload.rfind("-")
-			if dmg_idx != -1:
-				var dmg_str = payload.substr(dmg_idx)
-				var tgt = target if target != null else _unit_by_id(attack_feedback_target_id)
-				if tgt != null:
-					_start_unit_shake(tgt["id"])
-					_add_floating_text(tgt["grid"], dmg_str, Color(0.9, 0.3, 0.3))
-					var target_name = str(tgt.get("name", "Target"))
-					var part_name = payload.substr(0, dmg_idx).strip_edges()
-					_add_event_message("%s · %s %s" % [target_name, part_name, dmg_str])
-		elif line.contains("DESTROYED") or line.contains("DEFEATED") or line.contains("BROKEN"):
-			_add_event_message(line, 4.0)
-		elif line.begins_with("ORB PROC / "):
-			var proc = line.split(" / ")[1]
-			var attacker_name = _unit_name_for_id(attack_feedback_attacker_id)
-			_add_event_message("%s triggered %s" % [attacker_name, proc])
-			
-		queue_redraw()
-		await get_tree().create_timer(attack_feedback_step_seconds).timeout
-	attack_feedback_queue.clear()
-	attack_feedback_attacker_id = ""
-	attack_feedback_target_id = ""
-	attack_presentation_active = false
-	queue_redraw()
 
 
 func _build_attack_feedback_sequence(attacker, target, result: Dictionary) -> Array[String]:
@@ -1156,65 +1135,6 @@ func _damage_part(unit, part_name: String, amount: int) -> Dictionary:
 func _damage_shield(unit, amount: int) -> Dictionary:
 	return combat_controller.damage_shield(unit, amount, turn_log)
 
-
-
-func _resolve_blockable_shot(attacker, target, preview: Dictionary, part_name := "", hit_seed := 0, damage := 0, part_seed := 0) -> Dictionary:
-	var weapon_data := _weapon_data_for(attacker)
-	var shield_unit = _intercepting_shield_for(attacker, target, weapon_data)
-	if shield_unit != null:
-		return _resolve_shield_damage(attacker, shield_unit, target, preview, hit_seed, damage, true)
-	if _should_hit_shield(target, weapon_data, part_seed):
-		return _resolve_shield_damage(attacker, target, target, preview, hit_seed, damage, false)
-	return _resolve_weapon_attack(attacker, target, preview, part_name, hit_seed, damage, part_seed)
-
-
-func _resolve_shield_damage(attacker, shield_unit, original_target, preview: Dictionary, hit_seed: int, damage: int, intercepted: bool) -> Dictionary:
-	var hit_percent := int(preview["hit_percent"])
-	var hit := _roll_hit(hit_percent, hit_seed)
-	var damage_result := _shield_damage_result(shield_unit)
-	var orb_proc := _empty_orb_proc()
-	if hit:
-		var raw_dmg := _calculate_attack_damage(attacker, damage, shield_unit, "Shield")
-		var terrain_dmg := _terrain_adjusted_damage(shield_unit, raw_dmg)
-		var reduction := _pilot_shield_damage_reduction(shield_unit)
-		var final_shield_dmg: int = int(max(1, terrain_dmg - reduction)) if reduction > 0 else terrain_dmg
-		damage_result = _damage_shield(shield_unit, final_shield_dmg)
-		orb_proc = _resolve_orb_proc(attacker, shield_unit, hit_seed)
-	return {
-		"attacker_id": str(attacker["id"]),
-		"target_id": str(shield_unit["id"]),
-		"original_target_id": str(original_target["id"]),
-		"weapon": str(_weapon_data_for(attacker)["name"]),
-		"part_name": "Shield",
-		"damage_requested": int(damage_result["damage_requested"]),
-		"damage_applied": int(damage_result["damage_applied"]),
-		"hp_before": int(damage_result["hp_before"]),
-		"hp_after": int(damage_result["hp_after"]),
-		"destroyed": bool(damage_result["destroyed"]),
-		"destroyed_now": bool(damage_result["destroyed_now"]),
-		"hit": hit,
-		"hit_percent": hit_percent,
-		"intercepted": intercepted,
-		"shield_hp_before": int(damage_result["hp_before"]),
-		"shield_hp_after": int(damage_result["hp_after"]),
-		"orb_proc": orb_proc,
-	}
-
-
-func _shield_damage_result(unit) -> Dictionary:
-	return {
-		"unit_id": str(unit["id"]),
-		"part_name": "Shield",
-		"damage_requested": 0,
-		"damage_applied": 0,
-		"hp_before": int(unit.get("shield_hp", 0)),
-		"hp_after": int(unit.get("shield_hp", 0)),
-		"destroyed": not _shield_is_active(unit),
-		"destroyed_now": false,
-		"orb_disabled": false,
-	}
-
-
 func _resolve_weapon_attack(attacker, target, preview: Dictionary, part_name := "", seed := 0, damage_override := -1, part_seed := -1) -> Dictionary:
 	var weapon_data := _weapon_data_for(attacker)
 	return combat_controller.resolve_weapon_attack(
@@ -1230,88 +1150,8 @@ func _resolve_weapon_attack(attacker, target, preview: Dictionary, part_name := 
 		Callable(self, "_terrain_adjusted_damage"),
 		Callable(self, "_calculate_attack_damage"),
 		Callable(self, "_damage_part"),
-		Callable(self, "_resolve_orb_proc")
+		Callable(self, "_combat_resolve_orb_proc")
 	)
-
-
-func _resolve_spear_attack(attacker, target, preview: Dictionary, seed := 0) -> Dictionary:
-	var weapon_data := _weapon_data_for(attacker)
-	var direction := _spear_direction(attacker, target)
-	var lane_targets := _line_attack_targets(attacker, direction, int(weapon_data["range_max"]))
-	var results := []
-	for lane_target in lane_targets:
-		var tile_index: int = int(lane_target["tile_index"])
-		var lane_preview := _attack_preview(attacker, lane_target["unit"])
-		var damage: int = int(weapon_data["damage"]) if tile_index == 1 else int(weapon_data["secondary_damage"])
-		var result := _resolve_weapon_attack(attacker, lane_target["unit"], lane_preview, "", seed + tile_index - 1, damage, seed + tile_index - 1)
-		result["tile_index"] = tile_index
-		result["grid"] = lane_target["grid"]
-		results.append(result)
-
-	var total_damage := 0
-	var any_hit := false
-	for result in results:
-		total_damage += int(result["damage_applied"])
-		any_hit = any_hit or bool(result["hit"])
-
-	var primary_result := _miss_damage_result(target, "Body")
-	if not results.is_empty():
-		primary_result = results[0]
-
-	return {
-		"attacker_id": str(attacker["id"]),
-		"target_id": str(target["id"]),
-		"weapon": str(weapon_data["name"]),
-		"part_name": str(primary_result["part_name"]),
-		"damage_requested": int(weapon_data["damage"]),
-		"damage_applied": total_damage,
-		"hp_before": int(primary_result["hp_before"]),
-		"hp_after": int(primary_result["hp_after"]),
-		"destroyed": bool(primary_result["destroyed"]),
-		"destroyed_now": bool(primary_result.get("destroyed_now", false)),
-		"hit": any_hit,
-		"hit_percent": int(preview["hit_percent"]),
-		"direction": direction,
-		"results": results,
-	}
-
-
-func _resolve_rifle_attack(attacker, target, preview: Dictionary, seed := 0) -> Dictionary:
-	var weapon_data := _weapon_data_for(attacker)
-	var shots := []
-	var shot_count := int(weapon_data["shot_count"])
-	for shot_index in range(shot_count):
-		var hit_seed: int = seed + shot_index
-		var part_seed: int = _volley_part_seed(seed, shot_index)
-		var shot := _resolve_blockable_shot(attacker, target, preview, "", hit_seed, int(weapon_data["damage"]), part_seed)
-		shot["shot_index"] = shot_index + 1
-		shots.append(shot)
-
-	var total_damage := 0
-	var any_hit := false
-	var primary_result := _miss_damage_result(target, "Body")
-	for shot in shots:
-		total_damage += int(shot["damage_applied"])
-		any_hit = any_hit or bool(shot["hit"])
-		if bool(shot["hit"]) and not bool(primary_result.get("hit_selected", false)):
-			primary_result = shot
-			primary_result["hit_selected"] = true
-
-	return {
-		"attacker_id": str(attacker["id"]),
-		"target_id": str(target["id"]),
-		"weapon": str(weapon_data["name"]),
-		"part_name": str(primary_result["part_name"]),
-		"damage_requested": int(weapon_data["damage"]) * shot_count,
-		"damage_applied": total_damage,
-		"hp_before": int(primary_result["hp_before"]),
-		"hp_after": int(primary_result["hp_after"]),
-		"destroyed": bool(primary_result["destroyed"]),
-		"destroyed_now": bool(primary_result.get("destroyed_now", false)),
-		"hit": any_hit,
-		"hit_percent": int(preview["hit_percent"]),
-		"shots": shots,
-	}
 
 
 func _volley_part_seed(seed: int, shot_index: int) -> int:
@@ -1349,74 +1189,24 @@ func _active_orbs(unit) -> Array:
 	return combat_controller.active_orbs(unit, PART_NAMES, ORB_DATA)
 
 
-func _orb_effects(unit, effect_type := "") -> Array:
-	var effects := []
-	for orb in _active_orbs(unit):
-		for effect in orb["effects"]:
-			if effect_type == "" or str(effect.get("type", "")) == effect_type:
-				var active_effect: Dictionary = effect.duplicate(true)
-				active_effect["orb_id"] = str(orb["id"])
-				active_effect["element"] = str(orb["element"])
-				active_effect["rarity"] = str(orb["rarity"])
-				effects.append(active_effect)
-	return effects
-
-
 func _orb_damage_modifier_percent(unit) -> int:
-	var modifier := 0
-	for effect in _orb_effects(unit, "damage_percent"):
-		modifier += int(effect.get("percent", 0))
-	return modifier
+	return combat_controller.orb_damage_modifier_percent(unit, PART_NAMES, ORB_DATA)
 
 
 func _orb_hit_modifier(unit) -> int:
-	var modifier := 0
-	for effect in _orb_effects(unit, "hit_bonus"):
-		modifier += int(effect.get("amount", 0))
-	return modifier
+	return combat_controller.orb_hit_modifier(unit, PART_NAMES, ORB_DATA)
 
 
 func _orb_adjusted_damage(unit, damage: int) -> int:
-	var modifier := _orb_damage_modifier_percent(unit)
-	return int(round(float(max(0, damage)) * (100.0 + float(modifier)) / 100.0))
+	return combat_controller.orb_adjusted_damage(unit, damage, PART_NAMES, ORB_DATA)
 
 
-func _resolve_orb_proc(attacker, target, seed: int) -> Dictionary:
-	var proc_effects := _orb_effects(attacker, "proc_status")
-	var pilot_bonus := _pilot_orb_proc_bonus(attacker)
-	for index in range(proc_effects.size()):
-		var effect: Dictionary = proc_effects[index]
-		var chance := int(effect.get("chance_percent", 0)) + pilot_bonus
-		if absi(seed + index * 37) % 100 < chance:
-			var status := str(effect.get("status", ""))
-			_apply_status(target, status)
-			return {
-				"triggered": true,
-				"status": status,
-				"orb_id": str(effect["orb_id"]),
-				"seed": seed,
-			}
-	return _empty_orb_proc(seed)
+func _combat_resolve_orb_proc(attacker, target, seed: int) -> Dictionary:
+	return combat_controller.resolve_orb_proc(attacker, target, seed, PART_NAMES, ORB_DATA, Callable(self, "_pilot_orb_proc_bonus"), turn_log)
 
 
 func _empty_orb_proc(seed := 0) -> Dictionary:
-	return {
-		"triggered": false,
-		"status": "",
-		"orb_id": "",
-		"seed": seed,
-	}
-
-
-func _apply_status(unit, status: String) -> bool:
-	if unit == null or status == "":
-		return false
-	if not unit.has("statuses"):
-		unit["statuses"] = []
-	if not unit["statuses"].has(status):
-		unit["statuses"].append(status)
-		turn_log.append("%s:apply_status:%s" % [unit["id"], status])
-	return true
+	return combat_controller.empty_orb_proc(seed)
 
 
 func _has_status(unit, status: String) -> bool:
@@ -2296,29 +2086,6 @@ func _draw_movement_preview() -> void:
 	)
 
 
-func _draw_selected_unit_panel() -> void:
-	var rect := _r(30, 30, 235, 92)
-	_draw_panel(rect)
-	if selected_unit == null:
-		return
-
-	var portrait_center := _p(74, 76)
-	var portrait_radius: float = min(28.0 * _scale().x, 28.0 * _scale().y)
-	draw_circle(portrait_center, portrait_radius, Color(0.18, 0.25, 0.29))
-	draw_arc(portrait_center, portrait_radius, 0.0, TAU, 40, Color(0.42, 0.50, 0.54), 2.0, true)
-	_draw_centered_text(Rect2(portrait_center - Vector2(portrait_radius, portrait_radius), Vector2(portrait_radius * 2.0, portrait_radius * 2.0)), str(selected_unit["letter"]), 16, Color(0.86, 0.90, 0.92))
-
-	draw_string(_font(), _p(115, 58), str(selected_unit["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(18), Color(0.95, 0.97, 0.97))
-	var passive := _pilot_passive_for(selected_unit)
-	var sub_text := "%s / %s" % [selected_unit["mech"], selected_unit["weapon"]]
-	if not passive.is_empty():
-		sub_text += " · %s" % str(passive.get("name", ""))
-	draw_string(_font(), _p(115, 79), sub_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(12), Color(0.62, 0.69, 0.73))
-	if _is_active_unit(selected_unit):
-		draw_string(_font(), _p(222, 55), "ACTIVE", HORIZONTAL_ALIGNMENT_RIGHT, 25.0 * _scale().x, _font_size(9), Color(0.96, 0.86, 0.48))
-	_draw_bar(_r(115, 92, 122, 8), _overall_hp_ratio(selected_unit), Color(0.46, 0.65, 0.56))
-
-
 func _draw_initiative_strip() -> void:
 	_draw_panel(_r(476, 27, 360, 58))
 	draw_string(_font(), _p(494, 48), "NEXT", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.56, 0.63, 0.67))
@@ -2376,65 +2143,6 @@ func _shield_hp_text(unit) -> String:
 	return battle_hud.shield_hp_text(unit, Callable(self, "_shield_is_active"))
 
 
-func _draw_part_status_panel() -> void:
-	if selected_unit == null:
-		return
-
-	var has_shield: bool = int(selected_unit.get("shield_max_hp", 0)) > 0
-	var panel_h: float = 142.0 if has_shield else 126.0
-	_draw_panel(_r(30, 396, 235, panel_h))
-	draw_string(_font(), _p(48, 416), "PART STATUS", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.56, 0.63, 0.67))
-	var y := 436.0
-	for index in range(PART_NAMES.size()):
-		var part_name: String = PART_NAMES[index]
-		var part: Dictionary = selected_unit["parts"][part_name]
-		var p_hp := int(part.get("hp", 0))
-		var destroyed: bool = bool(part.get("destroyed", false)) or p_hp <= 0
-		var label_color := Color(0.78, 0.82, 0.84) if not destroyed else Color(0.88, 0.48, 0.46)
-		draw_string(_font(), _p(48, y), _short_part_name(part_name), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), label_color)
-		if part.get("orb") != null:
-			var orb_data := _orb_data_for(part["orb"])
-			var elem := str(orb_data.get("element", ""))
-			var orb_col := Color(0.95, 0.50, 0.25) if elem == "Fire" else (Color(0.35, 0.65, 0.95) if elem == "Water" else (Color(0.95, 0.85, 0.25) if elem == "Lightning" else Color(0.65, 0.75, 0.45)))
-			if destroyed or bool(part.get("orb_disabled", false)):
-				orb_col = Color(0.40, 0.40, 0.40)
-			draw_circle(_p(40, y - 3.0), 2.5 * min(_scale().x, _scale().y), orb_col)
-		_draw_bar(_r(96, y - 8.0, 68, 7), _part_hp_ratio(selected_unit, part_name), Color(0.46, 0.65, 0.56) if not destroyed else Color(0.76, 0.32, 0.31))
-		var hp_str := _part_hp_text(selected_unit, part_name)
-		draw_string(_font(), _p(170, y), hp_str, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), label_color)
-		y += 15.0
-
-	if has_shield:
-		var s_hp := int(selected_unit.get("shield_hp", 0))
-		var s_max := int(selected_unit.get("shield_max_hp", 0))
-		var s_active := _shield_is_active(selected_unit)
-		var s_col := Color(0.53, 0.71, 0.75) if s_active else Color(0.76, 0.32, 0.31)
-		draw_string(_font(), _p(48, y), "Shield", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), s_col)
-		_draw_bar(_r(96, y - 8.0, 68, 7), float(s_hp) / float(s_max) if s_max > 0 else 0.0, Color(0.40, 0.60, 0.75) if s_active else Color(0.76, 0.32, 0.31))
-		var s_str := _shield_hp_text(selected_unit)
-		draw_string(_font(), _p(170, y), s_str, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), s_col)
-
-
-func _inspect_target(target) -> Dictionary:
-	if target == null:
-		return {}
-	selected_unit = target
-	if active_unit != null:
-		return _preview_attack_target(target)
-	queue_redraw()
-	return {}
-
-
-func _inspect_unit(unit) -> void:
-	if unit == null:
-		return
-	selected_unit = unit
-	if active_unit != null and turn_state == TurnState.SELECTING_ATTACK:
-		_preview_attack_target(unit)
-	else:
-		queue_redraw()
-
-
 func _target_inspection_data(unit) -> Dictionary:
 	if unit == null:
 		return {}
@@ -2462,95 +2170,6 @@ func _target_inspection_data(unit) -> Dictionary:
 		preview,
 		interceptor
 	)
-
-
-func _draw_enemy_inspection_panel() -> void:
-	if selected_unit == null or selected_unit == active_unit:
-		return
-	if selected_unit["team"] != "enemy" and turn_state != TurnState.SELECTING_ATTACK:
-		return
-
-	var panel_rect := _r(960, 126, 310, 385)
-	_draw_panel(panel_rect)
-
-	var data: Dictionary = _target_inspection_data(selected_unit)
-	var is_enemy: bool = str(selected_unit.get("team", "")) == "enemy"
-	var header_title := "TARGET INSPECTION" if turn_state == TurnState.SELECTING_ATTACK else ("ENEMY INTEL" if is_enemy else "ALLY INTEL")
-	var header_color := Color(0.85, 0.65, 0.40) if turn_state == TurnState.SELECTING_ATTACK else Color(0.56, 0.63, 0.67)
-	draw_string(_font(), _p(976, 148), header_title, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), header_color)
-
-	draw_string(_font(), _p(976, 170), str(selected_unit["name"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(16), Color(0.95, 0.97, 0.97))
-	draw_string(_font(), _p(976, 188), "%s · %s" % [selected_unit["mech"], selected_unit["weapon"]], HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(11), Color(0.62, 0.69, 0.73))
-	draw_string(_font(), _p(976, 204), str(data.get("terrain_desc", "")), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.70, 0.75, 0.77))
-
-	var y := 220.0
-	for part_name in PART_NAMES:
-		var p_info: Dictionary = data["parts"][part_name]
-		var p_hp: int = int(p_info["hp"])
-		var p_max: int = int(p_info["max_hp"])
-		var destroyed: bool = bool(p_info["destroyed"])
-		var label_col := Color(0.78, 0.82, 0.84) if not destroyed else Color(0.88, 0.48, 0.46)
-		draw_string(_font(), _p(976, y), _short_part_name(part_name), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), label_col)
-		_draw_bar(_r(1030, y - 8.0, 130, 7), float(p_hp) / float(p_max) if p_max > 0 else 0.0, Color(0.46, 0.65, 0.56) if not destroyed else Color(0.76, 0.32, 0.31))
-		var hp_text := _part_hp_text(selected_unit, part_name)
-		draw_string(_font(), _p(1170, y), hp_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), label_col)
-		y += 15.0
-
-	if bool(data.get("has_shield", false)):
-		var s_hp: int = int(data["shield_hp"])
-		var s_max: int = int(data["shield_max_hp"])
-		var s_active: bool = bool(data["shield_active"])
-		draw_string(_font(), _p(976, y), "Shield", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.53, 0.71, 0.75) if s_active else Color(0.76, 0.32, 0.31))
-		_draw_bar(_r(1030, y - 8.0, 130, 7), float(s_hp) / float(s_max) if s_max > 0 else 0.0, Color(0.40, 0.60, 0.75) if s_active else Color(0.76, 0.32, 0.31))
-		var s_text := _shield_hp_text(selected_unit)
-		draw_string(_font(), _p(1170, y), s_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), Color(0.53, 0.71, 0.75) if s_active else Color(0.76, 0.32, 0.31))
-		y += 15.0
-
-	for c in data.get("consequences", []):
-		draw_string(_font(), _p(976, y), "⚠ " + str(c), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), Color(0.96, 0.76, 0.40))
-		y += 13.0
-
-	var statuses: Array = data.get("statuses", [])
-	if not statuses.is_empty():
-		draw_string(_font(), _p(976, y), "Status: " + ", ".join(statuses), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), Color(0.96, 0.58, 0.35))
-		y += 13.0
-
-	var orbs: Array = data.get("orbs", [])
-	if not orbs.is_empty():
-		draw_string(_font(), _p(976, y), "Orbs: " + ", ".join(orbs), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), Color(0.45, 0.75, 0.90))
-		y += 13.0
-
-	var pilot: Dictionary = data.get("pilot", {})
-	if not pilot.is_empty():
-		draw_string(_font(), _p(976, y), "Pilot: %s · %s" % [str(pilot.get("name", "")), str(pilot.get("passive_name", ""))], HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), Color(0.85, 0.75, 0.95))
-		y += 13.0
-
-	if turn_state == TurnState.SELECTING_ATTACK and not data["attack_preview"].is_empty():
-		var preview: Dictionary = data["attack_preview"]
-		y += 4.0
-		draw_line(_p(976, y), _p(1250, y), Color(0.25, 0.33, 0.36), 1.0)
-		y += 14.0
-		var legal: bool = bool(preview["legal"])
-		var hit: int = int(preview["hit_percent"])
-		var dmg: int = int(preview["damage"])
-		var h_mod: int = int(preview.get("height_hit_modifier", 0))
-		var c_mod: int = int(preview.get("cover_dodge_modifier", 0))
-		var pat: String = str(preview.get("weapon_pattern", "single"))
-		var status_text := "LEGAL TARGET" if legal else "INVALID TARGET"
-		var status_color := Color(0.40, 0.78, 0.58) if legal else Color(0.88, 0.42, 0.42)
-		draw_string(_font(), _p(976, y), status_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), status_color)
-		y += 14.0
-		var mod_notes := ""
-		if h_mod != 0:
-			mod_notes += " (H%+d%%)" % h_mod
-		if c_mod != 0:
-			mod_notes += " (Cover %+d%%)" % c_mod
-		draw_string(_font(), _p(976, y), "Hit: %d%%%s · Est Dmg: %d" % [hit, mod_notes, dmg], HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.93, 0.96, 0.96))
-		y += 14.0
-		draw_string(_font(), _p(976, y), "Pattern: %s · Range: %d-%d" % [pat.to_upper(), int(preview.get("min_range", 1)), int(preview.get("range", 1))], HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), Color(0.62, 0.69, 0.73))
-		y += 14.0
-		if str(data.get("shield_warning", "")) != "":
-			draw_string(_font(), _p(976, y), "⚠ " + str(data["shield_warning"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(9), Color(0.96, 0.86, 0.48))
 
 
 func _draw_action_bar() -> void:

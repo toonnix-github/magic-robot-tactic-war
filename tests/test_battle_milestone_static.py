@@ -114,14 +114,14 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         for hook in [
             "func _spear_direction",
             "func _line_attack_targets",
-            "func _resolve_spear_attack",
+            "func resolve_spear_attack",
         ]:
             self.assertIn(hook, self.source)
         self.assertIn('"secondary_damage"', self.source)
 
     def test_rifle_weapon_hooks_are_encoded(self):
         for hook in [
-            "func _resolve_rifle_attack",
+            "func resolve_rifle_attack",
             "func _volley_part_seed",
         ]:
             self.assertIn(hook, self.source)
@@ -139,7 +139,7 @@ class BattleMilestoneStaticTests(unittest.TestCase):
             "func _can_shield_intercept",
             "func _intercepting_shield_for",
             "func _damage_shield",
-            "func _resolve_blockable_shot",
+            "func resolve_blockable_shot",
         ]:
             self.assertIn(hook, self.source)
         self.assertIn('"shield_hit_weight"', self.source)
@@ -170,10 +170,10 @@ class BattleMilestoneStaticTests(unittest.TestCase):
             "func _install_orb",
             "func _orb_data_for",
             "func _active_orbs",
-            "func _orb_effects",
+            "func orb_effects",
             "func _orb_adjusted_damage",
-            "func _resolve_orb_proc",
-            "func _apply_status",
+            "func resolve_orb_proc",
+            "func apply_status",
             "func _has_status",
         ]:
             self.assertIn(hook, self.source)
@@ -266,7 +266,7 @@ class BattleMilestoneStaticTests(unittest.TestCase):
             "func _resolve_attack_result",
             "func _build_attack_feedback_sequence",
             "func _attack_feedback_line",
-            "func _present_attack_feedback",
+            "func present_attack_feedback",
             "func _present_attack_then_finish",
         ]:
             self.assertIn(hook, self.source)
@@ -302,10 +302,10 @@ class BattleMilestoneStaticTests(unittest.TestCase):
 
     def test_enemy_inspection_hooks_are_encoded(self):
         for hook in [
-            "func _inspect_target",
-            "func _inspect_unit",
+            "func inspect_target",
+            "func inspect_unit",
             "func _target_inspection_data",
-            "func _draw_enemy_inspection_panel",
+            "func draw_enemy_inspection_panel",
         ]:
             self.assertIn(hook, self.source)
         self.assertIn("TARGET INSPECTION", self.source)
@@ -410,7 +410,7 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         # _present_enemy_activation bypass
         self.assertIn("if fast_simulation:", self.source)
         # _present_attack_feedback bypass
-        self.assertIn("if not attack_presentation_enabled or fast_simulation:", self.source)
+        self.assertIn("not scene.attack_presentation_enabled or scene.fast_simulation", self.source)
         # _resolve_attack presentation condition uses fast_simulation
         self.assertIn("and not fast_simulation", self.source)
         # _begin_next_activation enemy branch uses fast_simulation
@@ -509,6 +509,12 @@ class BattleMilestoneStaticTests(unittest.TestCase):
             "func damage_shield",
             "func miss_damage_result",
             "func resolve_weapon_attack",
+            "func resolve_blockable_shot",
+            "func resolve_spear_attack",
+            "func resolve_rifle_attack",
+            "func orb_effects",
+            "func resolve_orb_proc",
+            "func apply_status",
             "func apply_part_consequence",
             "func active_orbs",
             "func resolve_turn_start_statuses",
@@ -516,6 +522,15 @@ class BattleMilestoneStaticTests(unittest.TestCase):
             self.assertIn(hook, combat_source)
         self.assertIn("combat_controller.damage_part", self.source)
         self.assertIn("combat_controller.resolve_weapon_attack", self.source)
+        for old_main_hook in [
+            "func _resolve_blockable_shot",
+            "func _resolve_spear_attack",
+            "func _resolve_rifle_attack",
+            "func _orb_effects",
+            "func _resolve_orb_proc",
+            "func _apply_status",
+        ]:
+            self.assertNotIn(old_main_hook, self.main_source)
 
         for hook in [
             "func decide_action",
@@ -529,13 +544,22 @@ class BattleMilestoneStaticTests(unittest.TestCase):
 
         for hook in [
             "func present_enemy_activation",
+            "func present_attack_feedback",
             "func build_attack_feedback_sequence",
             "func attack_feedback_line",
         ]:
             self.assertIn(hook, presenter_source)
         self.assertIn("battle_presenter.build_attack_feedback_sequence", self.source)
+        self.assertIn("battle_presenter.present_attack_feedback", self.source)
+        self.assertNotIn("func _present_attack_feedback", self.main_source)
 
         for hook in [
+            "func draw_selected_unit_panel",
+            "func draw_part_status_panel",
+            "func draw_enemy_inspection_panel",
+            "func inspect_unit",
+            "func inspect_target",
+            "func handle_hud_input",
             "func part_hp_text",
             "func shield_hp_text",
             "func target_inspection_data",
@@ -543,6 +567,14 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         ]:
             self.assertIn(hook, hud_source)
         self.assertIn("battle_hud.target_inspection_data", self.source)
+        for old_main_hook in [
+            "func _draw_selected_unit_panel",
+            "func _draw_part_status_panel",
+            "func _draw_enemy_inspection_panel",
+            "func _inspect_unit",
+            "func _inspect_target",
+        ]:
+            self.assertNotIn(old_main_hook, self.main_source)
 
 
 if __name__ == "__main__":

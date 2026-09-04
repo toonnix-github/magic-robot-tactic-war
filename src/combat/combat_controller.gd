@@ -147,6 +147,276 @@ func resolve_weapon_attack(
 	}
 
 
+func resolve_blockable_shot(
+	attacker,
+	target,
+	preview: Dictionary,
+	part_name: String,
+	hit_seed: int,
+	damage: int,
+	part_seed: int,
+	part_names: Array,
+	weapon_data: Dictionary,
+	intercepting_shield_for: Callable,
+	should_hit_shield: Callable,
+	terrain_adjusted_damage: Callable,
+	calculate_attack_damage: Callable,
+	damage_part: Callable,
+	damage_shield: Callable,
+	pilot_shield_damage_reduction: Callable,
+	resolve_orb_proc: Callable
+) -> Dictionary:
+	var shield_unit = intercepting_shield_for.call(attacker, target, weapon_data)
+	if shield_unit != null:
+		return resolve_shield_damage(
+			attacker,
+			shield_unit,
+			target,
+			preview,
+			hit_seed,
+			damage,
+			true,
+			weapon_data,
+			terrain_adjusted_damage,
+			calculate_attack_damage,
+			damage_shield,
+			pilot_shield_damage_reduction,
+			resolve_orb_proc
+		)
+	if bool(should_hit_shield.call(target, weapon_data, part_seed)):
+		return resolve_shield_damage(
+			attacker,
+			target,
+			target,
+			preview,
+			hit_seed,
+			damage,
+			false,
+			weapon_data,
+			terrain_adjusted_damage,
+			calculate_attack_damage,
+			damage_shield,
+			pilot_shield_damage_reduction,
+			resolve_orb_proc
+		)
+	return resolve_weapon_attack(
+		attacker,
+		target,
+		preview,
+		part_name,
+		hit_seed,
+		damage,
+		part_seed,
+		part_names,
+		weapon_data,
+		terrain_adjusted_damage,
+		calculate_attack_damage,
+		damage_part,
+		resolve_orb_proc
+	)
+
+
+func resolve_shield_damage(
+	attacker,
+	shield_unit,
+	original_target,
+	preview: Dictionary,
+	hit_seed: int,
+	damage: int,
+	intercepted: bool,
+	weapon_data: Dictionary,
+	terrain_adjusted_damage: Callable,
+	calculate_attack_damage: Callable,
+	damage_shield: Callable,
+	pilot_shield_damage_reduction: Callable,
+	resolve_orb_proc: Callable
+) -> Dictionary:
+	var hit_percent: int = int(preview["hit_percent"])
+	var hit: bool = roll_hit(hit_percent, hit_seed)
+	var damage_result: Dictionary = shield_damage_result(shield_unit)
+	var orb_proc: Dictionary = empty_orb_proc(hit_seed)
+	if hit:
+		var raw_dmg: int = int(calculate_attack_damage.call(attacker, damage, shield_unit, "Shield"))
+		var terrain_dmg: int = int(terrain_adjusted_damage.call(shield_unit, raw_dmg))
+		var reduction: int = int(pilot_shield_damage_reduction.call(shield_unit))
+		var final_shield_dmg: int = int(max(1, terrain_dmg - reduction)) if reduction > 0 else terrain_dmg
+		damage_result = damage_shield.call(shield_unit, final_shield_dmg)
+		orb_proc = resolve_orb_proc.call(attacker, shield_unit, hit_seed)
+	return {
+		"attacker_id": str(attacker["id"]),
+		"target_id": str(shield_unit["id"]),
+		"original_target_id": str(original_target["id"]),
+		"weapon": str(weapon_data["name"]),
+		"part_name": "Shield",
+		"damage_requested": int(damage_result["damage_requested"]),
+		"damage_applied": int(damage_result["damage_applied"]),
+		"hp_before": int(damage_result["hp_before"]),
+		"hp_after": int(damage_result["hp_after"]),
+		"destroyed": bool(damage_result["destroyed"]),
+		"destroyed_now": bool(damage_result["destroyed_now"]),
+		"hit": hit,
+		"hit_percent": hit_percent,
+		"intercepted": intercepted,
+		"shield_hp_before": int(damage_result["hp_before"]),
+		"shield_hp_after": int(damage_result["hp_after"]),
+		"shield_unit": shield_unit,
+		"orb_proc": orb_proc,
+	}
+
+
+func shield_damage_result(unit) -> Dictionary:
+	return {
+		"unit_id": str(unit["id"]),
+		"part_name": "Shield",
+		"damage_requested": 0,
+		"damage_applied": 0,
+		"hp_before": int(unit.get("shield_hp", 0)),
+		"hp_after": int(unit.get("shield_hp", 0)),
+		"destroyed": int(unit.get("shield_hp", 0)) <= 0 or bool(unit.get("shield_disabled", false)),
+		"destroyed_now": false,
+		"orb_disabled": false,
+	}
+
+
+func resolve_spear_attack(
+	attacker,
+	target,
+	preview: Dictionary,
+	seed: int,
+	part_names: Array,
+	weapon_data: Dictionary,
+	spear_direction: Callable,
+	line_attack_targets: Callable,
+	attack_preview: Callable,
+	terrain_adjusted_damage: Callable,
+	calculate_attack_damage: Callable,
+	damage_part: Callable,
+	resolve_orb_proc: Callable
+) -> Dictionary:
+	var direction: Vector2i = spear_direction.call(attacker, target)
+	var lane_targets: Array = line_attack_targets.call(attacker, direction, int(weapon_data["range_max"]))
+	var results: Array = []
+	for lane_target in lane_targets:
+		var tile_index: int = int(lane_target["tile_index"])
+		var lane_preview: Dictionary = attack_preview.call(attacker, lane_target["unit"])
+		var damage: int = int(weapon_data["damage"]) if tile_index == 1 else int(weapon_data["secondary_damage"])
+		var result: Dictionary = resolve_weapon_attack(
+			attacker,
+			lane_target["unit"],
+			lane_preview,
+			"",
+			seed + tile_index - 1,
+			damage,
+			seed + tile_index - 1,
+			part_names,
+			weapon_data,
+			terrain_adjusted_damage,
+			calculate_attack_damage,
+			damage_part,
+			resolve_orb_proc
+		)
+		result["tile_index"] = tile_index
+		result["grid"] = lane_target["grid"]
+		results.append(result)
+
+	var total_damage: int = 0
+	var any_hit: bool = false
+	for result in results:
+		total_damage += int(result["damage_applied"])
+		any_hit = any_hit or bool(result["hit"])
+
+	var primary_result: Dictionary = miss_damage_result(target, "Body")
+	if not results.is_empty():
+		primary_result = results[0]
+
+	return {
+		"attacker_id": str(attacker["id"]),
+		"target_id": str(target["id"]),
+		"weapon": str(weapon_data["name"]),
+		"part_name": str(primary_result["part_name"]),
+		"damage_requested": int(weapon_data["damage"]),
+		"damage_applied": total_damage,
+		"hp_before": int(primary_result["hp_before"]),
+		"hp_after": int(primary_result["hp_after"]),
+		"destroyed": bool(primary_result["destroyed"]),
+		"destroyed_now": bool(primary_result.get("destroyed_now", false)),
+		"hit": any_hit,
+		"hit_percent": int(preview["hit_percent"]),
+		"direction": direction,
+		"results": results,
+	}
+
+
+func resolve_rifle_attack(
+	attacker,
+	target,
+	preview: Dictionary,
+	seed: int,
+	part_names: Array,
+	weapon_data: Dictionary,
+	intercepting_shield_for: Callable,
+	should_hit_shield: Callable,
+	terrain_adjusted_damage: Callable,
+	calculate_attack_damage: Callable,
+	damage_part: Callable,
+	damage_shield: Callable,
+	pilot_shield_damage_reduction: Callable,
+	resolve_orb_proc: Callable
+) -> Dictionary:
+	var shots: Array = []
+	var shot_count: int = int(weapon_data["shot_count"])
+	for shot_index in range(shot_count):
+		var hit_seed: int = seed + shot_index
+		var part_seed: int = volley_part_seed(seed, shot_index)
+		var shot: Dictionary = resolve_blockable_shot(
+			attacker,
+			target,
+			preview,
+			"",
+			hit_seed,
+			int(weapon_data["damage"]),
+			part_seed,
+			part_names,
+			weapon_data,
+			intercepting_shield_for,
+			should_hit_shield,
+			terrain_adjusted_damage,
+			calculate_attack_damage,
+			damage_part,
+			damage_shield,
+			pilot_shield_damage_reduction,
+			resolve_orb_proc
+		)
+		shot["shot_index"] = shot_index + 1
+		shots.append(shot)
+
+	var total_damage: int = 0
+	var any_hit: bool = false
+	var primary_result: Dictionary = miss_damage_result(target, "Body")
+	for shot in shots:
+		total_damage += int(shot["damage_applied"])
+		any_hit = any_hit or bool(shot["hit"])
+		if bool(shot["hit"]) and not bool(primary_result.get("hit_selected", false)):
+			primary_result = shot
+			primary_result["hit_selected"] = true
+
+	return {
+		"attacker_id": str(attacker["id"]),
+		"target_id": str(target["id"]),
+		"weapon": str(weapon_data["name"]),
+		"part_name": str(primary_result["part_name"]),
+		"damage_requested": int(weapon_data["damage"]) * shot_count,
+		"damage_applied": total_damage,
+		"hp_before": int(primary_result["hp_before"]),
+		"hp_after": int(primary_result["hp_after"]),
+		"destroyed": bool(primary_result["destroyed"]),
+		"destroyed_now": bool(primary_result.get("destroyed_now", false)),
+		"hit": any_hit,
+		"hit_percent": int(preview["hit_percent"]),
+		"shots": shots,
+	}
+
+
 func apply_part_consequence(unit, part_name: String, turn_log: Array, head_destroyed_hit_penalty: int) -> void:
 	var part: Dictionary = unit["parts"][part_name]
 	part["destroyed"] = true
@@ -181,6 +451,84 @@ func active_orbs(unit, part_names: Array, orb_data: Dictionary) -> Array:
 		active_orb["host_part"] = part_name
 		active.append(active_orb)
 	return active
+
+
+func orb_effects(unit, part_names: Array, orb_data: Dictionary, effect_type := "") -> Array:
+	var effects: Array = []
+	for orb in active_orbs(unit, part_names, orb_data):
+		for effect in orb["effects"]:
+			if effect_type == "" or str(effect.get("type", "")) == effect_type:
+				var active_effect: Dictionary = effect.duplicate(true)
+				active_effect["orb_id"] = str(orb["id"])
+				active_effect["element"] = str(orb["element"])
+				active_effect["rarity"] = str(orb["rarity"])
+				effects.append(active_effect)
+	return effects
+
+
+func orb_damage_modifier_percent(unit, part_names: Array, orb_data: Dictionary) -> int:
+	var modifier: int = 0
+	for effect in orb_effects(unit, part_names, orb_data, "damage_percent"):
+		modifier += int(effect.get("percent", 0))
+	return modifier
+
+
+func orb_hit_modifier(unit, part_names: Array, orb_data: Dictionary) -> int:
+	var modifier: int = 0
+	for effect in orb_effects(unit, part_names, orb_data, "hit_bonus"):
+		modifier += int(effect.get("amount", 0))
+	return modifier
+
+
+func orb_adjusted_damage(unit, damage: int, part_names: Array, orb_data: Dictionary) -> int:
+	var modifier: int = orb_damage_modifier_percent(unit, part_names, orb_data)
+	return int(round(float(max(0, damage)) * (100.0 + float(modifier)) / 100.0))
+
+
+func apply_status(unit, status: String, turn_log: Array) -> bool:
+	if unit == null or status == "":
+		return false
+	if not unit.has("statuses"):
+		unit["statuses"] = []
+	if not unit["statuses"].has(status):
+		unit["statuses"].append(status)
+		turn_log.append("%s:apply_status:%s" % [unit["id"], status])
+	return true
+
+
+func resolve_orb_proc(
+	attacker,
+	target,
+	seed: int,
+	part_names: Array,
+	orb_data: Dictionary,
+	pilot_orb_proc_bonus: Callable,
+	turn_log: Array
+) -> Dictionary:
+	var proc_effects: Array = orb_effects(attacker, part_names, orb_data, "proc_status")
+	var pilot_bonus: int = int(pilot_orb_proc_bonus.call(attacker))
+	for index in range(proc_effects.size()):
+		var effect: Dictionary = proc_effects[index]
+		var chance: int = int(effect.get("chance_percent", 0)) + pilot_bonus
+		if absi(seed + index * 37) % 100 < chance:
+			var status: String = str(effect.get("status", ""))
+			apply_status(target, status, turn_log)
+			return {
+				"triggered": true,
+				"status": status,
+				"orb_id": str(effect["orb_id"]),
+				"seed": seed,
+			}
+	return empty_orb_proc(seed)
+
+
+func empty_orb_proc(seed := 0) -> Dictionary:
+	return {
+		"triggered": false,
+		"status": "",
+		"orb_id": "",
+		"seed": seed,
+	}
 
 
 func has_status(unit, status: String) -> bool:
