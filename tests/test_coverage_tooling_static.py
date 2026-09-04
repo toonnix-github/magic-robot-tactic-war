@@ -19,6 +19,11 @@ class CoverageToolingStaticTests(unittest.TestCase):
         self.assertIn("python -m unittest discover", readme)
         self.assertIn("python tools/gdscript_function_coverage.py --fail-under 80", readme)
 
+    def test_coverage_instrumentation_emits_each_function_once(self):
+        runner = (ROOT / "tools" / "gdscript_function_coverage.py").read_text(encoding="utf-8")
+        self.assertIn("Engine.has_meta", runner)
+        self.assertIn("Engine.set_meta", runner)
+
 
 if __name__ == "__main__":
     unittest.main()

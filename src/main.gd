@@ -1,5 +1,7 @@
 extends Control
 
+signal presented_attack_completed
+
 const PROTOTYPE_VERSION := "0.1"
 const GRID_COLUMNS := 10
 const GRID_ROWS := 7
@@ -230,6 +232,13 @@ var _is_activating := false
 var enemy_presentation_enabled := true
 var enemy_presentation_active := false
 var enemy_presentation_log: Array[String] = []
+var attack_presentation_enabled := true
+var attack_presentation_active := false
+var attack_feedback_step_seconds := 0.12
+var attack_feedback_queue: Array[String] = []
+var attack_feedback_log: Array[String] = []
+var attack_feedback_attacker_id := ""
+var attack_feedback_target_id := ""
 
 
 
@@ -249,6 +258,11 @@ func _load_mission(mission_id: String, swapped_sides: bool = false) -> void:
 	turn_log.clear()
 	enemy_presentation_log.clear()
 	enemy_presentation_active = false
+	attack_feedback_log.clear()
+	attack_feedback_queue.clear()
+	attack_presentation_active = false
+	attack_feedback_attacker_id = ""
+	attack_feedback_target_id = ""
 	last_action_message = "Ready"
 	_create_terrain()
 	_create_units()
@@ -854,7 +868,13 @@ func _present_enemy_activation(unit, plan: Dictionary) -> void:
 	var attacked := false
 	if str(plan.get("action", "")) == "Attack" and plan.get("target") != null and _can_attack(unit):
 		var sim_seed := _next_simulation_seed()
-		attacked = _try_attack_active_unit(plan["target"], "", sim_seed)
+		var preview := _attack_preview(unit, plan["target"])
+		if bool(preview["legal"]):
+			var attack_res := _resolve_attack_result(unit, plan["target"], preview, "", sim_seed)
+			if attack_presentation_enabled:
+				await _present_attack_feedback(unit, plan["target"], attack_res)
+			_finish_activation(unit)
+			attacked = true
 
 	if not attacked and _is_unit_in_battle(unit):
 		unit["activation_complete"] = true
@@ -1104,7 +1124,7 @@ func _is_action_legal(action: String) -> bool:
 
 
 func _input_locked() -> bool:
-	return enemy_presentation_active
+	return enemy_presentation_active or attack_presentation_active
 
 
 func _try_move_active_unit(grid: Vector2i) -> bool:
@@ -1201,6 +1221,24 @@ func _preview_attack_target(target) -> Dictionary:
 
 
 func _resolve_attack(attacker, target, preview: Dictionary, part_name := "", seed := 0) -> Dictionary:
+	var attack_res := _resolve_attack_result(attacker, target, preview, part_name, seed)
+	if (
+		attack_presentation_enabled
+		and not auto_battle
+		and not _is_activating
+		and str(attacker.get("team", "")) == "player"
+	):
+		_is_activating = true
+		attack_presentation_active = true
+		attack_feedback_attacker_id = str(attacker["id"])
+		attack_feedback_target_id = str(target["id"])
+		_present_attack_then_finish.call_deferred(attacker, target, attack_res)
+	else:
+		_finish_activation(attacker)
+	return attack_res
+
+
+func _resolve_attack_result(attacker, target, preview: Dictionary, part_name := "", seed := 0) -> Dictionary:
 	attacker["has_attacked"] = true
 	attacker["activation_complete"] = true
 	turn_log.append("%s:attack" % attacker["id"])
@@ -1268,10 +1306,97 @@ func _resolve_attack(attacker, target, preview: Dictionary, part_name := "", see
 			if shot.has("orb_proc") and bool(shot["orb_proc"].get("triggered", false)):
 				last_action_message += " + %s" % str(shot["orb_proc"]["status"])
 				break
-	_finish_activation(attacker)
 	return attack_res
 
 
+
+
+func _present_attack_then_finish(attacker, target, result: Dictionary) -> void:
+	await _present_attack_feedback(attacker, target, result)
+	_finish_activation(attacker)
+	_is_activating = false
+	queue_redraw()
+	if not _is_battle_over():
+		_begin_next_activation()
+	presented_attack_completed.emit()
+
+
+func _present_attack_feedback(attacker, target, result: Dictionary) -> void:
+	if not attack_presentation_enabled or auto_battle:
+		return
+
+	attack_presentation_active = true
+	attack_feedback_attacker_id = str(attacker["id"]) if attacker != null else ""
+	attack_feedback_target_id = str(target["id"]) if target != null else ""
+	attack_feedback_queue = _build_attack_feedback_sequence(attacker, target, result)
+	for line in attack_feedback_queue:
+		last_action_message = line
+		attack_feedback_log.append(line)
+		queue_redraw()
+		await get_tree().create_timer(attack_feedback_step_seconds).timeout
+	attack_feedback_queue.clear()
+	attack_feedback_attacker_id = ""
+	attack_feedback_target_id = ""
+	attack_presentation_active = false
+	queue_redraw()
+
+
+func _build_attack_feedback_sequence(attacker, target, result: Dictionary) -> Array[String]:
+	var sequence: Array[String] = []
+	var attacker_name := _unit_name_for_id(str(result.get("attacker_id", "")))
+	if attacker != null:
+		attacker_name = str(attacker["name"])
+	var target_name := _unit_name_for_id(str(result.get("original_target_id", result.get("target_id", ""))))
+	if target != null:
+		target_name = str(target["name"])
+	sequence.append("%s / %s -> %s" % [attacker_name, str(result.get("weapon", "Attack")), target_name])
+
+	if result.has("shots"):
+		for shot in result["shots"]:
+			sequence.append(_attack_feedback_line(attacker, target, shot, "SHOT %d" % int(shot.get("shot_index", 0))))
+			_append_attack_feedback_consequences(sequence, shot)
+	elif result.has("results"):
+		for lane_result in result["results"]:
+			sequence.append(_attack_feedback_line(attacker, _unit_by_id(str(lane_result.get("target_id", ""))), lane_result, "TILE %d" % int(lane_result.get("tile_index", 0))))
+			_append_attack_feedback_consequences(sequence, lane_result)
+	else:
+		sequence.append(_attack_feedback_line(attacker, target, result))
+		_append_attack_feedback_consequences(sequence, result)
+
+	return sequence
+
+
+func _attack_feedback_line(attacker, target, result: Dictionary, label := "") -> String:
+	var prefix := "%s / " % label if label != "" else ""
+	if not bool(result.get("hit", false)):
+		return "%sMISS" % prefix
+
+	var part_name := str(result.get("part_name", "Part"))
+	var damage := int(result.get("damage_applied", 0))
+	if part_name == "Shield":
+		var shield_name := _unit_name_for_id(str(result.get("target_id", "")))
+		if bool(result.get("intercepted", false)):
+			return "%sSHIELD INTERCEPT / %s Shield -%d" % [prefix, shield_name, damage]
+		return "%sHIT / %s Shield -%d" % [prefix, shield_name, damage]
+	return "%sHIT / %s -%d" % [prefix, part_name, damage]
+
+
+func _append_attack_feedback_consequences(sequence: Array[String], result: Dictionary) -> void:
+	if not bool(result.get("hit", false)):
+		return
+
+	var part_name := str(result.get("part_name", ""))
+	if bool(result.get("destroyed_now", false)):
+		if part_name == "Body":
+			sequence.append("BODY DESTROYED / %s DEFEATED" % _unit_name_for_id(str(result.get("target_id", ""))))
+		elif part_name == "Shield":
+			sequence.append("SHIELD BROKEN / %s" % _unit_name_for_id(str(result.get("target_id", ""))))
+		else:
+			sequence.append("%s DESTROYED" % part_name.to_upper())
+
+	var orb_proc: Dictionary = result.get("orb_proc", {})
+	if bool(orb_proc.get("triggered", false)):
+		sequence.append("ORB PROC / %s" % str(orb_proc.get("status", "")))
 
 
 func _try_wait_active_unit() -> bool:
@@ -1401,6 +1526,7 @@ func _resolve_shield_damage(attacker, shield_unit, original_target, preview: Dic
 		"hp_before": int(damage_result["hp_before"]),
 		"hp_after": int(damage_result["hp_after"]),
 		"destroyed": bool(damage_result["destroyed"]),
+		"destroyed_now": bool(damage_result["destroyed_now"]),
 		"hit": hit,
 		"hit_percent": hit_percent,
 		"intercepted": intercepted,
@@ -1452,6 +1578,7 @@ func _resolve_weapon_attack(attacker, target, preview: Dictionary, part_name := 
 		"hp_before": int(damage_result["hp_before"]),
 		"hp_after": int(damage_result["hp_after"]),
 		"destroyed": bool(damage_result["destroyed"]),
+		"destroyed_now": bool(damage_result["destroyed_now"]),
 		"hit": hit,
 		"hit_percent": hit_percent,
 		"hit_seed": seed,
@@ -1494,6 +1621,7 @@ func _resolve_spear_attack(attacker, target, preview: Dictionary, seed := 0) -> 
 		"hp_before": int(primary_result["hp_before"]),
 		"hp_after": int(primary_result["hp_after"]),
 		"destroyed": bool(primary_result["destroyed"]),
+		"destroyed_now": bool(primary_result.get("destroyed_now", false)),
 		"hit": any_hit,
 		"hit_percent": int(preview["hit_percent"]),
 		"direction": direction,
@@ -1532,6 +1660,7 @@ func _resolve_rifle_attack(attacker, target, preview: Dictionary, seed := 0) -> 
 		"hp_before": int(primary_result["hp_before"]),
 		"hp_after": int(primary_result["hp_after"]),
 		"destroyed": bool(primary_result["destroyed"]),
+		"destroyed_now": bool(primary_result.get("destroyed_now", false)),
 		"hit": any_hit,
 		"hit_percent": int(preview["hit_percent"]),
 		"shots": shots,
@@ -2225,6 +2354,7 @@ func _draw_battlefield() -> void:
 	for unit in units:
 		if _is_unit_in_battle(unit):
 			_draw_unit(unit)
+	_draw_attack_feedback_markers()
 
 
 func _draw_tile(grid: Vector2i) -> void:
@@ -2279,6 +2409,19 @@ func _draw_unit(unit) -> void:
 	draw_circle(center, radius, fill_color)
 	draw_arc(center, radius, 0.0, TAU, 40, Color(0.90, 0.94, 0.95), 2.0, true)
 	_draw_centered_text(Rect2(center - Vector2(radius, radius), Vector2(radius * 2.0, radius * 2.0)), str(unit["letter"]), 12, Color.WHITE)
+
+
+func _draw_attack_feedback_markers() -> void:
+	if not attack_presentation_active:
+		return
+
+	var attacker = _unit_by_id(attack_feedback_attacker_id)
+	var target = _unit_by_id(attack_feedback_target_id)
+	var radius := _unit_radius()
+	if attacker != null:
+		draw_arc(_tile_center(attacker["grid"]), radius * 2.10, 0.0, TAU, 40, Color(0.96, 0.86, 0.48), 3.0, true)
+	if target != null:
+		draw_arc(_tile_center(target["grid"]), radius * 2.25, 0.0, TAU, 40, Color(0.92, 0.32, 0.28), 3.0, true)
 
 
 func _draw_selected_unit_panel() -> void:
@@ -2417,6 +2560,14 @@ func _unit_by_id(id: String):
 		if unit["id"] == id:
 			return unit
 	return null
+
+
+func _unit_name_for_id(unit_id: String) -> String:
+	var unit_ref = _unit_by_id(unit_id)
+	if unit_ref == null:
+		return unit_id
+	var unit: Dictionary = unit_ref
+	return str(unit["name"])
 
 
 func _next_simulation_seed() -> int:

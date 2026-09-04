@@ -14,6 +14,7 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	scene.enemy_presentation_enabled = false
+	scene.attack_presentation_enabled = false
 
 	_assert_equal(scene.GRID_COLUMNS, 10, "grid has 10 columns")
 	_assert_equal(scene.GRID_ROWS, 7, "grid has 7 rows")
@@ -90,6 +91,7 @@ func _run() -> void:
 	_run_ascending_ridge_acceptance(scene)
 	_run_phase1_stabilization_acceptance(scene)
 	await _run_enemy_presentation_acceptance(scene)
+	await _run_attack_presentation_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -1517,6 +1519,136 @@ func _test_presented_enemy_activation_matches_fast_resolution(scene: Control) ->
 	_assert_equal(presented_snapshot["enemy_grid"], fast_snapshot["enemy_grid"], "presented enemy ends on same grid as fast simulation")
 	_assert_equal(presented_snapshot["target_parts"], fast_snapshot["target_parts"], "presented attack result matches fast simulation")
 	_assert_equal(presented_snapshot["simulation_seed"], fast_snapshot["simulation_seed"], "presentation timing does not consume RNG")
+
+
+func _run_attack_presentation_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_resolve_attack_result",
+		"_build_attack_feedback_sequence",
+		"_attack_feedback_line",
+		"_present_attack_feedback",
+		"_present_attack_then_finish",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "Attack presentation API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_miss_feedback_is_distinct_from_hit(scene)
+	_test_hit_feedback_names_part_and_damage(scene)
+	_test_rifle_feedback_lists_individual_shots(scene)
+	_test_shield_intercept_feedback_names_shield_hp_loss(scene)
+	_test_destroy_feedback_precedes_next_activation(scene)
+	await _test_manual_attack_waits_for_feedback_before_initiative_advance(scene)
+	await _test_attack_presentation_does_not_change_deterministic_result(scene)
+
+
+func _attack_presentation_fixture(scene: Control, weapon := "Sniper", target_grid := Vector2i(4, 1)) -> Dictionary:
+	scene._load_mission("ancient_ruins")
+	scene.enemy_presentation_enabled = false
+	scene.attack_presentation_enabled = false
+	var attacker = scene._unit_by_id("mira")
+	var target = scene._unit_by_id("enemy_blade")
+	attacker["weapon"] = weapon
+	attacker["weapon_mount_part"] = "Right Arm"
+	attacker["grid"] = Vector2i(1, 1)
+	target["grid"] = target_grid
+	scene._unit_by_id("arlen")["grid"] = Vector2i(0, 6)
+	scene._unit_by_id("sera")["grid"] = Vector2i(0, 5)
+	scene._unit_by_id("brann")["grid"] = Vector2i(0, 4)
+	scene._begin_activation(attacker)
+	return {"attacker": attacker, "target": target}
+
+
+func _joined_feedback(scene: Control, attacker, target, result: Dictionary) -> String:
+	return " | ".join(scene._build_attack_feedback_sequence(attacker, target, result))
+
+
+func _test_miss_feedback_is_distinct_from_hit(scene: Control) -> void:
+	var fixture := _attack_presentation_fixture(scene, "Sniper")
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["target"])
+	var miss_result: Dictionary = scene._resolve_attack_result(fixture["attacker"], fixture["target"], preview, "", 95)
+	var feedback := _joined_feedback(scene, fixture["attacker"], fixture["target"], miss_result)
+	_assert_true(feedback.contains("Mira / Sniper -> Enemy Blade"), "feedback identifies attacker, weapon, and target")
+	_assert_true(feedback.contains("MISS"), "miss feedback is explicit")
+	_assert_false(feedback.contains("HIT /"), "miss feedback is distinguishable from hit")
+
+
+func _test_hit_feedback_names_part_and_damage(scene: Control) -> void:
+	var fixture := _attack_presentation_fixture(scene, "Sniper")
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["target"])
+	var result: Dictionary = scene._resolve_attack_result(fixture["attacker"], fixture["target"], preview, "Right Arm", 11)
+	var feedback := _joined_feedback(scene, fixture["attacker"], fixture["target"], result)
+	_assert_true(feedback.contains("HIT /"), "hit feedback is explicit")
+	_assert_true(feedback.contains(str(result["part_name"])), "hit feedback names damaged part")
+	_assert_true(feedback.contains("-%d" % int(result["damage_applied"])), "hit feedback includes damage amount")
+
+
+func _test_rifle_feedback_lists_individual_shots(scene: Control) -> void:
+	var fixture := _attack_presentation_fixture(scene, "Rifle")
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["target"])
+	var result: Dictionary = scene._resolve_attack_result(fixture["attacker"], fixture["target"], preview, "", 11)
+	var feedback := _joined_feedback(scene, fixture["attacker"], fixture["target"], result)
+	_assert_true(feedback.contains("SHOT 1"), "Rifle feedback exposes first shot")
+	_assert_true(feedback.contains("SHOT 4"), "Rifle feedback exposes final shot")
+	_assert_true(feedback.contains("HIT") or feedback.contains("MISS"), "Rifle volley communicates per-shot outcomes")
+
+
+func _test_shield_intercept_feedback_names_shield_hp_loss(scene: Control) -> void:
+	var fixture := _set_player_shield_fixture(scene, "Sniper")
+	scene.enemy_presentation_enabled = false
+	scene.attack_presentation_enabled = false
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["protected"])
+	var result: Dictionary = scene._resolve_attack_result(fixture["attacker"], fixture["protected"], preview, "", 11)
+	var feedback := _joined_feedback(scene, fixture["attacker"], fixture["protected"], result)
+	_assert_true(feedback.contains("SHIELD INTERCEPT"), "shield interception is visible")
+	_assert_true(feedback.contains("Brann"), "shield feedback names shield bearer")
+	_assert_true(feedback.contains("Shield -%d" % int(result["damage_applied"])), "shield feedback reports Shield HP loss")
+
+
+func _test_destroy_feedback_precedes_next_activation(scene: Control) -> void:
+	var fixture := _attack_presentation_fixture(scene, "Shield", Vector2i(2, 1))
+	fixture["attacker"]["weapon_mount_part"] = "Right Arm"
+	fixture["target"]["parts"]["Body"]["hp"] = 20
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["target"])
+	var result: Dictionary = scene._resolve_attack_result(fixture["attacker"], fixture["target"], preview, "Body", 11)
+	var sequence: Array = scene._build_attack_feedback_sequence(fixture["attacker"], fixture["target"], result)
+	var joined := " | ".join(sequence)
+	_assert_true(joined.contains("BODY DESTROYED"), "destroyed part feedback is stronger than ordinary hit")
+	_assert_true(joined.contains("DEFEATED"), "Body destruction announces mech defeat")
+	_assert_true(sequence.find("BODY DESTROYED / Enemy Blade DEFEATED") > sequence.find("HIT / Body"), "destruction feedback follows hit detail before advancement")
+
+
+func _test_manual_attack_waits_for_feedback_before_initiative_advance(scene: Control) -> void:
+	var fixture := _attack_presentation_fixture(scene, "Sniper")
+	scene.attack_presentation_enabled = true
+	scene.attack_feedback_step_seconds = 0.001
+	_assert_true(scene._try_attack_active_unit(fixture["target"], "", 11), "manual attack starts feedback presentation")
+	_assert_true(scene.attack_presentation_active, "attack feedback locks presentation")
+	_assert_true(scene._input_locked(), "attack feedback locks mutating input")
+	_assert_equal(scene.active_unit["id"], "mira", "initiative does not advance while attack feedback is visible")
+	await scene.presented_attack_completed
+	_assert_false(scene.attack_presentation_active, "attack feedback clears after sequence")
+	_assert_true(scene.active_unit["id"] != "mira", "initiative advances only after attack feedback completes")
+
+
+func _test_attack_presentation_does_not_change_deterministic_result(scene: Control) -> void:
+	var fixture := _attack_presentation_fixture(scene, "Rifle")
+	scene.attack_presentation_enabled = false
+	scene.set_debug_seed(3030)
+	var preview: Dictionary = scene._attack_preview(fixture["attacker"], fixture["target"])
+	var result: Dictionary = scene._resolve_attack_result(fixture["attacker"], fixture["target"], preview, "", 21)
+	var sequence: Array = scene._build_attack_feedback_sequence(fixture["attacker"], fixture["target"], result)
+	var snapshot_before := _part_hp_snapshot(fixture["target"])
+	var seed_before: int = int(scene.simulation_seed)
+
+	scene.attack_presentation_enabled = true
+	scene.attack_feedback_step_seconds = 0.001
+	await scene._present_attack_feedback(fixture["attacker"], fixture["target"], result)
+
+	_assert_equal(scene._build_attack_feedback_sequence(fixture["attacker"], fixture["target"], result), sequence, "presentation uses already-resolved deterministic attack data")
+	_assert_equal(_part_hp_snapshot(fixture["target"]), snapshot_before, "presentation timing does not alter damage")
+	_assert_equal(int(scene.simulation_seed), seed_before, "presentation timing does not consume RNG")
 
 
 func _test_phase1_strict_turn_rules_enforced(scene: Control) -> void:

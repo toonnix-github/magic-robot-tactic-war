@@ -255,11 +255,23 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn("enemy_presentation_log", self.source)
         self.assertIn("ENEMY_MOVE_STEP_SECONDS", self.source)
 
+    def test_attack_presentation_hooks_are_encoded(self):
+        for hook in [
+            "func _resolve_attack_result",
+            "func _build_attack_feedback_sequence",
+            "func _attack_feedback_line",
+            "func _present_attack_feedback",
+            "func _present_attack_then_finish",
+        ]:
+            self.assertIn(hook, self.source)
+        self.assertIn("attack_presentation_active", self.source)
+        self.assertIn("attack_feedback_log", self.source)
+        self.assertIn("attack_feedback_step_seconds", self.source)
+
 
 
 if __name__ == "__main__":
     unittest.main()
-
 
 
 

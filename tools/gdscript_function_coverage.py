@@ -84,7 +84,11 @@ def instrument_script(project_root: Path, relative_path: Path) -> list[str]:
         functions.append(function_name)
         indent = match.group("indent") + "\t"
         marker = f"{COVERAGE_PREFIX}:{relative_path.as_posix()}:{function_name}"
-        instrumented_lines.append(f'{indent}print("{marker}")')
+        meta_key_source = f"{relative_path.as_posix()}_{function_name}"
+        meta_key = "__gdscript_coverage_seen_" + re.sub(r"[^A-Za-z0-9_]", "_", meta_key_source)
+        instrumented_lines.append(f'{indent}if not Engine.has_meta("{meta_key}"):')
+        instrumented_lines.append(f'{indent}\tEngine.set_meta("{meta_key}", true)')
+        instrumented_lines.append(f'{indent}\tprint("{marker}")')
 
     script_path.write_text("\n".join(instrumented_lines) + "\n", encoding="utf-8")
     return functions
