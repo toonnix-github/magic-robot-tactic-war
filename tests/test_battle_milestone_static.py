@@ -576,6 +576,45 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         ]:
             self.assertNotIn(old_main_hook, self.main_source)
 
+    def test_phase2_mech_build_model_lives_in_data_layer(self):
+        """#35 — Phase 2 build/loadout rules belong to a data-domain model."""
+        model_path = ROOT / "src" / "data" / "mech_build_model.gd"
+        self.assertTrue(model_path.exists(), "src/data/mech_build_model.gd is missing")
+        model_source = model_path.read_text(encoding="utf-8")
+
+        self.assertIn("class_name MechBuildModel", model_source)
+        for data_name in [
+            "WEAPON_HANDEDNESS",
+            "OFF_HAND_EQUIPMENT_DATA",
+            "PROTOTYPE_MECH_BUILDS",
+        ]:
+            self.assertIn(f"const {data_name}", model_source)
+
+        for weapon, handedness in {
+            "Sword": "1H",
+            "Rifle": "1H",
+            "Spear": "2H",
+            "Sniper": "2H",
+        }.items():
+            self.assertIn(f'"{weapon}": "{handedness}"', model_source)
+        self.assertIn('"Shield"', model_source)
+        self.assertNotIn('"Shield": "1H"', model_source)
+        self.assertNotIn('"Shield": "2H"', model_source)
+
+        for hook in [
+            "func prototype_builds",
+            "func validate_build",
+            "func normalize_build",
+            "func build_summary",
+            "func battle_loadout_for_build",
+            "func weapon_handedness",
+        ]:
+            self.assertIn(hook, model_source)
+
+        self.assertNotIn("func validate_build", self.main_source)
+        self.assertNotIn("func normalize_build", self.main_source)
+        self.assertNotIn("func build_summary", self.main_source)
+
 
 if __name__ == "__main__":
     unittest.main()

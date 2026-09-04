@@ -1,5 +1,7 @@
 extends SceneTree
 
+const MechBuildModelScript := preload("res://src/data/mech_build_model.gd")
+
 var _failures: Array[String] = []
 
 
@@ -107,6 +109,7 @@ func _run() -> void:
 	_run_visible_auto_playback_acceptance(scene)
 	await _run_combat_impact_acceptance(scene)
 	_run_phase1_architecture_acceptance(scene)
+	_run_phase2_build_model_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -2854,6 +2857,107 @@ func _run_phase1_architecture_acceptance(scene: Control) -> void:
 	var replay_result: Dictionary = scene.run_auto_battle(60, 4242)
 	_assert_equal(replay_result["winner"], first_result["winner"], "#34: same seed replay preserves winner")
 	_assert_equal(replay_result["turn_log"], first_result["turn_log"], "#34: same seed replay preserves deterministic combat log")
+
+
+func _run_phase2_build_model_acceptance(scene: Control) -> void:
+	# #35 — Phase 2 build/loadout domain model.
+	var model = MechBuildModelScript.new()
+	for method in [
+		"prototype_builds",
+		"validate_build",
+		"normalize_build",
+		"build_summary",
+		"battle_loadout_for_build",
+		"weapon_handedness"
+	]:
+		_assert_true(model.has_method(method), "#35: build model exposes %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_phase2_default_builds_validate(scene, model)
+	_test_phase2_weapon_handedness_and_off_hand_rules(scene, model)
+	_test_phase2_invalid_builds_are_rejected_or_normalized(scene, model)
+	_test_phase2_orb_slots_and_battle_loadout_are_derived(scene, model)
+
+
+func _test_phase2_default_builds_validate(scene: Control, model) -> void:
+	var builds: Dictionary = model.prototype_builds()
+	for unit_id in ["arlen", "mira", "sera", "brann"]:
+		_assert_true(builds.has(unit_id), "#35: prototype build exists for %s" % unit_id)
+		var build: Dictionary = builds.get(unit_id, {})
+		var validation: Dictionary = model.validate_build(build, scene.WEAPON_DATA, scene.ORB_DATA, scene.PART_NAMES)
+		_assert_true(bool(validation.get("valid", false)), "#35: default build validates for %s" % unit_id)
+		var parts: Dictionary = build.get("parts", {})
+		for part_name in scene.PART_NAMES:
+			_assert_true(parts.has(part_name), "#35: %s build configures %s" % [unit_id, part_name])
+
+	_assert_equal(builds["arlen"]["weapon"], "Spear", "#35: Arlen keeps Phase 1 spear role as a 2H build")
+	_assert_equal(builds["mira"]["weapon"], "Sniper", "#35: Mira keeps Phase 1 sniper role as a 2H build")
+	_assert_equal(builds["sera"]["weapon"], "Rifle", "#35: Sera keeps Phase 1 rifle role as a 1H build")
+	_assert_equal(builds["brann"]["off_hand"], "Shield", "#35: Brann preserves shield identity as off-hand equipment")
+
+
+func _test_phase2_weapon_handedness_and_off_hand_rules(scene: Control, model) -> void:
+	_assert_equal(model.weapon_handedness("Sword"), "1H", "#35: Sword is 1H")
+	_assert_equal(model.weapon_handedness("Rifle"), "1H", "#35: Rifle is 1H")
+	_assert_equal(model.weapon_handedness("Spear"), "2H", "#35: Spear is 2H")
+	_assert_equal(model.weapon_handedness("Sniper"), "2H", "#35: Sniper is 2H")
+	_assert_equal(model.weapon_handedness("Shield"), "", "#35: Shield is not a weapon")
+
+	var builds: Dictionary = model.prototype_builds()
+	var brann_summary: Dictionary = model.build_summary(builds["brann"], scene.WEAPON_DATA, scene.ORB_DATA, scene.PART_NAMES)
+	_assert_equal(brann_summary["weapon_handedness"], "1H", "#35: Brann's weapon uses one hand")
+	_assert_equal(brann_summary["weapon_arm"], "Right Arm", "#35: 1H weapons mount to right arm")
+	_assert_true(bool(brann_summary["off_hand_slot_enabled"]), "#35: 1H weapons keep off-hand enabled")
+	_assert_equal(brann_summary["off_hand"], "Shield", "#35: shield is off-hand equipment")
+	_assert_true(bool(brann_summary["has_shield"]), "#35: shield summary flags shield behavior")
+
+	var arlen_summary: Dictionary = model.build_summary(builds["arlen"], scene.WEAPON_DATA, scene.ORB_DATA, scene.PART_NAMES)
+	_assert_equal(arlen_summary["weapon_handedness"], "2H", "#35: Spear uses both hands")
+	_assert_true(bool(arlen_summary["uses_both_arms"]), "#35: 2H weapon reserves both arms")
+	_assert_false(bool(arlen_summary["off_hand_slot_enabled"]), "#35: 2H weapon disables off-hand slot")
+	_assert_equal(arlen_summary["off_hand"], "", "#35: 2H summary has no off-hand equipment")
+
+
+func _test_phase2_invalid_builds_are_rejected_or_normalized(scene: Control, model) -> void:
+	var builds: Dictionary = model.prototype_builds()
+	var sniper_shield: Dictionary = builds["mira"].duplicate(true)
+	sniper_shield["off_hand"] = "Shield"
+	var invalid_two_hand: Dictionary = model.validate_build(sniper_shield, scene.WEAPON_DATA, scene.ORB_DATA, scene.PART_NAMES)
+	_assert_false(bool(invalid_two_hand.get("valid", true)), "#35: Sniper + Shield raw build is invalid")
+	_assert_true(str(invalid_two_hand.get("errors", [])).contains("2H"), "#35: invalid reason names 2H off-hand rule")
+
+	var normalized: Dictionary = model.normalize_build(sniper_shield, scene.WEAPON_DATA, scene.ORB_DATA, scene.PART_NAMES)
+	_assert_equal(normalized["off_hand"], "", "#35: normalization removes off-hand from 2H weapon")
+	var normalized_validation: Dictionary = model.validate_build(normalized, scene.WEAPON_DATA, scene.ORB_DATA, scene.PART_NAMES)
+	_assert_true(bool(normalized_validation.get("valid", false)), "#35: normalized Sniper build validates")
+
+	var shield_weapon: Dictionary = builds["brann"].duplicate(true)
+	shield_weapon["weapon"] = "Shield"
+	var invalid_shield_weapon: Dictionary = model.validate_build(shield_weapon, scene.WEAPON_DATA, scene.ORB_DATA, scene.PART_NAMES)
+	_assert_false(bool(invalid_shield_weapon.get("valid", true)), "#35: Shield cannot be equipped as the required weapon")
+
+	var missing_part: Dictionary = builds["sera"].duplicate(true)
+	missing_part["parts"].erase("Head")
+	var invalid_missing_part: Dictionary = model.validate_build(missing_part, scene.WEAPON_DATA, scene.ORB_DATA, scene.PART_NAMES)
+	_assert_false(bool(invalid_missing_part.get("valid", true)), "#35: missing required mech part is invalid")
+
+
+func _test_phase2_orb_slots_and_battle_loadout_are_derived(scene: Control, model) -> void:
+	var builds: Dictionary = model.prototype_builds()
+	var brann_summary: Dictionary = model.build_summary(builds["brann"], scene.WEAPON_DATA, scene.ORB_DATA, scene.PART_NAMES)
+	var orb_slots: Dictionary = brann_summary.get("orb_slots", {})
+	for part_name in scene.PART_NAMES:
+		_assert_true(orb_slots.has(part_name), "#35: derived summary exposes Orb slot for %s" % part_name)
+	_assert_equal(orb_slots["Left Arm"], "earth_ssr", "#35: Brann's default Orb stays on Left Arm")
+
+	var loadout: Dictionary = model.battle_loadout_for_build(builds["brann"], scene.WEAPON_DATA, scene.ORB_DATA, scene.PART_NAMES)
+	_assert_equal(loadout["pilot"], "brann", "#35: battle loadout keeps pilot separate")
+	_assert_equal(loadout["weapon"], "Sword", "#35: battle loadout exposes the required weapon")
+	_assert_equal(loadout["off_hand"], "Shield", "#35: battle loadout exposes shield as off-hand")
+	_assert_true(bool(loadout["has_shield"]), "#35: battle loadout exposes shield behavior")
+	_assert_equal(loadout["weapon_mount_part"], "Right Arm", "#35: battle setup can mount 1H weapon")
+	_assert_equal(loadout["orbs"]["Left Arm"], "earth_ssr", "#35: battle loadout carries Orb slots")
 
 
 func _assert_true(actual: bool, message: String) -> void:
