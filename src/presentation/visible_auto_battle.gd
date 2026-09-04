@@ -176,9 +176,13 @@ func _set_auto_battle(enabled: bool) -> void:
 	auto_battle = enabled
 	last_action_message = "Auto Battle: ON" if auto_battle else "Auto Battle: OFF"
 	if auto_battle and can_start_now:
-		if active_unit != null and str(active_unit.get("team", "")) == "player":
+		if active_unit == null:
+			_begin_next_activation()
+		elif str(active_unit.get("team", "")) == "player":
 			if fast_simulation:
 				_resolve_ai_activation(active_unit)
+				if not _is_battle_over():
+					_begin_next_activation()
 			else:
 				var plan := _plan_ai_activation(active_unit)
 				_clear_move_preview()
