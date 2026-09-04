@@ -646,6 +646,35 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertNotIn("const PROTOTYPE_MECH_BUILDS", hangar_source)
         self.assertNotIn("const WEAPON_HANDEDNESS", hangar_source)
 
+    def test_phase2_part_swap_tradeoff_apis_exist(self):
+        """#37 — part swapping and stat deltas stay model-backed."""
+        model_source = (ROOT / "src" / "data" / "mech_build_model.gd").read_text(encoding="utf-8")
+        hangar_source = (ROOT / "src" / "ui" / "hangar_screen.gd").read_text(encoding="utf-8")
+
+        self.assertIn("const PART_CATALOG", model_source)
+        for part_name in ["Head", "Body", "Left Arm", "Right Arm", "Legs"]:
+            self.assertIn(f'"{part_name}"', model_source)
+        for stat_name in ["max_hp", "accuracy", "defense", "speed", "move", "dodge"]:
+            self.assertIn(f'"{stat_name}"', model_source)
+        for hook in [
+            "func part_catalog",
+            "func build_stats",
+            "func part_delta",
+            "func swap_part",
+            "func strictly_superior_options",
+        ]:
+            self.assertIn(hook, model_source)
+
+        for hook in [
+            "func highlight_part",
+            "func available_part_options",
+            "func preview_part_delta",
+            "func swap_part",
+        ]:
+            self.assertIn(hook, hangar_source)
+        self.assertIn("build_model.swap_part", hangar_source)
+        self.assertIn("build_model.part_delta", hangar_source)
+
 
 if __name__ == "__main__":
     unittest.main()

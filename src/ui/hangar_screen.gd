@@ -14,6 +14,7 @@ var game_data = GameDataScript.new()
 var builds: Dictionary = build_model.prototype_builds()
 var unit_tab_rects: Dictionary = {}
 var nav_rects: Dictionary = {}
+var highlighted_part_name := "Head"
 
 
 func _ready() -> void:
@@ -78,7 +79,7 @@ func part_rows() -> Array:
 		rows.append({
 			"part_name": part_name,
 			"part_id": str(parts.get(part_name, "")),
-			"durability": _durability_label(source_unit, part_name),
+			"durability": _durability_label(part_name, str(parts.get(part_name, "")), source_unit),
 			"orb_id": orb_id,
 			"orb_state": _orb_label(orb_id),
 			"occupied_by": occupied_by,
@@ -99,6 +100,34 @@ func weapon_panel_data() -> Dictionary:
 		"has_shield": bool(summary.get("has_shield", false)),
 		"shield_max_hp": int(summary.get("shield_max_hp", 0)),
 	}
+
+
+func highlight_part(part_name: String) -> bool:
+	if not GameDataScript.PART_NAMES.has(part_name):
+		return false
+	highlighted_part_name = part_name
+	queue_redraw()
+	return true
+
+
+func available_part_options(part_name: String = "") -> Array:
+	var slot_name := highlighted_part_name if part_name == "" else part_name
+	return build_model.part_catalog(slot_name)
+
+
+func preview_part_delta(part_name: String, candidate_part_id: String) -> Dictionary:
+	return build_model.part_delta(_current_build(), part_name, candidate_part_id, GameDataScript.PART_NAMES)
+
+
+func swap_part(part_name: String, candidate_part_id: String) -> bool:
+	var before: Dictionary = _current_build()
+	var after: Dictionary = build_model.swap_part(before, part_name, candidate_part_id, GameDataScript.PART_NAMES)
+	if after == before:
+		return false
+	builds[current_unit_id] = after
+	highlighted_part_name = part_name
+	queue_redraw()
+	return true
 
 
 func layout_metrics() -> Dictionary:
@@ -151,6 +180,7 @@ func _draw() -> void:
 	_draw_unit_identity(rects["identity"])
 	_draw_weapon_panel(rects["weapon"])
 	_draw_parts_panel(rects["parts"])
+	_draw_part_options(rects["options"])
 
 
 func _draw_title() -> void:
@@ -204,8 +234,9 @@ func _draw_parts_panel(rect: Rect2) -> void:
 	var y := rect.position.y + 50.0
 	for row in part_rows():
 		var row_rect := Rect2(Vector2(rect.position.x + 16.0, y), Vector2(rect.size.x - 32.0, PART_ROW_HEIGHT - 8.0))
-		draw_rect(row_rect, Color(0.14, 0.17, 0.18), true)
-		draw_rect(row_rect, Color(0.24, 0.30, 0.31), false, 1.0)
+		var selected := str(row["part_name"]) == highlighted_part_name
+		draw_rect(row_rect, Color(0.17, 0.22, 0.21) if selected else Color(0.14, 0.17, 0.18), true)
+		draw_rect(row_rect, Color(0.46, 0.65, 0.56) if selected else Color(0.24, 0.30, 0.31), false, 1.0)
 		draw_string(_font(), row_rect.position + Vector2(12, 21), str(row["part_name"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(12), Color(0.88, 0.91, 0.90))
 		draw_string(_font(), row_rect.position + Vector2(112, 21), str(row["part_id"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(12), Color(0.65, 0.72, 0.72))
 		draw_string(_font(), row_rect.position + Vector2(350, 21), str(row["durability"]), HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(12), Color(0.74, 0.83, 0.74))
@@ -214,12 +245,29 @@ func _draw_parts_panel(rect: Rect2) -> void:
 		y += PART_ROW_HEIGHT
 
 
+func _draw_part_options(rect: Rect2) -> void:
+	_draw_panel(rect, Color(0.12, 0.14, 0.15))
+	draw_string(_font(), rect.position + Vector2(20, 28), "PART OPTIONS", HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(10), Color(0.55, 0.62, 0.64))
+	draw_string(_font(), rect.position + Vector2(20, 52), highlighted_part_name, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(17), Color(0.94, 0.96, 0.95))
+	var y := rect.position.y + 78.0
+	for option in available_part_options(highlighted_part_name).slice(0, 3):
+		var option_id := str(option.get("id", ""))
+		var delta: Dictionary = preview_part_delta(highlighted_part_name, option_id)
+		var line := str(option.get("name", option_id))
+		var delta_lines: Array = delta.get("display_lines", [])
+		if not delta_lines.is_empty():
+			line += " / " + str(delta_lines[0])
+		draw_string(_font(), Vector2(rect.position.x + 20.0, y), line, HORIZONTAL_ALIGNMENT_LEFT, -1.0, _font_size(11), Color(0.72, 0.79, 0.78))
+		y += 34.0
+
+
 func _layout_rects() -> Dictionary:
 	return {
 		"header": Rect2(Vector2(18, 18), Vector2(1244, 86)),
 		"tabs": Rect2(Vector2(356, 40), Vector2(630, 42)),
 		"identity": Rect2(Vector2(26, 128), Vector2(300, 414)),
 		"weapon": Rect2(Vector2(350, 128), Vector2(300, 206)),
+		"options": Rect2(Vector2(350, 352), Vector2(300, 190)),
 		"parts": Rect2(Vector2(674, 128), Vector2(580, 348)),
 	}
 
@@ -235,7 +283,10 @@ func _source_player_unit(unit_id: String) -> Dictionary:
 	return {}
 
 
-func _durability_label(source_unit: Dictionary, part_name: String) -> String:
+func _durability_label(part_name: String, part_id: String, source_unit: Dictionary) -> String:
+	for option in build_model.part_catalog(part_name):
+		if str(option.get("id", "")) == part_id:
+			return "%d HP" % int(option.get("max_hp", 0))
 	var parts: Dictionary = source_unit.get("parts", {})
 	var ratio := float(parts.get(part_name, 1.0))
 	return "%d HP" % int(round(ratio * 100.0))
