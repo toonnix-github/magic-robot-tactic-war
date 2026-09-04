@@ -2,45 +2,43 @@
 
 Phase 1 core combat implementation is complete through issue #16 and the regression workflow is green. The remaining work is focused on battle readability, deliberate player decision-making, completing the Orb/Pilot identity, and collecting enough playtest evidence to make a Go/Iterate decision before Phase 2.
 
-## Execution Order
+## Execution Status (ALL COMPLETE)
 
-Work these issues in order unless the user explicitly changes priority:
-
-1. **#18 — Enemy movement presentation and activation readability**
+1. **#18 — Enemy movement presentation and activation readability** [COMPLETED]
    - Make enemy turns visible instead of teleporting simulation state.
 
-2. **#19 — Combat attack presentation, damage feedback and part-hit readability**
+2. **#19 — Combat attack presentation, damage feedback and part-hit readability** [COMPLETED]
    - Show attacker, target, hit/miss, damage amount, affected part, Shield interception and destruction consequences.
 
-3. **#20 — Attack range overlay and target legality explanation**
+3. **#20 — Attack range overlay and target legality explanation** [COMPLETED]
    - Show the weapon's attackable area, legal targets and reasons for invalid targets.
 
-4. **#21 — Movement preview with confirm and cancel**
+4. **#21 — Movement preview with confirm and cancel** [COMPLETED]
    - Destination selection becomes preview-only until the player explicitly confirms movement.
 
-5. **#22 — Enemy inspection panel during target selection**
+5. **#22 — Enemy inspection panel during target selection** [COMPLETED]
    - Let the player compare target part HP, weapon, status, terrain and attack preview before committing.
 
-6. **#23 — Numeric HP values on mech parts and Shield**
+6. **#23 — Numeric HP values on mech parts and Shield** [COMPLETED]
    - Add current/max values to the existing HP bars.
 
-7. **#24 — Default Orb loadouts, visible proc feedback and one real status effect**
+7. **#24 — Default Orb loadouts, visible proc feedback and one real status effect** [COMPLETED]
    - Make Orb gameplay observable during normal battles; implement one real deterministic status effect such as Burn.
 
-8. **#25 — Pilot passive identities**
+8. **#25 — Pilot passive identities** [COMPLETED]
    - Arlen, Mira, Sera and Brann gain data-driven passive identities only; no active pilot buttons.
 
-9. **#26 — Spear part-weighting correction and weapon-data validation**
+9. **#26 — Spear part-weighting correction and weapon-data validation** [COMPLETED]
    - Remove guaranteed Body targeting and validate weapon part-weight data.
 
-10. **#27 — Mission selector, Auto toggle and Phase 1 debug controls**
+10. **#27 — Mission selector, Auto toggle and Phase 1 debug controls** [COMPLETED]
     - Human playtesters can launch all required scenarios without changing code.
 
-11. **#28 — Phase 1 build-quality Auto benchmark and replay evidence**
+11. **#28 — Phase 1 build-quality Auto benchmark and replay evidence** [COMPLETED]
     - Compare sensible vs mismatched builds using identical seeds and enemy setup.
 
-12. **#29 — Phase 1 closure: UX stabilization, regression and playtest sign-off**
-    - Final technical + human playtest gate; document `GO to Phase 2` or `ITERATE Phase 1`.
+12. **#29 — Phase 1 closure: UX stabilization, regression and playtest sign-off** [COMPLETED - SIGNED OFF: GO TO PHASE 2]
+    - Final technical + human playtest gate; documented `GO to Phase 2` in `docs/playtest/phase1-closure-sign-off.md`.
 
 ## Priority Principle
 
