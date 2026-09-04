@@ -35,10 +35,11 @@ jobs:
       - name: Run Python regression tests
         run: python -m unittest discover
 
-      - name: Run Godot headless tests
-        run: |
-          "$GODOT_BIN" --headless --path . -s res://tests/godot/battle_milestone_test.gd
-          "$GODOT_BIN" --headless --path . -s res://tests/godot/visible_auto_playback_test.gd
+      - name: Run core Godot headless tests
+        run: timeout 45s "$GODOT_BIN" --headless --path . -s res://tests/godot/battle_milestone_test.gd
+
+      - name: Run visible Auto playback tests
+        run: timeout 45s "$GODOT_BIN" --headless --path . -s res://tests/godot/visible_auto_playback_test.gd
 
       - name: Enforce GDScript coverage
         run: |
