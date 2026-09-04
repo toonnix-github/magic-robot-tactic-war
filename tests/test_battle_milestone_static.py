@@ -268,10 +268,21 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn("attack_feedback_log", self.source)
         self.assertIn("attack_feedback_step_seconds", self.source)
 
+    def test_attack_overlay_hooks_are_encoded(self):
+        for hook in [
+            "func _calculate_attack_overlay_tiles",
+            "func _attack_overlay_for_tile",
+            "func _attack_target_reason",
+            "func _refresh_attack_overlay",
+        ]:
+            self.assertIn(hook, self.source)
+        self.assertIn("attack_overlay_tiles", self.source)
+        self.assertIn("minimum_range", self.source)
+        self.assertIn("los_blocked", self.source)
+
 
 
 if __name__ == "__main__":
     unittest.main()
-
 
 

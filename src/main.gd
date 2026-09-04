@@ -215,6 +215,7 @@ var selected_unit = null
 var selected_action := "Move"
 var reachable_tiles := {}
 var targetable_tiles := {}
+var attack_overlay_tiles := {}
 var action_rects := {}
 var turn_state: int = TurnState.TURN_START
 var initiative_timeline: Array[String] = []
@@ -625,6 +626,7 @@ func _select_unit(unit) -> void:
 	selected_unit = unit
 	target_preview.clear()
 	targetable_tiles.clear()
+	attack_overlay_tiles.clear()
 	if _is_active_unit(unit):
 		if _can_move(unit):
 			selected_action = "Move"
@@ -650,18 +652,20 @@ func _select_action(action: String) -> void:
 			turn_state = TurnState.SELECTING_MOVE
 			selected_unit = active_unit
 			reachable_tiles = _calculate_reachable_tiles(active_unit)
+			attack_overlay_tiles.clear()
 	elif action == "Attack":
 		selected_action = action
 		reachable_tiles.clear()
-		if _can_attack(active_unit):
+		if active_unit != null and _is_active_unit(active_unit) and _is_unit_in_battle(active_unit) and not bool(active_unit["weapon_disabled"]) and not bool(active_unit["has_attacked"]) and not bool(active_unit["activation_complete"]):
 			turn_state = TurnState.SELECTING_ATTACK
 			selected_unit = active_unit
-			targetable_tiles = _calculate_targetable_tiles(active_unit)
+			_refresh_attack_overlay()
 			target_preview.clear()
 	elif action == "Wait":
 		selected_action = action
 		reachable_tiles.clear()
 		targetable_tiles.clear()
+		attack_overlay_tiles.clear()
 		target_preview.clear()
 		if _can_wait(active_unit):
 			_try_wait_active_unit()
@@ -682,7 +686,15 @@ func _handle_grid_tap(position: Vector2) -> void:
 		_try_move_active_unit(grid)
 		queue_redraw()
 	elif selected_action == "Attack" and turn_state == TurnState.SELECTING_ATTACK:
+		if attack_overlay_tiles.has(_grid_key(grid)):
+			var entry: Dictionary = attack_overlay_tiles[_grid_key(grid)]
+			var reason := str(entry.get("reason", ""))
+			if reason != "":
+				last_action_message = reason
+				queue_redraw()
+				return
 		_cancel_attack_selection()
+
 
 
 func _initialize_initiative() -> void:
@@ -771,6 +783,7 @@ func _begin_activation(unit) -> void:
 	turn_state = TurnState.TURN_START
 	reachable_tiles.clear()
 	targetable_tiles.clear()
+	attack_overlay_tiles.clear()
 	target_preview.clear()
 
 	if unit["team"] == "player":
@@ -1060,6 +1073,7 @@ func _finish_activation(unit) -> void:
 	turn_state = TurnState.ACTION_COMPLETE
 	reachable_tiles.clear()
 	targetable_tiles.clear()
+	attack_overlay_tiles.clear()
 	target_preview.clear()
 	_schedule_future_activation(unit)
 	turn_state = TurnState.TURN_END
@@ -1145,6 +1159,7 @@ func _try_move_active_unit(grid: Vector2i) -> bool:
 	turn_log.append("%s:move:(%d,%d)" % [active_unit["id"], grid.x, grid.y])
 	reachable_tiles.clear()
 	targetable_tiles.clear()
+	attack_overlay_tiles.clear()
 	target_preview.clear()
 	turn_state = TurnState.MOVE_COMPLETE
 	selected_action = "Attack" if _can_attack(active_unit) else "Wait"
@@ -1183,6 +1198,7 @@ func _confirm_attack_target(target, part_name := "", seed := 0) -> bool:
 	target_preview = _attack_preview(active_unit, target)
 	selected_unit = target
 	if not bool(target_preview["legal"]):
+		last_action_message = _attack_target_reason(active_unit, target)
 		queue_redraw()
 		return false
 
@@ -1197,6 +1213,7 @@ func _cancel_attack_selection() -> void:
 
 	selected_unit = active_unit
 	targetable_tiles.clear()
+	attack_overlay_tiles.clear()
 	target_preview.clear()
 	if _can_move(active_unit):
 		selected_action = "Move"
@@ -1216,6 +1233,8 @@ func _preview_attack_target(target) -> Dictionary:
 
 	target_preview = _attack_preview(active_unit, target)
 	selected_unit = target
+	if not bool(target_preview.get("legal", false)):
+		last_action_message = _attack_target_reason(active_unit, target)
 	queue_redraw()
 	return target_preview
 
@@ -1951,6 +1970,118 @@ func _calculate_targetable_tiles(unit) -> Dictionary:
 	return targetable
 
 
+func _refresh_attack_overlay() -> void:
+	if active_unit == null:
+		attack_overlay_tiles.clear()
+		targetable_tiles.clear()
+		return
+	attack_overlay_tiles = _calculate_attack_overlay_tiles(active_unit)
+	targetable_tiles = _calculate_targetable_tiles(active_unit)
+
+
+func _calculate_attack_overlay_tiles(attacker) -> Dictionary:
+	var overlay := {}
+	if attacker == null:
+		return overlay
+	for row in range(GRID_ROWS):
+		for col in range(GRID_COLUMNS):
+			var grid := Vector2i(col, row)
+			overlay[_grid_key(grid)] = _attack_overlay_for_tile(attacker, grid)
+	return overlay
+
+
+func _attack_overlay_for_tile(attacker, grid: Vector2i) -> Dictionary:
+	var weapon_data := _weapon_data_for(attacker)
+	var pattern := str(weapon_data.get("pattern", "single"))
+	var min_range := int(weapon_data.get("range_min", 1))
+	var max_range := int(weapon_data.get("range_max", 1))
+	var target_unit = _unit_at_grid(grid)
+	var delta: Vector2i = grid - attacker["grid"]
+	var distance: int = absi(delta.x) + absi(delta.y)
+
+	var status := "outside_range"
+	var reason := "Out of range"
+	var in_pattern := false
+
+	if distance == 0:
+		status = "outside_range"
+		reason = "Self"
+	elif pattern == "line_2":
+		if (delta.x == 0 or delta.y == 0) and distance >= 1 and distance <= max_range:
+			in_pattern = true
+		else:
+			status = "outside_range"
+			reason = "Out of range"
+	else:
+		if distance < min_range:
+			status = "minimum_range"
+			reason = "Minimum range %d" % min_range
+		elif distance <= max_range:
+			in_pattern = true
+		else:
+			status = "outside_range"
+			reason = "Out of range"
+
+	if in_pattern:
+		if not _has_line_of_sight(attacker["grid"], grid):
+			status = "los_blocked"
+			reason = "LOS blocked"
+		elif target_unit != null and _is_unit_in_battle(target_unit):
+			if target_unit["team"] != attacker["team"]:
+				if _is_attack_target_legal(attacker, target_unit):
+					status = "legal_target"
+					reason = "Legal target"
+				else:
+					status = "invalid_target"
+					reason = _attack_target_reason(attacker, target_unit)
+			else:
+				status = "weapon_area"
+				reason = "Ally"
+		else:
+			status = "weapon_area"
+			reason = ""
+
+	return {
+		"grid": grid,
+		"status": status,
+		"legal": status == "legal_target",
+		"reason": reason,
+		"pattern": pattern,
+		"target_unit": target_unit,
+		"target_id": str(target_unit["id"]) if target_unit != null else "",
+	}
+
+
+func _attack_target_reason(attacker, target) -> String:
+	if attacker == null or target == null:
+		return ""
+	if bool(attacker.get("weapon_disabled", false)):
+		return "Weapon disabled"
+	if attacker.get("team") == target.get("team"):
+		return "Ally"
+	var weapon_data := _weapon_data_for(attacker)
+	var distance: int = _grid_distance(attacker["grid"], target["grid"])
+	var min_range := int(weapon_data.get("range_min", 1))
+	var max_range := int(weapon_data.get("range_max", 1))
+	var pattern := str(weapon_data.get("pattern", "single"))
+
+	if pattern == "line_2":
+		if distance < 1 or distance > max_range or _spear_direction(attacker, target) == Vector2i.ZERO:
+			return "Out of range"
+	else:
+		if distance < min_range:
+			return "Minimum range %d" % min_range
+		if distance > max_range:
+			return "Out of range"
+
+	if not _has_line_of_sight(attacker["grid"], target["grid"]):
+		return "LOS blocked"
+	if _is_attack_target_legal(attacker, target):
+		return "Legal target"
+	return "Invalid target"
+
+
+
 func _attack_preview(attacker, target) -> Dictionary:
 	var distance := _grid_distance(attacker["grid"], target["grid"]) if attacker != null and target != null else 0
 	var weapon_data := _weapon_data_for(attacker)
@@ -2374,9 +2505,26 @@ func _draw_tile(grid: Vector2i) -> void:
 		draw_rect(rect.grow(-3.0 * min(_scale().x, _scale().y)), Color(0.22, 0.43, 0.48, 0.82), true)
 		draw_rect(rect.grow(-3.0 * min(_scale().x, _scale().y)), Color(0.53, 0.71, 0.75), false, 2.0)
 
-	if targetable_tiles.has(_grid_key(grid)):
+	if turn_state == TurnState.SELECTING_ATTACK and attack_overlay_tiles.has(_grid_key(grid)):
+		var entry: Dictionary = attack_overlay_tiles[_grid_key(grid)]
+		var status := str(entry.get("status", ""))
+		var inset: float = 4.0 * min(_scale().x, _scale().y)
+		if status == "legal_target":
+			draw_rect(rect.grow(-inset), Color(0.68, 0.18, 0.18, 0.65), true)
+			draw_rect(rect.grow(-inset), Color(0.96, 0.45, 0.42), false, 2.5)
+		elif status == "weapon_area":
+			draw_rect(rect.grow(-inset), Color(0.55, 0.25, 0.25, 0.28), true)
+			draw_rect(rect.grow(-inset), Color(0.78, 0.40, 0.40, 0.55), false, 1.0)
+		elif status == "minimum_range":
+			draw_rect(rect.grow(-inset), Color(0.35, 0.28, 0.20, 0.35), true)
+			draw_rect(rect.grow(-inset), Color(0.60, 0.45, 0.25, 0.50), false, 1.0)
+		elif status == "los_blocked":
+			draw_rect(rect.grow(-inset), Color(0.28, 0.20, 0.32, 0.40), true)
+			draw_rect(rect.grow(-inset), Color(0.50, 0.35, 0.55, 0.55), false, 1.0)
+	elif targetable_tiles.has(_grid_key(grid)):
 		draw_rect(rect.grow(-5.0 * min(_scale().x, _scale().y)), Color(0.49, 0.22, 0.22, 0.62), true)
 		draw_rect(rect.grow(-5.0 * min(_scale().x, _scale().y)), Color(0.85, 0.50, 0.48), false, 2.0)
+
 
 
 func _draw_cover(grid: Vector2i) -> void:

@@ -92,6 +92,7 @@ func _run() -> void:
 	_run_phase1_stabilization_acceptance(scene)
 	await _run_enemy_presentation_acceptance(scene)
 	await _run_attack_presentation_acceptance(scene)
+	_run_attack_overlay_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -1649,6 +1650,105 @@ func _test_attack_presentation_does_not_change_deterministic_result(scene: Contr
 	_assert_equal(scene._build_attack_feedback_sequence(fixture["attacker"], fixture["target"], result), sequence, "presentation uses already-resolved deterministic attack data")
 	_assert_equal(_part_hp_snapshot(fixture["target"]), snapshot_before, "presentation timing does not alter damage")
 	_assert_equal(int(scene.simulation_seed), seed_before, "presentation timing does not consume RNG")
+
+
+func _run_attack_overlay_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_calculate_attack_overlay_tiles",
+		"_attack_overlay_for_tile",
+		"_attack_target_reason",
+		"_refresh_attack_overlay",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "Attack overlay API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_sword_overlay_is_orthogonal_range_one(scene)
+	_test_sniper_overlay_shows_minimum_range_dead_zone(scene)
+	_test_los_blocked_enemy_differs_from_out_of_range_enemy(scene)
+	_test_spear_overlay_shows_straight_two_tile_lines(scene)
+	_test_attack_overlay_and_preview_legality_agree(scene)
+
+
+func _attack_overlay_fixture(scene: Control, weapon := "Sniper", attacker_grid := Vector2i(3, 3)) -> Dictionary:
+	scene._load_mission("ancient_ruins")
+	scene.enemy_presentation_enabled = false
+	scene.attack_presentation_enabled = false
+	var attacker = scene._unit_by_id("mira")
+	attacker["weapon"] = weapon
+	attacker["weapon_mount_part"] = "Right Arm"
+	attacker["grid"] = attacker_grid
+	scene._unit_by_id("arlen")["grid"] = Vector2i(0, 6)
+	scene._unit_by_id("sera")["grid"] = Vector2i(0, 5)
+	scene._unit_by_id("brann")["grid"] = Vector2i(0, 4)
+	scene._unit_by_id("enemy_blade")["grid"] = Vector2i(9, 6)
+	scene._unit_by_id("enemy_rifle")["grid"] = Vector2i(8, 6)
+	scene._unit_by_id("enemy_spear")["grid"] = Vector2i(9, 5)
+	scene._unit_by_id("enemy_sniper")["grid"] = Vector2i(8, 5)
+	scene._unit_by_id("commander")["grid"] = Vector2i(9, 4)
+	scene._begin_activation(attacker)
+	return {"attacker": attacker}
+
+
+func _overlay_keys_for_status(overlay: Dictionary, statuses: Array) -> Array:
+	var keys := []
+	for key in overlay.keys():
+		if statuses.has(str(overlay[key].get("status", ""))):
+			keys.append(key)
+	keys.sort()
+	return keys
+
+
+func _test_sword_overlay_is_orthogonal_range_one(scene: Control) -> void:
+	var fixture := _attack_overlay_fixture(scene, "Sword", Vector2i(3, 3))
+	var overlay: Dictionary = scene._calculate_attack_overlay_tiles(fixture["attacker"])
+	var expected := ["2,3", "3,2", "3,4", "4,3"]
+	_assert_equal(_overlay_keys_for_status(overlay, ["weapon_area", "legal_target"]), expected, "Sword overlay shows exactly four orthogonal range-1 tiles")
+	_assert_equal(overlay["4,4"]["status"], "outside_range", "Sword overlay excludes diagonal tiles")
+
+
+func _test_sniper_overlay_shows_minimum_range_dead_zone(scene: Control) -> void:
+	var fixture := _attack_overlay_fixture(scene, "Sniper", Vector2i(3, 3))
+	var overlay: Dictionary = scene._calculate_attack_overlay_tiles(fixture["attacker"])
+	_assert_equal(overlay["4,3"]["status"], "minimum_range", "Sniper adjacent tile is minimum-range dead zone")
+	_assert_equal(overlay["4,3"]["reason"], "Minimum range 2", "Sniper dead zone explains minimum range")
+	_assert_true(["weapon_area", "legal_target"].has(str(overlay["5,3"]["status"])), "Sniper tile at range 2 is in weapon area")
+
+
+func _test_los_blocked_enemy_differs_from_out_of_range_enemy(scene: Control) -> void:
+	var fixture := _attack_overlay_fixture(scene, "Sniper", Vector2i(1, 1))
+	var blocked = scene._unit_by_id("enemy_blade")
+	var far = scene._unit_by_id("commander")
+	blocked["grid"] = Vector2i(4, 1)
+	far["grid"] = Vector2i(9, 6)
+	scene._set_tile_terrain(Vector2i(2, 1), {"blocks_los": true})
+	var overlay: Dictionary = scene._calculate_attack_overlay_tiles(fixture["attacker"])
+	_assert_equal(overlay[scene._grid_key(blocked["grid"])]["status"], "los_blocked", "LOS-blocked target tile is categorized distinctly")
+	_assert_equal(scene._attack_target_reason(fixture["attacker"], blocked), "LOS blocked", "LOS-blocked target gives LOS reason")
+	_assert_equal(scene._attack_target_reason(fixture["attacker"], far), "Out of range", "out-of-range target gives range reason")
+
+
+func _test_spear_overlay_shows_straight_two_tile_lines(scene: Control) -> void:
+	var fixture := _attack_overlay_fixture(scene, "Spear", Vector2i(4, 3))
+	var overlay: Dictionary = scene._calculate_attack_overlay_tiles(fixture["attacker"])
+	for key in ["2,3", "3,3", "5,3", "6,3", "4,1", "4,2", "4,4", "4,5"]:
+		_assert_true(["weapon_area", "legal_target"].has(str(overlay[key]["status"])), "Spear overlay includes straight line tile %s" % key)
+	_assert_equal(overlay["5,4"]["status"], "outside_range", "Spear overlay excludes diagonal tile")
+	_assert_equal(overlay["6,3"]["pattern"], "line_2", "Spear overlay exposes line_2 pattern")
+
+
+func _test_attack_overlay_and_preview_legality_agree(scene: Control) -> void:
+	var fixture := _attack_overlay_fixture(scene, "Rifle", Vector2i(3, 3))
+	scene._unit_by_id("enemy_blade")["grid"] = Vector2i(5, 3)
+	scene._unit_by_id("commander")["grid"] = Vector2i(9, 6)
+	var overlay: Dictionary = scene._calculate_attack_overlay_tiles(fixture["attacker"])
+	for unit in scene.units:
+		if str(unit.get("team", "")) != "enemy":
+			continue
+		var preview: Dictionary = scene._attack_preview(fixture["attacker"], unit)
+		var entry: Dictionary = overlay[scene._grid_key(unit["grid"])]
+		_assert_equal(str(entry["status"]) == "legal_target", bool(preview["legal"]), "overlay and preview agree for %s" % str(unit["id"]))
 
 
 func _test_phase1_strict_turn_rules_enforced(scene: Control) -> void:
