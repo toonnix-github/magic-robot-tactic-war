@@ -38,9 +38,28 @@ For each ticket:
 4. Run the Godot project/tests and fix regressions.
 5. Ensure the GitHub Regression workflow remains green.
 6. Commit with the issue number in the commit message.
-7. Push completed work to the working branch before integration.
-8. Do not silently invent a new game rule when requirements conflict; preserve the source-of-truth design and surface the conflict.
-9. When working in parallel, keep changes narrowly scoped and avoid opportunistic refactors that increase merge conflicts.
+7. Push completed work only to the ticket's dedicated work branch.
+8. Open a Pull Request back to the current phase/integration branch; do not integrate by direct push.
+9. Do not silently invent a new game rule when requirements conflict; preserve the source-of-truth design and surface the conflict.
+10. When working in parallel, keep changes narrowly scoped and avoid opportunistic refactors that increase merge conflicts.
+
+## Mandatory Git Workflow
+`docs/git-workflow.md` is mandatory for all coding, test, refactor, tooling, and significant documentation work.
+
+Rules:
+- Never develop directly on `main`, `prototype/combat-v01`, or any future shared phase/integration branch.
+- Every ticket / coherent task gets its own short-lived branch before editing begins.
+- Use branch names such as `feature/<issue>-<name>`, `fix/<issue>-<name>`, `refactor/<issue>-<name>`, or `test/<issue>-<name>`.
+- One branch should normally correspond to one issue or one tightly scoped change.
+- Parallel AI/sub-agent workers must use separate branches. Two workers must not share the same mutable feature branch.
+- PRs target the current phase/integration branch, not automatically `main`.
+- Required regression/CI must be green before merge.
+- Resolve conflicts on the work branch and re-run CI before merging.
+- Never force-push a shared integration branch.
+- After integrating parallel branches, run the full regression suite again on the integration branch.
+- Large refactors must be isolated from gameplay feature changes whenever practical.
+
+Direct push to a shared branch is allowed only when the user explicitly requests a named emergency direct fix. An AI must never infer this exception on its own.
 
 ## Design Source of Truth
 Read these before implementing or changing combat behavior or battle presentation:
@@ -51,7 +70,8 @@ Read these before implementing or changing combat behavior or battle presentatio
 5. `docs/ui/battle-screen-v0.1.svg`
 6. `docs/phase1-ticket-roadmap.md` for historical core implementation order
 7. `docs/phase1-closure-roadmap.md` for historical closure work
-8. Current open GitHub issues for post-closure changes
+8. `docs/git-workflow.md` for mandatory branch/PR integration rules
+9. Current open GitHub issues for post-closure changes
 
 If implementation conflicts with those files, the docs win unless they are intentionally updated in the same change.
 
