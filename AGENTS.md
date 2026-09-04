@@ -34,7 +34,7 @@ If tickets are functionally independent but both substantially modify the same f
 For each ticket:
 1. Read this file, the ticket body, relevant roadmap/design docs, and referenced tickets before coding.
 2. Implement only the current ticket scope. Do not pull unrelated future gameplay into the change unless a tiny shared abstraction is strictly necessary.
-3. Add/update deterministic tests covering the ticket acceptance criteria where practical.
+3. **MANDATORY TDD:** You MUST use strict Test-Driven Development (Red-Green-Refactor). Write the failing Python static tests and Godot acceptance tests FIRST, run them to verify they fail, and ONLY THEN write the implementation code to make them pass.
 4. Run the Godot project/tests and fix regressions.
 5. Ensure the GitHub Regression workflow remains green.
 6. Commit with the issue number in the commit message.
