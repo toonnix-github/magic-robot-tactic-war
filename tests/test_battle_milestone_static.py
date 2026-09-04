@@ -346,6 +346,19 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         for passive in ["part_breaker", "hawkeye", "elemental_resonance", "guardian_stance"]:
             self.assertIn(f'"{passive}"', self.source)
 
+    def test_weapon_data_validation_is_encoded(self):
+        for hook in [
+            "func _validate_weapon_data",
+            "func _validate_all_weapons_data",
+        ]:
+            self.assertIn(hook, self.source)
+        spear_match = re.search(r'"Spear":\s*\{(?P<body>[^\}]+)\}', self.source)
+        self.assertIsNotNone(spear_match, "Spear weapon data is present")
+        self.assertNotIn('"part_weights": {"Body": 100}', spear_match.group("body"))
+        sniper_match = re.search(r'"Sniper":\s*\{(?P<body>[^\}]+)\}', self.source)
+        self.assertIsNotNone(sniper_match, "Sniper weapon data is present")
+        self.assertIn('"Body": 10', sniper_match.group("body"))
+
 
 if __name__ == "__main__":
     unittest.main()

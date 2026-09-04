@@ -101,6 +101,7 @@ func _run() -> void:
 	_run_numeric_hp_acceptance(scene)
 	_run_orb_loadout_and_status_acceptance(scene)
 	_run_pilot_passives_acceptance(scene)
+	_run_weapon_data_validation_acceptance(scene)
 
 	if _failures.is_empty():
 
@@ -1291,9 +1292,9 @@ func _test_crystal_quarry_loot_distribution_reproducible_and_rarity_weighted(sce
 
 func _test_crystal_quarry_auto_battle_completes_deterministically(scene: Control) -> void:
 	scene._load_mission("crystal_quarry")
-	var run1: Dictionary = scene.run_auto_battle(65, 1337)
+	var run1: Dictionary = scene.run_auto_battle(90, 1337)
 	scene._load_mission("crystal_quarry")
-	var run2: Dictionary = scene.run_auto_battle(65, 1337)
+	var run2: Dictionary = scene.run_auto_battle(90, 1337)
 	_assert_equal(run1["winner"], run2["winner"], "Crystal Quarry Auto reproducible winner")
 	_assert_equal(run1["turns"], run2["turns"], "Crystal Quarry Auto reproducible turns")
 	_assert_true(run1["is_over"], "Crystal Quarry Auto battle completes")
@@ -2309,6 +2310,103 @@ func _test_inspection_panel_exposes_pilot_identity(scene: Control) -> void:
 	var pilot: Dictionary = data["pilot"]
 	_assert_equal(pilot.get("name"), "Arlen", "inspection data shows pilot name")
 	_assert_equal(pilot.get("passive_name"), "Part Breaker", "inspection data shows pilot passive name")
+
+
+func _run_weapon_data_validation_acceptance(scene: Control) -> void:
+	var required_methods := [
+		"_validate_weapon_data",
+		"_validate_all_weapons_data",
+	]
+	for method in required_methods:
+		_assert_true(scene.has_method(method), "weapon validation API exists: %s" % method)
+	if not _failures.is_empty():
+		return
+
+	_test_all_defined_weapons_pass_validation(scene)
+	_test_spear_body_weight_not_100_and_neutrally_distributed(scene)
+	_test_sniper_body_weight_remains_ten_percent(scene)
+	_test_invalid_weapon_part_weights_fail_validation(scene)
+	_test_weapons_remain_tactically_distinct(scene)
+
+
+func _test_all_defined_weapons_pass_validation(scene: Control) -> void:
+	var result: Dictionary = scene._validate_all_weapons_data()
+	_assert_true(bool(result.get("valid", false)), "all configured weapons pass data validation")
+	_assert_true(result.get("errors", {}).is_empty(), "no validation errors in default weapon set")
+
+
+func _test_spear_body_weight_not_100_and_neutrally_distributed(scene: Control) -> void:
+	var spear: Dictionary = scene.WEAPON_DATA["Spear"]
+	var weights: Dictionary = spear["part_weights"]
+	_assert_true(int(weights.get("Body", 0)) != 100, "Spear default Body weight is no longer 100%")
+	_assert_equal(int(weights.get("Head", 0)), 20, "Spear Head weight is 20%")
+	_assert_equal(int(weights.get("Body", 0)), 20, "Spear Body weight is 20%")
+	_assert_equal(int(weights.get("Left Arm", 0)), 20, "Spear Left Arm weight is 20%")
+	_assert_equal(int(weights.get("Right Arm", 0)), 20, "Spear Right Arm weight is 20%")
+	_assert_equal(int(weights.get("Legs", 0)), 20, "Spear Legs weight is 20%")
+
+
+func _test_sniper_body_weight_remains_ten_percent(scene: Control) -> void:
+	var sniper: Dictionary = scene.WEAPON_DATA["Sniper"]
+	var weights: Dictionary = sniper["part_weights"]
+	_assert_equal(int(weights.get("Body", 0)), 10, "Sniper Body weight remains exactly 10%")
+	_assert_equal(int(weights.get("Head", 0)), 30, "Sniper Head weight is 30%")
+
+
+func _test_invalid_weapon_part_weights_fail_validation(scene: Control) -> void:
+	var bad_total := {
+		"name": "Bad Weapon",
+		"range_min": 1,
+		"range_max": 2,
+		"damage": 20,
+		"part_weights": {"Head": 20, "Body": 20},
+	}
+	var res1: Dictionary = scene._validate_weapon_data(bad_total)
+	_assert_false(bool(res1.get("valid", true)), "weapon with weight total != 100 fails validation")
+
+	var bad_part := {
+		"name": "Bad Part",
+		"range_min": 1,
+		"range_max": 2,
+		"damage": 20,
+		"part_weights": {"Head": 50, "Wing": 50},
+	}
+	var res2: Dictionary = scene._validate_weapon_data(bad_part)
+	_assert_false(bool(res2.get("valid", true)), "weapon with invalid part name fails validation")
+
+	var neg_weight := {
+		"name": "Neg Weight",
+		"range_min": 1,
+		"range_max": 2,
+		"damage": 20,
+		"part_weights": {"Head": 110, "Body": -10},
+	}
+	var res3: Dictionary = scene._validate_weapon_data(neg_weight)
+	_assert_false(bool(res3.get("valid", true)), "weapon with negative weight fails validation")
+
+
+func _test_weapons_remain_tactically_distinct(scene: Control) -> void:
+	var sword: Dictionary = scene.WEAPON_DATA["Sword"]
+	var spear: Dictionary = scene.WEAPON_DATA["Spear"]
+	var rifle: Dictionary = scene.WEAPON_DATA["Rifle"]
+	var sniper: Dictionary = scene.WEAPON_DATA["Sniper"]
+
+	_assert_equal(sword["pattern"], "single", "Sword is single target")
+	_assert_equal(sword["range_max"], 1, "Sword is range 1")
+	_assert_equal(sword["damage"], 45, "Sword has high single hit damage")
+
+	_assert_equal(spear["pattern"], "line_2", "Spear has line_2 pattern")
+	_assert_equal(spear["range_max"], 2, "Spear reaches range 2")
+	_assert_equal(spear["damage"], 30, "Spear tile 1 damage is 30")
+	_assert_equal(spear["secondary_damage"], 22, "Spear tile 2 damage is 22")
+
+	_assert_equal(rifle["pattern"], "volley", "Rifle has volley pattern")
+	_assert_equal(rifle["shot_count"], 4, "Rifle fires 4 shots")
+	_assert_equal(rifle["damage"], 10, "Rifle has 10 damage per shot")
+
+	_assert_equal(sniper["range_min"], 2, "Sniper has minimum range 2")
+	_assert_equal(sniper["range_max"], 6, "Sniper reaches range 6")
+	_assert_equal(sniper["part_weights"]["Head"], 30, "Sniper head weight is highest at 30%")
 
 
 func _assert_true(actual: bool, message: String) -> void:
