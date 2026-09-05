@@ -3587,6 +3587,8 @@ func _test_phase2_playable_flow() -> void:
 		_assert_true(editor.deploy_button.disabled, "#58: resolve preview before deploying")
 		_assert_true(editor.comparison.text.contains("110"), "#58: comparison includes old HP")
 		_assert_true(editor.comparison.text.contains("138"), "#58: comparison includes new HP")
+		_assert_true(editor.stat_breakdown.text.contains("110 -> 138"), "#FM3: modification number is displayed in PART FRAME section")
+		_assert_false(editor.comparison.visible, "#FM3: no separate preview section added")
 		editor.cancel_button.pressed.emit()
 		_assert_equal(flow.hangar.builds, original, "#58: Cancel preserves equipped build")
 		_assert_false(editor.deploy_button.disabled, "#58: Cancel restores deployment")

@@ -460,7 +460,7 @@ func refresh() -> void:
 	_show_preview()
 
 
-func _format_stat_breakdown(breakdown: Dictionary) -> String:
+func _format_stat_breakdown(breakdown: Dictionary, preview_breakdown: Dictionary = {}) -> String:
 	var parts: Dictionary = breakdown["part_stats"]
 	var effective: Dictionary = breakdown["effective_stats"]
 	var p_hp: Dictionary = parts.get("part_hp", {})
@@ -473,17 +473,50 @@ func _format_stat_breakdown(breakdown: Dictionary) -> String:
 		orb_lines.append("[color=#38d9a9]•[/color] %s: %s (%s)" % [profile.get("part_name", ""), profile.get("name", ""), effs])
 	var orb_text := "\n".join(orb_lines) if not orb_lines.is_empty() else "[color=#778c85]No Orbs installed[/color]"
 
-	return "[b]PART FRAME[/b]\nHead: %d HP  |  Body: %d HP\nL.Arm: %d HP  |  R.Arm: %d HP\nLegs: %d HP\n\n[b]EFFECTIVE LOADOUT[/b]\nMove: %d tiles  |  Speed: %d\nDefense: %d%%  |  Dodge: %d%%\nAttack Hit: %d%%  |  Damage: %+d%%\n%s\n\n[b]PILOT SKILL[/b]\n%s: %s\n\n[b]SOCKETED ORBS[/b]\n%s" % [
-		p_hp.get("Head", 100), p_hp.get("Body", 110),
-		p_hp.get("Left Arm", 100), p_hp.get("Right Arm", 104),
-		p_hp.get("Legs", 100),
-		effective["move"], effective.get("speed", 5),
-		effective.get("defense", parts["defense"]), effective.get("dodge", parts["dodge"]),
+	var head_hp_str := _part_hp_entry("Head", "Head", p_hp.get("Head", 100), preview_breakdown)
+	var body_hp_str := _part_hp_entry("Body", "Body", p_hp.get("Body", 110), preview_breakdown)
+	var larm_hp_str := _part_hp_entry("Left Arm", "L.Arm", p_hp.get("Left Arm", 100), preview_breakdown)
+	var rarm_hp_str := _part_hp_entry("Right Arm", "R.Arm", p_hp.get("Right Arm", 104), preview_breakdown)
+	var legs_hp_str := _part_hp_entry("Legs", "Legs", p_hp.get("Legs", 100), preview_breakdown)
+
+	var move_str := _stat_entry("Move", effective["move"], preview_breakdown.get("effective_stats", {}).get("move", effective["move"]), " tiles")
+	var speed_str := _stat_entry("Speed", effective.get("speed", 5), preview_breakdown.get("effective_stats", {}).get("speed", effective.get("speed", 5)))
+	var def_val: int = int(effective.get("defense", parts["defense"]))
+	var prev_def: int = int(preview_breakdown.get("effective_stats", {}).get("defense", def_val)) if not preview_breakdown.is_empty() else def_val
+	var def_str := _stat_entry("Defense", def_val, prev_def, "%")
+	var dodge_val: int = int(effective.get("dodge", parts["dodge"]))
+	var prev_dodge: int = int(preview_breakdown.get("effective_stats", {}).get("dodge", dodge_val)) if not preview_breakdown.is_empty() else dodge_val
+	var dodge_str := _stat_entry("Dodge", dodge_val, prev_dodge, "%")
+
+	return "[b]PART FRAME[/b]\n%s  |  %s\n%s  |  %s\n%s\n\n[b]EFFECTIVE LOADOUT[/b]\n%s  |  %s\n%s  |  %s\nAttack Hit: %d%%  |  Damage: %+d%%\n%s\n\n[b]PILOT SKILL[/b]\n%s: %s\n\n[b]SOCKETED ORBS[/b]\n%s" % [
+		head_hp_str, body_hp_str,
+		larm_hp_str, rarm_hp_str,
+		legs_hp_str,
+		move_str, speed_str,
+		def_str, dodge_str,
 		effective["attack_hit_percent"], effective["damage_percent"],
 		shield_str,
 		breakdown["pilot_passive"], breakdown["pilot_effect"],
 		orb_text
 	]
+
+
+func _part_hp_entry(slot_key: String, label: String, cur_hp: int, preview_breakdown: Dictionary) -> String:
+	if not preview_breakdown.is_empty():
+		var prev_hp: int = int(preview_breakdown.get("part_stats", {}).get("part_hp", {}).get(slot_key, cur_hp))
+		if prev_hp != cur_hp:
+			var diff: int = prev_hp - cur_hp
+			var color := "#38d9a9" if diff > 0 else "#ff6b6b"
+			return "%s: %d -> %d [color=%s](%+d)[/color]" % [label, cur_hp, prev_hp, color, diff]
+	return "%s: %d HP" % [label, cur_hp]
+
+
+func _stat_entry(label: String, cur_val: int, prev_val: int, suffix: String = "") -> String:
+	if prev_val != cur_val:
+		var diff: int = prev_val - cur_val
+		var color := "#38d9a9" if diff > 0 else "#ff6b6b"
+		return "%s: %d%s -> %d%s [color=%s](%+d%s)[/color]" % [label, cur_val, suffix, prev_val, suffix, color, diff, suffix]
+	return "%s: %d%s" % [label, cur_val, suffix]
 
 
 func _format_weapon_details(profile: Dictionary) -> String:
@@ -520,24 +553,33 @@ func _show_preview() -> void:
 	deploy_button.disabled = changed
 	for id in candidates:
 		candidates[id].modulate = Color("38d9a9") if id == candidate_id else Color.WHITE
+
+	var breakdown: Dictionary = hangar.build_model.build_combat_breakdown(
+		build,
+		hangar.GameDataScript.WEAPON_DATA,
+		hangar.GameDataScript.ORB_DATA,
+		hangar.GameDataScript.PILOT_DATA,
+		hangar.GameDataScript.PART_NAMES,
+		hangar.GameDataScript.UNIT_INITIATIVE_DATA
+	)
+
 	if changed:
-		comparison.visible = true
-		var delta: Dictionary = hangar.preview_part_delta(slot, candidate_id)
-		comparison.text = "[b][color=#38d9a9]Preview: %s[/color][/b]\n" % delta["to_name"]
+		var preview_breakdown: Dictionary = hangar.build_model.build_combat_breakdown(
+			shown,
+			hangar.GameDataScript.WEAPON_DATA,
+			hangar.GameDataScript.ORB_DATA,
+			hangar.GameDataScript.PILOT_DATA,
+			hangar.GameDataScript.PART_NAMES,
+			hangar.GameDataScript.UNIT_INITIATIVE_DATA
+		)
+		stat_breakdown.text = _format_stat_breakdown(breakdown, preview_breakdown)
 		var before: Dictionary = hangar.build_model.build_stats(build)
 		var after: Dictionary = hangar.build_model.build_stats(shown)
-		var labels := {"max_hp": "Part HP", "accuracy": "Accuracy", "defense": "Defense", "speed": "Speed", "move": "Move", "dodge": "Dodge"}
-		for key in labels:
-			var value: int = delta["stat_delta"][key]
-			if value == 0:
-				continue
-			var a: int = before["part_hp"][slot] if key == "max_hp" else before[key]
-			var b: int = after["part_hp"][slot] if key == "max_hp" else after[key]
-			var color := "#38d9a9" if value > 0 else "#ff6b6b"
-			comparison.text += "%s  %d -> %d  [color=%s](%+d)[/color]\n" % [labels[key], a, b, color, value]
+		comparison.text = "%d -> %d" % [before["part_hp"][slot], after["part_hp"][slot]]
 	else:
-		comparison.visible = false
+		stat_breakdown.text = _format_stat_breakdown(breakdown, {})
 		comparison.text = ""
+	comparison.visible = false
 
 
 func _equip() -> void:
