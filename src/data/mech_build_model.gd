@@ -143,10 +143,13 @@ func weapon_profile(weapon_name: String, weapon_data: Dictionary) -> Dictionary:
 	var handedness := weapon_handedness(weapon_name)
 	var pattern := str(data.get("pattern", "single"))
 	var pattern_label := "Focused single target"
+	var pattern_short := "Single"
 	if pattern == "line_2":
 		pattern_label = "Line attack; can strike a second target"
+		pattern_short = "Line"
 	elif pattern == "volley":
 		pattern_label = "%d-shot volley" % int(data.get("shot_count", 1))
+		pattern_short = "Volley"
 	return {
 		"name": weapon_name,
 		"range_min": int(data.get("range_min", 0)),
@@ -155,6 +158,7 @@ func weapon_profile(weapon_name: String, weapon_data: Dictionary) -> Dictionary:
 		"base_hit_percent": int(data.get("hit_percent", 0)),
 		"pattern": pattern,
 		"pattern_label": pattern_label,
+		"pattern_short": pattern_short,
 		"handedness": handedness,
 		"required_arms": "Both arms" if handedness == "2H" else "Right arm",
 	}
@@ -163,18 +167,22 @@ func weapon_profile(weapon_name: String, weapon_data: Dictionary) -> Dictionary:
 func orb_profile(orb_id: String, orb_data: Dictionary, pilot_proc_bonus: int = 0) -> Dictionary:
 	var data: Dictionary = orb_data.get(orb_id, {})
 	var effect_lines: Array[String] = []
+	var menu_lines: Array[String] = []
 	var inactive_lines: Array[String] = []
 	for effect in data.get("effects", []):
 		var effect_type := str(effect.get("type", ""))
 		if effect_type == "damage_percent":
 			effect_lines.append("Damage +%d%%" % int(effect.get("percent", 0)))
+			menu_lines.append("Damage +%d%%" % int(effect.get("percent", 0)))
 		elif effect_type == "hit_bonus":
 			effect_lines.append("Hit chance +%d%%" % int(effect.get("amount", 0)))
+			menu_lines.append("Hit +%d%%" % int(effect.get("amount", 0)))
 		elif effect_type == "proc_status":
 			var base_chance := int(effect.get("chance_percent", 0))
 			var final_chance: int = min(100, base_chance + pilot_proc_bonus)
 			var suffix := " (+%d%% pilot)" % pilot_proc_bonus if pilot_proc_bonus > 0 else ""
 			effect_lines.append("%s: %d%% activation%s" % [str(effect.get("status", "Status")), final_chance, suffix])
+			menu_lines.append("%s %d%%" % [str(effect.get("status", "Status")), final_chance])
 		elif effect_type in ["dodge_bonus", "defense_bonus"]:
 			inactive_lines.append("%s +%d (not active in this prototype)" % [effect_type.trim_suffix("_bonus").capitalize(), int(effect.get("amount", 0))])
 	return {
@@ -183,6 +191,7 @@ func orb_profile(orb_id: String, orb_data: Dictionary, pilot_proc_bonus: int = 0
 		"element": str(data.get("element", "")),
 		"rarity": str(data.get("rarity", "")),
 		"effect_lines": effect_lines,
+		"menu_lines": menu_lines,
 		"inactive_lines": inactive_lines,
 	}
 

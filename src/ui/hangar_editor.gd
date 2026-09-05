@@ -109,7 +109,8 @@ func setup(model) -> void:
 	actions.add_child(cancel_button)
 	inspector.add_child(HSeparator.new())
 	for weapon in WEAPONS:
-		weapon_select.add_item("%s (%s)" % [weapon, hangar.build_model.weapon_handedness(weapon)])
+		var profile: Dictionary = hangar.build_model.weapon_profile(weapon, hangar.GameDataScript.WEAPON_DATA)
+		weapon_select.add_item("%s / R%d-%d / %s / %s" % [weapon, profile["range_min"], profile["range_max"], profile["handedness"], profile["pattern_short"]])
 	_row(inspector, "Weapon", weapon_select)
 	_setup_detail_label(weapon_details)
 	inspector.add_child(weapon_details)
@@ -263,7 +264,8 @@ func refresh() -> void:
 	orb_select.add_item("Empty slot")
 	orb_select.set_item_metadata(0, "")
 	for orb in hangar.available_orb_options(slot):
-		orb_select.add_item(str(orb.get("name", orb["id"])))
+		var orb_profile: Dictionary = hangar.build_model.orb_profile(str(orb["id"]), hangar.GameDataScript.ORB_DATA)
+		orb_select.add_item("%s / %s" % [str(orb.get("name", orb["id"])), " / ".join(orb_profile["menu_lines"])])
 		var index := orb_select.item_count - 1
 		orb_select.set_item_metadata(index, orb["id"])
 		if orb["id"] == build.get("orbs", {}).get(slot, ""):
