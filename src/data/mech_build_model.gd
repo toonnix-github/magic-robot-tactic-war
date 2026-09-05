@@ -138,6 +138,104 @@ func weapon_handedness(weapon_name: String) -> String:
 	return str(WEAPON_HANDEDNESS.get(weapon_name, ""))
 
 
+func weapon_profile(weapon_name: String, weapon_data: Dictionary) -> Dictionary:
+	var data: Dictionary = weapon_data.get(weapon_name, {})
+	var handedness := weapon_handedness(weapon_name)
+	var pattern := str(data.get("pattern", "single"))
+	var pattern_label := "Focused single target"
+	if pattern == "line_2":
+		pattern_label = "Line attack; can strike a second target"
+	elif pattern == "volley":
+		pattern_label = "%d-shot volley" % int(data.get("shot_count", 1))
+	return {
+		"name": weapon_name,
+		"range_min": int(data.get("range_min", 0)),
+		"range_max": int(data.get("range_max", 0)),
+		"base_damage": int(data.get("damage", 0)),
+		"base_hit_percent": int(data.get("hit_percent", 0)),
+		"pattern": pattern,
+		"pattern_label": pattern_label,
+		"handedness": handedness,
+		"required_arms": "Both arms" if handedness == "2H" else "Right arm",
+	}
+
+
+func orb_profile(orb_id: String, orb_data: Dictionary, pilot_proc_bonus: int = 0) -> Dictionary:
+	var data: Dictionary = orb_data.get(orb_id, {})
+	var effect_lines: Array[String] = []
+	var inactive_lines: Array[String] = []
+	for effect in data.get("effects", []):
+		var effect_type := str(effect.get("type", ""))
+		if effect_type == "damage_percent":
+			effect_lines.append("Damage +%d%%" % int(effect.get("percent", 0)))
+		elif effect_type == "hit_bonus":
+			effect_lines.append("Hit chance +%d%%" % int(effect.get("amount", 0)))
+		elif effect_type == "proc_status":
+			var base_chance := int(effect.get("chance_percent", 0))
+			var final_chance: int = min(100, base_chance + pilot_proc_bonus)
+			var suffix := " (+%d%% pilot)" % pilot_proc_bonus if pilot_proc_bonus > 0 else ""
+			effect_lines.append("%s: %d%% activation%s" % [str(effect.get("status", "Status")), final_chance, suffix])
+		elif effect_type in ["dodge_bonus", "defense_bonus"]:
+			inactive_lines.append("%s +%d (not active in this prototype)" % [effect_type.trim_suffix("_bonus").capitalize(), int(effect.get("amount", 0))])
+	return {
+		"id": orb_id,
+		"name": str(data.get("name", orb_id)),
+		"element": str(data.get("element", "")),
+		"rarity": str(data.get("rarity", "")),
+		"effect_lines": effect_lines,
+		"inactive_lines": inactive_lines,
+	}
+
+
+func build_combat_breakdown(
+	build: Dictionary,
+	weapon_data: Dictionary,
+	orb_data: Dictionary,
+	pilot_data: Dictionary,
+	part_names: Array = []
+) -> Dictionary:
+	var normalized: Dictionary = normalize_build(build, weapon_data, orb_data, part_names)
+	var part_stats: Dictionary = build_stats(normalized)
+	var weapon: Dictionary = weapon_profile(str(normalized.get("weapon", "")), weapon_data)
+	var pilot: Dictionary = pilot_data.get(str(normalized.get("pilot", "")), {})
+	var passive: Dictionary = pilot.get("passive", {})
+	var proc_bonus := int(passive.get("orb_proc_bonus_percent", 0))
+	var orb_bonuses := {"damage_percent": 0, "hit_bonus": 0}
+	var orb_profiles: Array = []
+	for part_name in _part_names(part_names):
+		var orb_id := str(normalized.get("orbs", {}).get(part_name, ""))
+		if orb_id.is_empty() or not orb_data.has(orb_id):
+			continue
+		var profile: Dictionary = orb_profile(orb_id, orb_data, proc_bonus)
+		profile["part_name"] = part_name
+		orb_profiles.append(profile)
+		for effect in orb_data[orb_id].get("effects", []):
+			if str(effect.get("type", "")) == "damage_percent":
+				orb_bonuses["damage_percent"] += int(effect.get("percent", 0))
+			elif str(effect.get("type", "")) == "hit_bonus":
+				orb_bonuses["hit_bonus"] += int(effect.get("amount", 0))
+	var shield_hp := 0
+	if str(normalized.get("off_hand", "")) == "Shield":
+		shield_hp = int(OFF_HAND_EQUIPMENT_DATA["Shield"]["shield_max_hp"]) + int(passive.get("shield_max_hp_bonus", 0))
+	var effective := {
+		"max_hp": int(part_stats["max_hp"]),
+		"move": int(part_stats["move"]),
+		"attack_hit_percent": clampi(int(weapon["base_hit_percent"]) + int(part_stats["accuracy"]) + int(orb_bonuses["hit_bonus"]), 0, 100),
+		"damage_percent": int(orb_bonuses["damage_percent"]),
+		"shield_hp": shield_hp,
+	}
+	return {
+		"part_stats": part_stats,
+		"weapon": weapon,
+		"orb_bonuses": orb_bonuses,
+		"orb_profiles": orb_profiles,
+		"effective_stats": effective,
+		"pilot_name": str(pilot.get("name", normalized.get("pilot", ""))),
+		"pilot_passive": str(passive.get("name", "No passive")),
+		"pilot_effect": str(passive.get("desc", "No pilot effect")),
+	}
+
+
 func part_catalog(part_name: String = "") -> Array:
 	if part_name != "":
 		var slot_catalog: Dictionary = PART_CATALOG.get(part_name, {})

@@ -12,6 +12,9 @@ var deploy_button := Button.new()
 var equip_button := Button.new()
 var cancel_button := Button.new()
 var comparison := RichTextLabel.new()
+var weapon_details := RichTextLabel.new()
+var orb_details := RichTextLabel.new()
+var stat_breakdown := RichTextLabel.new()
 var title := Label.new()
 var slot_title := Label.new()
 var equipped_label := Label.new()
@@ -19,6 +22,13 @@ var overview := Label.new()
 var candidate_grid := GridContainer.new()
 var candidate_id := ""
 var candidates: Dictionary = {}
+var review_overlay := PanelContainer.new()
+var review_text := RichTextLabel.new()
+var mission_select := OptionButton.new()
+var confirm_deploy_button := Button.new()
+var close_review_button := Button.new()
+var selected_mission_id := "ancient_ruins"
+var mission_ids: Array[String] = []
 
 
 func setup(model) -> void:
@@ -59,6 +69,11 @@ func setup(model) -> void:
 	overview.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	overview.add_theme_color_override("font_color", Color("a6bab5"))
 	left.add_child(overview)
+	stat_breakdown.bbcode_enabled = true
+	stat_breakdown.fit_content = true
+	stat_breakdown.scroll_active = false
+	stat_breakdown.add_theme_font_size_override("normal_font_size", 13)
+	left.add_child(stat_breakdown)
 	mech_view = AssemblyViewScript.new()
 	left.add_child(mech_view)
 	mech_view.part_selected.connect(_select_slot)
@@ -96,17 +111,82 @@ func setup(model) -> void:
 	for weapon in WEAPONS:
 		weapon_select.add_item("%s (%s)" % [weapon, hangar.build_model.weapon_handedness(weapon)])
 	_row(inspector, "Weapon", weapon_select)
+	_setup_detail_label(weapon_details)
+	inspector.add_child(weapon_details)
 	shield_toggle.text = "Shield"
 	_row(inspector, "Left hand", shield_toggle)
 	_row(inspector, "Part Orb", orb_select)
+	_setup_detail_label(orb_details)
+	inspector.add_child(orb_details)
 	unit_select.item_selected.connect(_select_unit)
 	weapon_select.item_selected.connect(_select_weapon)
 	shield_toggle.toggled.connect(_select_shield)
 	orb_select.item_selected.connect(_select_orb)
-	deploy_button.pressed.connect(hangar.deploy)
+	deploy_button.pressed.connect(_open_squad_review)
 	equip_button.pressed.connect(_equip)
 	cancel_button.pressed.connect(_cancel)
+	_build_review_overlay()
 	refresh()
+
+
+func _setup_detail_label(label: RichTextLabel) -> void:
+	label.bbcode_enabled = true
+	label.fit_content = true
+	label.scroll_active = false
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_size_override("normal_font_size", 13)
+
+
+func _build_review_overlay() -> void:
+	review_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	review_overlay.visible = false
+	var review_style := StyleBoxFlat.new()
+	review_style.bg_color = Color("0c1113")
+	review_style.border_color = Color("3d5750")
+	review_style.set_border_width_all(1)
+	review_style.content_margin_left = 14
+	review_style.content_margin_right = 14
+	review_style.content_margin_top = 10
+	review_style.content_margin_bottom = 10
+	review_overlay.add_theme_stylebox_override("panel", review_style)
+	add_child(review_overlay)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 10)
+	review_overlay.add_child(content)
+	var heading := Label.new()
+	heading.text = "SQUAD REVIEW"
+	heading.add_theme_font_size_override("font_size", 22)
+	content.add_child(heading)
+	var mission_row := HBoxContainer.new()
+	content.add_child(mission_row)
+	var mission_label := Label.new()
+	mission_label.text = "Mission"
+	mission_label.custom_minimum_size.x = 80
+	mission_row.add_child(mission_label)
+	for mission_id in hangar.GameDataScript.MISSIONS_DATA.keys():
+		mission_ids.append(str(mission_id))
+		mission_select.add_item(str(hangar.GameDataScript.MISSIONS_DATA[mission_id].get("name", mission_id)))
+	mission_select.size_flags_horizontal = SIZE_EXPAND_FILL
+	mission_row.add_child(mission_select)
+	var review_scroll := ScrollContainer.new()
+	review_scroll.size_flags_vertical = SIZE_EXPAND_FILL
+	content.add_child(review_scroll)
+	review_text.bbcode_enabled = true
+	review_text.fit_content = true
+	review_text.scroll_active = false
+	review_text.custom_minimum_size.x = 700
+	review_scroll.add_child(review_text)
+	var actions := HBoxContainer.new()
+	content.add_child(actions)
+	close_review_button.text = "Back to Hangar"
+	close_review_button.size_flags_horizontal = SIZE_EXPAND_FILL
+	confirm_deploy_button.text = "Confirm Deployment"
+	confirm_deploy_button.size_flags_horizontal = SIZE_EXPAND_FILL
+	actions.add_child(close_review_button)
+	actions.add_child(confirm_deploy_button)
+	mission_select.item_selected.connect(_select_mission)
+	close_review_button.pressed.connect(_close_squad_review)
+	confirm_deploy_button.pressed.connect(_confirm_deploy)
 
 
 func _theme() -> Theme:
@@ -147,9 +227,11 @@ func refresh() -> void:
 	var build: Dictionary = hangar.builds[hangar.current_unit_id]
 	unit_select.select(hangar.UNIT_IDS.find(hangar.current_unit_id))
 	title.text = "%s / %s" % [str(hangar.current_unit_id).capitalize(), build["mech"]]
-	var stats: Dictionary = hangar.build_model.build_stats(build)
-	overview.text = "%d Armor HP    %d Move    %+d Accuracy    %+d Defense" % [stats["max_hp"], stats["move"], stats["accuracy"], stats["defense"]]
+	overview.text = "Select a body part to compare frame tradeoffs. Equipment and combat effects are summarized separately."
+	var breakdown: Dictionary = hangar.build_model.build_combat_breakdown(build, hangar.GameDataScript.WEAPON_DATA, hangar.GameDataScript.ORB_DATA, hangar.GameDataScript.PILOT_DATA, hangar.GameDataScript.PART_NAMES)
+	stat_breakdown.text = _format_stat_breakdown(breakdown)
 	weapon_select.select(WEAPONS.find(build["weapon"]))
+	weapon_details.text = _format_weapon_details(breakdown["weapon"])
 	shield_toggle.disabled = hangar.build_model.weapon_handedness(build["weapon"]) == "2H"
 	shield_toggle.text = "Both arms occupied" if shield_toggle.disabled else "Shield"
 	shield_toggle.set_pressed_no_signal(build.get("off_hand", "") == "Shield")
@@ -186,7 +268,32 @@ func refresh() -> void:
 		orb_select.set_item_metadata(index, orb["id"])
 		if orb["id"] == build.get("orbs", {}).get(slot, ""):
 			orb_select.select(index)
+	_refresh_orb_details(build, slot)
 	_show_preview()
+
+
+func _format_stat_breakdown(breakdown: Dictionary) -> String:
+	var parts: Dictionary = breakdown["part_stats"]
+	var effective: Dictionary = breakdown["effective_stats"]
+	var orb_bonus: Dictionary = breakdown["orb_bonuses"]
+	var shield := "  Shield %d" % int(effective["shield_hp"]) if int(effective["shield_hp"]) > 0 else ""
+	return "[b]PART FRAME[/b]  Armor %d  Move %d  Speed %+d  Accuracy %+d  Defense %+d  Dodge %d\n[b]EFFECTIVE LOADOUT[/b]  Armor %d  Move %d  Attack hit %d%%  Damage %+d%%%s\n[b]PILOT - %s[/b]  %s\n[color=#91a8a2]Orb hit bonus %+d%%; conditional effects apply only while their host part works.[/color]" % [parts["max_hp"], parts["move"], parts["speed"], parts["accuracy"], parts["defense"], parts["dodge"], effective["max_hp"], effective["move"], effective["attack_hit_percent"], effective["damage_percent"], shield, breakdown["pilot_passive"], breakdown["pilot_effect"], orb_bonus["hit_bonus"]]
+
+
+func _format_weapon_details(profile: Dictionary) -> String:
+	return "[b]Range %d-%d[/b]  |  %s\n%s  |  Base damage %d  |  Base hit %d%%" % [profile["range_min"], profile["range_max"], profile["required_arms"], profile["pattern_label"], profile["base_damage"], profile["base_hit_percent"]]
+
+
+func _refresh_orb_details(build: Dictionary, slot: String) -> void:
+	var orb_id := str(build.get("orbs", {}).get(slot, ""))
+	if orb_id.is_empty():
+		orb_details.text = "[color=#91a8a2]No Orb installed in this part.[/color]"
+		return
+	var proc_bonus := int(hangar.GameDataScript.PILOT_DATA.get(str(build.get("pilot", "")), {}).get("passive", {}).get("orb_proc_bonus_percent", 0))
+	var profile: Dictionary = hangar.build_model.orb_profile(orb_id, hangar.GameDataScript.ORB_DATA, proc_bonus)
+	var lines: Array = profile["effect_lines"].duplicate()
+	lines.append_array(profile["inactive_lines"])
+	orb_details.text = "[b]%s / %s %s[/b]\n%s" % [profile["name"], profile["element"], profile["rarity"], "  |  ".join(lines)]
 
 
 func preview_part(id: String) -> void:
@@ -268,3 +375,40 @@ func _select_orb(index: int) -> void:
 	else:
 		hangar.install_orb(hangar.highlighted_part_name, id)
 	refresh()
+
+
+func _open_squad_review() -> void:
+	if deploy_button.disabled:
+		return
+	_refresh_review()
+	review_overlay.show()
+
+
+func _close_squad_review() -> void:
+	review_overlay.hide()
+
+
+func _select_mission(index: int) -> void:
+	if index >= 0 and index < mission_ids.size():
+		selected_mission_id = mission_ids[index]
+	_refresh_review()
+
+
+func _refresh_review() -> void:
+	var mission: Dictionary = hangar.GameDataScript.MISSIONS_DATA.get(selected_mission_id, {})
+	var lines: Array[String] = []
+	lines.append("[b]%s[/b]  |  %s" % [str(mission.get("name", selected_mission_id)), str(mission.get("objective_label", ""))])
+	lines.append("[table=2]")
+	for member in hangar.squad_overview():
+		var equipment := str(member["weapon"]) + " " + str(member["weapon_handedness"])
+		if bool(member["has_shield"]):
+			equipment += " + Shield"
+		var roles := ", ".join(member["role_tags"])
+		lines.append("[cell][b]%s / %s[/b]\n%s\nRole: %s\nArmor %d  |  Move %d[/cell]" % [member["pilot"], member["mech"], equipment, roles, member["max_hp"], member["move"]])
+	lines.append("[/table]")
+	review_text.text = "\n".join(lines)
+
+
+func _confirm_deploy() -> void:
+	review_overlay.hide()
+	hangar.deploy()

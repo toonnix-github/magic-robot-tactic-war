@@ -21,6 +21,8 @@ var selected_slot := "Head"
 var buttons: Dictionary = {}
 var orb_markers: Dictionary = {}
 var textures: Dictionary = {}
+var weapon_visual := TextureRect.new()
+var shield_visual := TextureRect.new()
 var previewing := false
 
 
@@ -39,6 +41,11 @@ func _ready() -> void:
 		button.mouse_exited.connect(_hover.bind(slot, false))
 		add_child(button)
 		buttons[slot] = button
+	for visual in [weapon_visual, shield_visual]:
+		visual.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		visual.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		visual.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(visual)
 	for slot in SLOTS:
 		var marker := Panel.new()
 		marker.custom_minimum_size = Vector2(16, 16)
@@ -67,6 +74,10 @@ func _layout() -> void:
 		buttons[slot].position = origin + rect.position * factor
 		buttons[slot].size = rect.size * factor
 		orb_markers[slot].position = orb_marker_position(slot) - orb_markers[slot].size * 0.5
+	weapon_visual.position = origin + Vector2(80, 174) * factor
+	weapon_visual.size = Vector2(180, 224) * factor
+	shield_visual.position = origin + Vector2(425, 235) * factor
+	shield_visual.size = Vector2(120, 160) * factor
 	queue_redraw()
 
 
@@ -93,10 +104,27 @@ func texture_for(slot: String, part_id: String) -> Texture2D:
 	return textures[path]
 
 
+func equipment_texture(asset_name: String) -> Texture2D:
+	var path := "res://assets/hangar/%s.svg" % asset_name
+	if not textures.has(path):
+		var bitmap := Image.new()
+		if bitmap.load_svg_from_string(FileAccess.get_file_as_string(path)) != OK:
+			return null
+		textures[path] = ImageTexture.create_from_image(bitmap)
+	return textures[path]
+
+
 func show_build(build: Dictionary, slot: String, is_preview: bool = false) -> void:
 	display_build = build.duplicate(true)
 	selected_slot = slot
 	previewing = is_preview
+	var weapon_name := str(build.get("weapon", ""))
+	weapon_visual.texture = equipment_texture("weapon_%s" % weapon_name.to_lower())
+	weapon_visual.visible = weapon_visual.texture != null
+	weapon_visual.tooltip_text = weapon_name
+	shield_visual.texture = equipment_texture("shield")
+	shield_visual.visible = str(build.get("off_hand", "")) == "Shield"
+	shield_visual.tooltip_text = "Shield"
 	for part in buttons:
 		buttons[part].texture_normal = texture_for(part, build["parts"][part])
 		buttons[part].flip_h = part == "Left Arm"
@@ -108,6 +136,16 @@ func show_build(build: Dictionary, slot: String, is_preview: bool = false) -> vo
 		else:
 			buttons[part].tooltip_text = "%s / Orb slot empty" % part
 	queue_redraw()
+
+
+func equipment_visual_state() -> Dictionary:
+	var weapon_name := str(display_build.get("weapon", ""))
+	return {
+		"weapon": weapon_name,
+		"weapon_visible": weapon_visual.visible,
+		"shield_visible": shield_visual.visible,
+		"required_arms": "Both Arms" if weapon_name in ["Spear", "Sniper"] else "Right Arm",
+	}
 
 
 func _draw() -> void:

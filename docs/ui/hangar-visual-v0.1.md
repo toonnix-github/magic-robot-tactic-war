@@ -10,19 +10,27 @@ Issue #58 replaces the form-like preparation screen with spatial mech editing. T
 - Selecting an alternative previews its silhouette and color without modifying the build. Numeric before/after values show every changed stat; signed differences and colors distinguish improvements from costs.
 - Equip commits the candidate. Cancel, another part or another pilot dismisses it. Deployment is disabled while a preview is unresolved.
 - Weapon, Shield and the selected part's Orb remain editable below the comparison. Both-arm weapon restrictions are visible. Colored Orb sockets sit on the visible armor of their installed part rather than at the selection-box edge.
+- Weapon details show range, attack pattern, required arms, base damage and base hit. Orb details show always-on effects and status activation chances, including the pilot's proc bonus.
+- Part-frame totals are separate from effective loadout values. Pilot effects remain a clearly labeled conditional line rather than being hidden in a total.
+- Sword, Rifle, Spear, Sniper and Shield placeholders render on the assembled mech and update with the controls.
+- Deploy opens a four-mech squad review. The player selects a mission, compares weapons and roles together, then either returns to editing or confirms deployment.
 
 ## Assets and Ownership
 
-`assets/hangar/` contains 16 original graybox SVG illustrations, four part silhouettes for each equipment family. Arms are mirrored for anatomical placement. Bulwark uses larger plates and treads, Longview has narrower precision components, Aegis uses balanced armor and Volt uses lightweight components. Guard and Sprinter reuse related family placeholders. These are identity aids, not final production art or new gameplay rules.
+`assets/hangar/` contains 21 original graybox SVG illustrations: 16 modular part silhouettes plus four weapons and one Shield. Arms are mirrored for anatomical placement. Bulwark uses larger plates and treads, Longview has narrower precision components, Aegis uses balanced armor and Volt uses lightweight components. Guard and Sprinter reuse related family placeholders. These are identity aids, not final production art or new gameplay rules.
 
-`src/ui/mech_assembly_view.gd` owns composition, illustration lookup and spatial selection. `hangar_editor.gd` owns candidate inspection and confirmation; authoritative deltas and swaps remain in `MechBuildModel`.
+`src/ui/mech_assembly_view.gd` owns composition, illustration lookup and spatial selection. `hangar_editor.gd` owns candidate inspection, squad review and confirmation; authoritative profiles, modifiers, deltas and swaps remain in `MechBuildModel`.
 
 ## Verification
 
-54 Python tests pass; Godot acceptance and 95.9% function coverage pass. Acceptance covers selection through the part button, nonmutating preview, numeric comparison, Cancel, Equip, deployment gating and the existing battle-return flow. Rendered 1280x590 and 844x390 views were inspected, including a six-stat body comparison. The inspector scrolls vertically when the full comparison and equipment controls exceed its height; the mech stays visible.
+55 Python tests pass; Godot acceptance and 365/380 (96.1%) function coverage pass. Acceptance covers selection through the part button, nonmutating preview, numeric comparison, equipment explanations and visuals, effective-stat derivation, Cancel, Equip, mission-aware squad review, deployment gating and the existing battle-return flow. Rendered editor and review views at 1280x590 and 844x390 were inspected. The inspector scrolls vertically when the full comparison and equipment controls exceed its height; the mech stays visible.
 
-Reproduce screenshots with `tools/capture_phase2_flow.gd`. This is automated developer verification; human usability feedback remains open.
+Reproduce the current loadout and squad-review screenshots with `tools/render_hangar_evidence.gd`. This is automated developer verification; human usability feedback remains open.
 
 ![Visual Hangar](../playtest/hangar-visual-desktop.png)
 
 ![Part comparison on mobile landscape](../playtest/hangar-visual-preview.png)
+
+![Equipment and effective stats](../playtest/hangar-loadout-1280x590.png)
+
+![Four-mech squad review](../playtest/hangar-squad-review-844x390.png)

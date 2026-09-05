@@ -3515,6 +3515,25 @@ func _test_phase2_playable_flow() -> void:
 	root.add_child(flow)
 	await process_frame
 	var editor = flow.editor
+	var arlen_breakdown: Dictionary = flow.hangar.build_model.build_combat_breakdown(
+		flow.hangar.builds["arlen"], flow.hangar.GameDataScript.WEAPON_DATA, flow.hangar.GameDataScript.ORB_DATA, flow.hangar.GameDataScript.PILOT_DATA, flow.hangar.GameDataScript.PART_NAMES
+	)
+	_assert_equal(arlen_breakdown["orb_bonuses"]["damage_percent"], 10, "#58: effective breakdown includes Orb damage")
+	_assert_equal(arlen_breakdown["effective_stats"]["attack_hit_percent"], 81, "#58: effective hit combines weapon and parts")
+	_assert_true(str(arlen_breakdown["pilot_effect"]).contains("damaged enemy parts"), "#58: conditional pilot effect remains visible")
+	var brann_breakdown: Dictionary = flow.hangar.build_model.build_combat_breakdown(
+		flow.hangar.builds["brann"], flow.hangar.GameDataScript.WEAPON_DATA, flow.hangar.GameDataScript.ORB_DATA, flow.hangar.GameDataScript.PILOT_DATA, flow.hangar.GameDataScript.PART_NAMES
+	)
+	_assert_equal(brann_breakdown["effective_stats"]["shield_hp"], 40, "#58: Shield HP includes pilot bonus")
+	_assert_true(editor.weapon_details.text.contains("Range 1-2"), "#58: weapon range is explained")
+	_assert_true(editor.weapon_details.text.contains("Both arms"), "#58: required arms are explained")
+	editor.mech_view.part_selected.emit("Right Arm")
+	_assert_true(editor.orb_details.text.contains("Damage +10%"), "#58: Orb effect is explained")
+	_assert_true(editor.stat_breakdown.text.contains("PART FRAME"), "#58: part bonuses are labeled")
+	_assert_true(editor.stat_breakdown.text.contains("EFFECTIVE LOADOUT"), "#58: effective values are labeled")
+	var equipment_state: Dictionary = editor.mech_view.equipment_visual_state()
+	_assert_equal(equipment_state["weapon"], "Spear", "#58: illustrated weapon follows build")
+	_assert_true(equipment_state["weapon_visible"], "#58: equipped weapon is illustrated")
 	_assert_true(editor.has_method("preview_part"), "#58: visual part preview exists")
 	if editor.has_method("preview_part"):
 		var original: Dictionary = flow.hangar.builds.duplicate(true)
@@ -3543,6 +3562,8 @@ func _test_phase2_playable_flow() -> void:
 	_assert_equal(flow.hangar.builds["mira"]["weapon"], "Rifle", "#43: actual weapon control changes build")
 	editor.shield_toggle.toggled.emit(true)
 	_assert_equal(flow.hangar.builds["mira"]["off_hand"], "Shield", "#43: actual off-hand control changes build")
+	equipment_state = editor.mech_view.equipment_visual_state()
+	_assert_true(equipment_state["shield_visible"], "#58: equipped Shield is illustrated")
 	var chosen_part: String = flow.hangar.available_part_options("Head")[1]["id"]
 	editor.preview_part(chosen_part)
 	editor.equip_button.pressed.emit()
@@ -3551,7 +3572,19 @@ func _test_phase2_playable_flow() -> void:
 	_assert_true(flow.hangar.builds["mira"]["orbs"].has("Head"), "#43: Orb control installs selected Orb")
 	var chosen: Dictionary = flow.hangar.builds.duplicate(true)
 	editor.deploy_button.pressed.emit()
+	_assert_true(flow.battle == null, "#58: Deploy opens review before battle")
+	_assert_true(editor.review_overlay.visible, "#58: squad review is visible")
+	_assert_true(editor.review_text.text.contains("Arlen") and editor.review_text.text.contains("Mira") and editor.review_text.text.contains("Sera") and editor.review_text.text.contains("Brann"), "#58: review shows all four mechs")
+	_assert_true(editor.review_text.text.contains("Ancient Ruins"), "#58: review shows selected mission")
+	editor.close_review_button.pressed.emit()
+	_assert_false(editor.review_overlay.visible, "#58: review can return to editing without deploying")
+	editor.deploy_button.pressed.emit()
+	var quarry_index: int = editor.mission_ids.find("crystal_quarry")
+	editor.mission_select.item_selected.emit(quarry_index)
+	_assert_true(editor.review_text.text.contains("Crystal Quarry"), "#58: selected mission updates squad review")
+	editor.confirm_deploy_button.pressed.emit()
 	_assert_true(flow.battle != null, "#43: Deploy opens a battle")
+	_assert_equal(flow.battle.current_mission, "crystal_quarry", "#58: reviewed mission is deployed")
 	_assert_equal(flow.battle._unit_by_id("mira")["weapon"], "Rifle", "#43: actual deploy transfers equipment")
 	flow.battle.run_auto_battle(150, 42)
 	flow._process(0.0)
