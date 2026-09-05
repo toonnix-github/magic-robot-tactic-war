@@ -6,6 +6,7 @@ func _init() -> void:
 
 
 func _render() -> void:
+	DirAccess.make_dir_recursive_absolute("res://output")
 	for viewport_size in [Vector2i(1280, 590), Vector2i(844, 390)]:
 		root.size = viewport_size
 		var flow = load("res://scenes/preparation_flow.tscn").instantiate()
