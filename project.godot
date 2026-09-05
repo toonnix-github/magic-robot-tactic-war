@@ -6,7 +6,7 @@ config_version=5
 [application]
 
 config/name="Magic Robot Tactic War"
-run/main_scene="res://scenes/hangar.tscn"
+run/main_scene="res://scenes/preparation_flow.tscn"
 
 [display]
 

@@ -4,9 +4,9 @@
 Magic Robot Tactic War is a mobile-first landscape tactical RPG combining modular mechs, pilots, elemental Orbs, part-based damage, and short grid battles.
 
 ## Current Goal
-Build ONLY the Phase 1 graybox combat prototype and its final readability/presentation fixes. Do not add town building, story systems, gacha, crafting, account systems, multiplayer, monetization, polished art, or live-service features.
+Build the Phase 2 Build Your Mech graybox scope defined in `docs/phase2-scope.md`. Preserve the Phase 1 combat baseline. Do not add town building, story systems, gacha, crafting, account systems, multiplayer, monetization, polished art, or live-service features.
 
-Phase 1 core combat implementation and closure through issue #29 are complete. The current focus is final Phase 1 presentation polish: issues #30 and #31.
+Phase 1 is historical. Phase 2 implementation #35-#42 is integrated; #43 owns validation and evidence. The integration branch is `phase2/build-your-mech`; never develop directly on it. Human product judgment remains a separate closure gate.
 
 ## Technology
 - Engine: Godot 4.x

@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - prototype/combat-v01
+      - phase2/build-your-mech
   pull_request:
     branches:
       - prototype/combat-v01
+      - phase2/build-your-mech
   workflow_dispatch:
 
 permissions:
@@ -42,4 +44,9 @@ jobs:
       - name: Enforce GDScript coverage
         run: |
           python tools/gdscript_function_coverage.py --godot "$GODOT_BIN" --fail-under 80
+
+      - name: Verify reproducible Phase 2 evidence
+        run: |
+          "$GODOT_BIN" --headless --path . -s res://tools/run_phase2_validation.gd
+          git diff --exit-code -- docs/playtest/phase2-build-fun-validation-report.md
 
