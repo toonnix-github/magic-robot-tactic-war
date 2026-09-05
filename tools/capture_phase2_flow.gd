@@ -18,6 +18,13 @@ func _run() -> void:
 		await process_frame
 		await RenderingServer.frame_post_draw
 		root.get_texture().get_image().save_png("user://phase2-hangar-%d.png" % viewport_size.x)
+	flow.editor.mech_view.buttons["Body"].pressed.emit()
+	flow.editor.candidates["bulwark_body"].pressed.emit()
+	await process_frame
+	await process_frame
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png("user://phase2-part-preview.png")
+	flow.editor.cancel_button.pressed.emit()
 	flow.editor.deploy_button.pressed.emit()
 	await process_frame
 	await process_frame

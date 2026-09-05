@@ -29,6 +29,7 @@ func _deploy(loadouts: Dictionary) -> void:
 		return
 	battle = load("res://scenes/main.tscn").instantiate()
 	add_child(battle)
+	battle._load_mission(editor.selected_mission_id, false)
 	battle.configure_player_loadouts(loadouts)
 	editor.hide()
 	move_child(return_button, get_child_count() - 1)
