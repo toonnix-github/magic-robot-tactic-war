@@ -118,6 +118,7 @@ func _run() -> void:
 	_run_phase2_build_summary_and_signals_acceptance(scene)
 	_run_phase2_squad_deploy_builds_acceptance(scene)
 	_run_phase2_current_vs_inspected_hud_acceptance(scene)
+	_run_phase2_effective_build_stats_acceptance(scene)
 	await _run_phase2_build_fun_validation_acceptance(scene)
 
 	if _failures.is_empty():
@@ -1338,9 +1339,9 @@ func _test_crystal_quarry_loot_distribution_reproducible_and_rarity_weighted(sce
 
 func _test_crystal_quarry_auto_battle_completes_deterministically(scene: Control) -> void:
 	scene._load_mission("crystal_quarry")
-	var run1: Dictionary = scene.run_auto_battle(90, 1337)
+	var run1: Dictionary = scene.run_auto_battle(120, 1337)
 	scene._load_mission("crystal_quarry")
-	var run2: Dictionary = scene.run_auto_battle(90, 1337)
+	var run2: Dictionary = scene.run_auto_battle(120, 1337)
 	_assert_equal(run1["winner"], run2["winner"], "Crystal Quarry Auto reproducible winner")
 	_assert_equal(run1["turns"], run2["turns"], "Crystal Quarry Auto reproducible turns")
 	_assert_true(run1["is_over"], "Crystal Quarry Auto battle completes")
@@ -3504,6 +3505,44 @@ func _run_phase2_build_fun_validation_acceptance(scene: Control) -> void:
 	_test_phase2_build_validation_methods_exist(scene)
 	_test_phase2_mira_build_comparison(scene)
 	await _test_phase2_playable_flow()
+
+
+func _run_phase2_effective_build_stats_acceptance(scene: Control) -> void:
+	var controller = scene.combat_controller
+	for method in ["configured_speed", "effective_dodge", "effective_defense", "defense_adjusted_damage"]:
+		_assert_true(controller.has_method(method), "#60: CombatController owns %s" % method)
+	if not _failures.is_empty():
+		return
+	scene._load_mission("ancient_ruins", false)
+	var builds: Dictionary = scene.mech_build_model.prototype_builds()
+	scene.configure_player_builds(builds)
+	var sera = scene._unit_by_id("sera")
+	var brann = scene._unit_by_id("brann")
+	_assert_equal(sera["speed"], 15, "#60: part Speed modifies data-driven pilot Speed")
+	_assert_equal(scene._effective_dodge(brann), 7, "#60: active Earth Orb adds Dodge to frame rating")
+	_assert_equal(scene._effective_defense(brann), 28, "#60: active Earth Orb adds Defense")
+	var enemy = scene._unit_by_id("enemy_blade")
+	_assert_equal(scene._calculate_attack_damage(enemy, 100, brann, "Body"), 72, "#60: Defense reduces part damage by percentage")
+	_assert_equal(scene._calculate_attack_damage(enemy, 100, brann, "Shield"), 100, "#60: mech Defense does not reduce Shield damage")
+	var base_dodge: int = int(brann["dodge"])
+	brann["grid"] = Vector2i(4, 3)
+	enemy["grid"] = Vector2i(5, 3)
+	var base_preview: Dictionary = scene._attack_preview(enemy, brann)
+	brann["dodge"] = base_dodge + 5
+	var evasive_preview: Dictionary = scene._attack_preview(enemy, brann)
+	_assert_equal(evasive_preview["hit_percent"], base_preview["hit_percent"] - 5, "#60: Dodge rating changes incoming hit chance relative to neutral 10")
+	brann["dodge"] = base_dodge
+	scene._damage_part(brann, "Left Arm", 999)
+	_assert_equal(scene._effective_defense(brann), 23, "#60: destroyed Orb host removes Defense bonus")
+	_assert_equal(scene._effective_dodge(brann), 2, "#60: destroyed Orb host removes Dodge bonus")
+	scene._damage_part(brann, "Legs", 999)
+	_assert_equal(scene._effective_dodge(brann), 0, "#60: destroyed Legs force effective Dodge to zero")
+	var breakdown: Dictionary = scene.mech_build_model.build_combat_breakdown(
+		builds["brann"], scene.WEAPON_DATA, scene.ORB_DATA, scene.PILOT_DATA, scene.PART_NAMES, scene.UNIT_INITIATIVE_DATA
+	)
+	_assert_equal(breakdown["effective_stats"]["speed"], 1, "#60: Bulwark final Speed is clamped for its pilot baseline")
+	_assert_equal(breakdown["effective_stats"]["defense"], 28, "#60: Hangar effective Defense includes Orb")
+	_assert_equal(breakdown["effective_stats"]["dodge"], 7, "#60: Hangar effective Dodge includes Orb")
 
 
 func _test_phase2_playable_flow() -> void:

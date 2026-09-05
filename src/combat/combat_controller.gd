@@ -489,6 +489,36 @@ func orb_adjusted_damage(unit, damage: int, part_names: Array, orb_data: Diction
 	return int(round(float(max(0, damage)) * (100.0 + float(modifier)) / 100.0))
 
 
+func configured_speed(base_speed: int, part_speed_bonus: int) -> int:
+	return max(1, base_speed + part_speed_bonus)
+
+
+func effective_defense(unit, part_names: Array, orb_data: Dictionary) -> int:
+	if unit == null:
+		return 0
+	var total_defense: int = int(unit.get("defense", 0))
+	for effect in orb_effects(unit, part_names, orb_data, "defense_bonus"):
+		total_defense += int(effect.get("amount", 0))
+	return total_defense
+
+
+func effective_dodge(unit, part_names: Array, orb_data: Dictionary) -> int:
+	if unit == null:
+		return 0
+	var legs_part: Dictionary = unit.get("parts", {}).get("Legs", {})
+	if bool(legs_part.get("destroyed", false)):
+		return 0
+	var total_dodge: int = int(unit.get("dodge", 10))
+	for effect in orb_effects(unit, part_names, orb_data, "dodge_bonus"):
+		total_dodge += int(effect.get("amount", 0))
+	return total_dodge
+
+
+func defense_adjusted_damage(raw_damage: int, defense: int) -> int:
+	var multiplier := 1.0 - (float(defense) / 100.0)
+	return max(0, int(round(float(max(0, raw_damage)) * multiplier)))
+
+
 func apply_status(unit, status: String, turn_log: Array) -> bool:
 	if unit == null or status == "":
 		return false

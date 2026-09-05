@@ -311,6 +311,7 @@ func _create_units() -> void:
 		unit["base_move_range"] = MOVE_RANGE
 		unit["current_move_range"] = MOVE_RANGE
 		unit["dodge"] = 10
+		unit["defense"] = 0
 		unit["weapon_disabled"] = false
 		unit["pilot_id"] = ""
 		unit["off_hand"] = str(unit.get("off_hand", ""))
@@ -1208,6 +1209,20 @@ func _orb_adjusted_damage(unit, damage: int) -> int:
 	return combat_controller.orb_adjusted_damage(unit, damage, PART_NAMES, ORB_DATA)
 
 
+func _effective_defense(unit) -> int:
+	return combat_controller.effective_defense(unit, PART_NAMES, ORB_DATA)
+
+
+func _effective_dodge(unit) -> int:
+	return combat_controller.effective_dodge(unit, PART_NAMES, ORB_DATA)
+
+
+func _defense_adjusted_damage(raw_damage: int, target, part_name: String = "") -> int:
+	if target == null or part_name == "Shield":
+		return raw_damage
+	return combat_controller.defense_adjusted_damage(raw_damage, _effective_defense(target))
+
+
 func _combat_resolve_orb_proc(attacker, target, seed: int) -> Dictionary:
 	return combat_controller.resolve_orb_proc(attacker, target, seed, PART_NAMES, ORB_DATA, Callable(self, "_pilot_orb_proc_bonus"), turn_log)
 
@@ -1326,11 +1341,14 @@ func _pilot_shield_damage_reduction(shield_unit) -> int:
 
 func _calculate_attack_damage(attacker, base_damage: int, target = null, part_name := "") -> int:
 	var pilot_mod := _pilot_damage_modifier_percent(attacker, target, part_name)
+	var raw_damage: int = 0
 	if pilot_mod == 0:
-		return _orb_adjusted_damage(attacker, base_damage)
-	var orb_mod := _orb_damage_modifier_percent(attacker)
-	var total_mod := orb_mod + pilot_mod
-	return int(round(float(max(0, base_damage)) * (100.0 + float(total_mod)) / 100.0))
+		raw_damage = _orb_adjusted_damage(attacker, base_damage)
+	else:
+		var orb_mod := _orb_damage_modifier_percent(attacker)
+		var total_mod := orb_mod + pilot_mod
+		raw_damage = int(round(float(max(0, base_damage)) * (100.0 + float(total_mod)) / 100.0))
+	return _defense_adjusted_damage(raw_damage, target, part_name)
 
 
 func _part_hp_ratio(unit, part_name: String) -> float:
@@ -1634,9 +1652,10 @@ func _attack_preview(attacker, target) -> Dictionary:
 	var accuracy_modifier := int(attacker.get("accuracy_modifier", 0)) if attacker != null else 0
 	var height_modifier := _height_hit_modifier(attacker, target)
 	var cover_dodge_modifier := -int(_terrain_at(target["grid"]).get("cover_dodge_bonus", 0)) if target != null and _has_cover(target["grid"]) else 0
+	var dodge_modifier := -(int(_effective_dodge(target)) - 10) if target != null else 0
 	var orb_hit_modifier := _orb_hit_modifier(attacker)
 	var pilot_hit_modifier := _pilot_hit_modifier(attacker, target)
-	var hit_percent: int = int(clamp(base_hit + accuracy_modifier + height_modifier + cover_dodge_modifier + orb_hit_modifier + pilot_hit_modifier, 0, 100))
+	var hit_percent: int = int(clamp(base_hit + accuracy_modifier + height_modifier + cover_dodge_modifier + dodge_modifier + orb_hit_modifier + pilot_hit_modifier, 0, 100))
 	var base_damage := int(weapon_data.get("damage", 0))
 	var orb_damage_modifier_percent := _orb_damage_modifier_percent(attacker)
 	var pilot_damage_modifier_percent := _pilot_damage_modifier_percent(attacker, target)
@@ -1650,6 +1669,7 @@ func _attack_preview(attacker, target) -> Dictionary:
 		"base_hit_percent": base_hit,
 		"height_hit_modifier": height_modifier,
 		"cover_dodge_modifier": cover_dodge_modifier,
+		"dodge_modifier": dodge_modifier,
 		"orb_hit_modifier": orb_hit_modifier,
 		"orb_damage_modifier_percent": orb_damage_modifier_percent,
 		"pilot_hit_modifier": pilot_hit_modifier,
@@ -2355,6 +2375,12 @@ func configure_player_loadouts(loadouts: Dictionary) -> void:
 				unit["dodge"] = int(part_stats.get("dodge", 10))
 				unit["accuracy_modifier"] = int(part_stats.get("accuracy", 0))
 				unit["defense"] = int(part_stats.get("defense", 0))
+				var base_pilot_speed: int = int(UNIT_INITIATIVE_DATA.get(str(unit["id"]), {}).get("speed", 5))
+				if unit.has("pilot_id") and str(unit["pilot_id"]) != "" and UNIT_INITIATIVE_DATA.has(str(unit["pilot_id"])):
+					base_pilot_speed = int(UNIT_INITIATIVE_DATA[str(unit["pilot_id"])].get("speed", base_pilot_speed))
+				elif cfg.has("pilot") and str(cfg["pilot"]) != "" and UNIT_INITIATIVE_DATA.has(str(cfg["pilot"])):
+					base_pilot_speed = int(UNIT_INITIATIVE_DATA[str(cfg["pilot"])].get("speed", base_pilot_speed))
+				unit["speed"] = combat_controller.configured_speed(base_pilot_speed, int(part_stats.get("speed", 0)))
 				var p_hp: Dictionary = part_stats.get("part_hp", {})
 				for p_name in PART_NAMES:
 					if unit["parts"].has(p_name):

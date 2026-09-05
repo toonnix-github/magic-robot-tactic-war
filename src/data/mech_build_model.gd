@@ -183,8 +183,12 @@ func orb_profile(orb_id: String, orb_data: Dictionary, pilot_proc_bonus: int = 0
 			var suffix := " (+%d%% pilot)" % pilot_proc_bonus if pilot_proc_bonus > 0 else ""
 			effect_lines.append("%s: %d%% activation%s" % [str(effect.get("status", "Status")), final_chance, suffix])
 			menu_lines.append("%s %d%%" % [str(effect.get("status", "Status")), final_chance])
-		elif effect_type in ["dodge_bonus", "defense_bonus"]:
-			inactive_lines.append("%s +%d (not active in this prototype)" % [effect_type.trim_suffix("_bonus").capitalize(), int(effect.get("amount", 0))])
+		elif effect_type == "dodge_bonus":
+			effect_lines.append("Dodge +%d" % int(effect.get("amount", 0)))
+			menu_lines.append("Dodge +%d" % int(effect.get("amount", 0)))
+		elif effect_type == "defense_bonus":
+			effect_lines.append("Defense +%d" % int(effect.get("amount", 0)))
+			menu_lines.append("Defense +%d" % int(effect.get("amount", 0)))
 	return {
 		"id": orb_id,
 		"name": str(data.get("name", orb_id)),
@@ -201,7 +205,8 @@ func build_combat_breakdown(
 	weapon_data: Dictionary,
 	orb_data: Dictionary,
 	pilot_data: Dictionary,
-	part_names: Array = []
+	part_names: Array = [],
+	initiative_data: Dictionary = {}
 ) -> Dictionary:
 	var normalized: Dictionary = normalize_build(build, weapon_data, orb_data, part_names)
 	var part_stats: Dictionary = build_stats(normalized)
@@ -209,7 +214,12 @@ func build_combat_breakdown(
 	var pilot: Dictionary = pilot_data.get(str(normalized.get("pilot", "")), {})
 	var passive: Dictionary = pilot.get("passive", {})
 	var proc_bonus := int(passive.get("orb_proc_bonus_percent", 0))
-	var orb_bonuses := {"damage_percent": 0, "hit_bonus": 0}
+	var orb_bonuses := {
+		"damage_percent": 0,
+		"hit_bonus": 0,
+		"defense_bonus": 0,
+		"dodge_bonus": 0,
+	}
 	var orb_profiles: Array = []
 	for part_name in _part_names(part_names):
 		var orb_id := str(normalized.get("orbs", {}).get(part_name, ""))
@@ -223,20 +233,37 @@ func build_combat_breakdown(
 				orb_bonuses["damage_percent"] += int(effect.get("percent", 0))
 			elif str(effect.get("type", "")) == "hit_bonus":
 				orb_bonuses["hit_bonus"] += int(effect.get("amount", 0))
+			elif str(effect.get("type", "")) == "defense_bonus":
+				orb_bonuses["defense_bonus"] += int(effect.get("amount", 0))
+			elif str(effect.get("type", "")) == "dodge_bonus":
+				orb_bonuses["dodge_bonus"] += int(effect.get("amount", 0))
 	var shield_hp := 0
 	if str(normalized.get("off_hand", "")) == "Shield":
 		shield_hp = int(OFF_HAND_EQUIPMENT_DATA["Shield"]["shield_max_hp"]) + int(passive.get("shield_max_hp_bonus", 0))
+	var pilot_id := str(normalized.get("pilot", ""))
+	var base_pilot_speed := int(initiative_data.get(pilot_id, {}).get("speed", 5))
 	var effective := {
 		"max_hp": int(part_stats["max_hp"]),
 		"move": int(part_stats["move"]),
+		"speed": max(1, base_pilot_speed + int(part_stats["speed"])),
+		"defense": int(part_stats["defense"]) + int(orb_bonuses["defense_bonus"]),
+		"dodge": int(part_stats["dodge"]) + int(orb_bonuses["dodge_bonus"]),
 		"attack_hit_percent": clampi(int(weapon["base_hit_percent"]) + int(part_stats["accuracy"]) + int(orb_bonuses["hit_bonus"]), 0, 100),
 		"damage_percent": int(orb_bonuses["damage_percent"]),
 		"shield_hp": shield_hp,
 	}
+	var orb_bonuses_output := {
+		"damage_percent": int(orb_bonuses["damage_percent"]),
+		"hit_bonus": int(orb_bonuses["hit_bonus"]),
+		"defense_bonus": int(orb_bonuses["defense_bonus"]),
+		"dodge_bonus": int(orb_bonuses["dodge_bonus"]),
+		"defense": int(orb_bonuses["defense_bonus"]),
+		"dodge": int(orb_bonuses["dodge_bonus"]),
+	}
 	return {
 		"part_stats": part_stats,
 		"weapon": weapon,
-		"orb_bonuses": orb_bonuses,
+		"orb_bonuses": orb_bonuses_output,
 		"orb_profiles": orb_profiles,
 		"effective_stats": effective,
 		"pilot_name": str(pilot.get("name", normalized.get("pilot", ""))),

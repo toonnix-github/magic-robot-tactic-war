@@ -96,6 +96,12 @@ RNG systems in the combat model include:
 
 Use deterministic seeded RNG for tests and simulations.
 
+## Defense and Damage Reduction
+Defense reduces incoming mech-part damage by percentage. Negative defense increases damage.
+Mech Defense does not reduce Shield damage.
+Destroyed host parts remove any Defense or Dodge bonuses provided by their equipped Orbs.
+Destroyed Legs force effective Dodge to zero.
+
 ## Weapon Identity
 Weapons should change the way combat is played, not merely increase ATK.
 
