@@ -120,6 +120,7 @@ func _run() -> void:
 	_run_phase2_current_vs_inspected_hud_acceptance(scene)
 	_run_phase2_effective_build_stats_acceptance(scene)
 	await _run_phase2_build_fun_validation_acceptance(scene)
+	await _run_hangar_art_acceptance()
 
 	if _failures.is_empty():
 
@@ -3737,3 +3738,62 @@ func _assert_equal(actual, expected, message: String) -> void:
 	if actual != expected:
 		_failures.append("%s: expected %s but got %s" % [message, expected, actual])
 
+
+func _run_hangar_art_acceptance() -> void:
+	var flow = load("res://scenes/preparation_flow.tscn").instantiate()
+	root.add_child(flow)
+	await process_frame
+	var view = flow.editor.mech_view
+	_assert_true(view.has_method("uses_detailed_art"), "#70: assembly delegates detailed art selection")
+	_assert_true(flow.editor.find_child("HangarBackground", true, false) != null, "#70: native editor has background")
+	if not view.has_method("uses_detailed_art"):
+		flow.free()
+		return
+	for family in ["aegis", "bulwark"]:
+		for slot in ["Head", "Body", "Left Arm", "Right Arm", "Legs"]:
+			var id: String = family + "_" + slot.to_lower().replace(" ", "_")
+			_assert_true(view.uses_detailed_art(slot, id), "#70: all ten modules mapped")
+			_assert_true(view.texture_for(slot, id) is AtlasTexture, "#70: modules use consistent master atlas")
+			var material: ShaderMaterial = view.art_library.material_for(slot, id)
+			_assert_true(material != null, "#70: sprite has silhouette material")
+			var mask: Texture2D = material.get_shader_parameter("silhouette")
+			_assert_true(mask.get_image().get_pixel(0, 0).a < 0.01, "#70: mask excludes baked background")
+	_assert_false(view.uses_detailed_art("Head", "volt_head"), "#70: other families retain fallback")
+	var leg_material: ShaderMaterial = view.art_library.material_for("Legs", "aegis_legs")
+	var leg_mask: Image = leg_material.get_shader_parameter("silhouette").get_image()
+	_assert_true(leg_mask.get_pixel(270, 450).a < 0.01, "#70: background between Aegis legs is excluded")
+	_assert_true(leg_mask.get_pixel(90, 450).a > 0.9, "#70: leg armor remains visible")
+	# Check actual laid-out controls against each torso's independently authored sockets.
+	for body_family in ["aegis", "bulwark"]:
+		for limb_family in ["aegis", "bulwark"]:
+			var mixed: Dictionary = flow.hangar.builds["arlen"].duplicate(true)
+			mixed["parts"]["Body"] = body_family + "_body"
+			for slot in ["Head", "Left Arm", "Right Arm", "Legs"]:
+				mixed["parts"][slot] = limb_family + "_" + slot.to_lower().replace(" ", "_")
+			view.show_build(mixed, "Body")
+			var torso: Dictionary = view.art_library.modules[body_family]["Body"]
+			var torso_rect: Rect2 = view.buttons["Body"].get_rect()
+			var torso_region: Array = torso["region"]
+			for slot in ["Head", "Left Arm", "Right Arm", "Legs"]:
+				var limb: Dictionary = view.art_library.modules[limb_family][slot]
+				var limb_rect: Rect2 = view.buttons[slot].get_rect()
+				var region: Array = limb["region"]
+				var anchor: Array = limb["anchor"]
+				var socket: Array = torso["sockets"][slot]
+				var actual := limb_rect.position + Vector2(anchor[0] - region[0], anchor[1] - region[1]) * limb_rect.size / Vector2(region[2], region[3])
+				var expected := torso_rect.position + Vector2(socket[0] - torso_region[0], socket[1] - torso_region[1]) * torso_rect.size / Vector2(torso_region[2], torso_region[3])
+				_assert_true(actual.distance_to(expected) < 0.01, "#70: %s %s attaches to %s torso" % [limb_family, slot, body_family])
+	var original: Dictionary = flow.hangar.builds.duplicate(true)
+	flow.editor._select_slot("Body")
+	flow.editor.preview_part("bulwark_body")
+	_assert_equal(flow.hangar.builds, original, "#70: detailed preview does not mutate build")
+	_assert_true(view.buttons["Body"].material != null, "#70: preview actually uses mask")
+	flow.editor._cancel()
+	_assert_equal(view.display_build, original["arlen"], "#70: Cancel restores Aegis")
+	flow.editor.preview_part("bulwark_body")
+	flow.editor._equip()
+	_assert_equal(view.display_build["parts"]["Body"], "bulwark_body", "#70: Equip updates detailed part")
+	_assert_false(view.buttons["Left Arm"].flip_h, "#70: anatomical artwork is not mirrored twice")
+	flow.editor._select_unit(1)
+	_assert_true(view.buttons["Body"].material == null, "#70: fallback clears stale material")
+	flow.free()

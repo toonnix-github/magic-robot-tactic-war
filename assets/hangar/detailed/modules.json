@@ -1,0 +1,224 @@
+{
+  "aegis": {
+    "Head": {
+      "region": [
+        558,
+        103,
+        132,
+        141
+      ],
+      "rect": [
+        262.05,
+        26.650000000000006,
+        72.60000000000001,
+        77.55000000000001
+      ],
+      "mask": "res://assets/hangar/detailed/aegis_head_mask.svg",
+      "anchor": [
+        625,
+        242
+      ]
+    },
+    "Body": {
+      "region": [
+        464,
+        169,
+        324,
+        347
+      ],
+      "rect": [
+        210.35,
+        62.95,
+        178.20000000000002,
+        190.85000000000002
+      ],
+      "mask": "res://assets/hangar/detailed/aegis_body_mask.svg",
+      "sockets": {
+        "Legs": [
+          625,
+          510
+        ],
+        "Left Arm": [
+          786,
+          305
+        ],
+        "Head": [
+          625,
+          242
+        ],
+        "Right Arm": [
+          466,
+          305
+        ]
+      }
+    },
+    "Right Arm": {
+      "region": [
+        289,
+        236,
+        175,
+        528
+      ],
+      "rect": [
+        114.1,
+        99.80000000000001,
+        96.25000000000001,
+        290.40000000000003
+      ],
+      "mask": "res://assets/hangar/detailed/aegis_right_arm_mask.svg",
+      "anchor": [
+        461,
+        305
+      ]
+    },
+    "Left Arm": {
+      "region": [
+        789,
+        238,
+        164,
+        527
+      ],
+      "rect": [
+        389.1,
+        100.9,
+        90.2,
+        289.85
+      ],
+      "mask": "res://assets/hangar/detailed/aegis_left_arm_mask.svg",
+      "anchor": [
+        791,
+        305
+      ]
+    },
+    "Legs": {
+      "region": [
+        354,
+        492,
+        541,
+        662
+      ],
+      "rect": [
+        149.85,
+        240.60000000000002,
+        297.55,
+        364.1
+      ],
+      "mask": "res://assets/hangar/detailed/aegis_legs_mask.svg",
+      "anchor": [
+        625,
+        510
+      ]
+    }
+  },
+  "bulwark": {
+    "Head": {
+      "region": [
+        549,
+        33,
+        158,
+        171
+      ],
+      "rect": [
+        261,
+        16.5,
+        79,
+        85.5
+      ],
+      "mask": "res://assets/hangar/detailed/bulwark_head_mask.svg",
+      "anchor": [
+        625,
+        200
+      ]
+    },
+    "Body": {
+      "region": [
+        426,
+        132,
+        404,
+        380
+      ],
+      "rect": [
+        199.5,
+        66,
+        202,
+        190
+      ],
+      "mask": "res://assets/hangar/detailed/bulwark_body_mask.svg",
+      "sockets": {
+        "Legs": [
+          625,
+          510
+        ],
+        "Left Arm": [
+          820,
+          265
+        ],
+        "Head": [
+          625,
+          200
+        ],
+        "Right Arm": [
+          432,
+          265
+        ]
+      }
+    },
+    "Right Arm": {
+      "region": [
+        199,
+        173,
+        235,
+        613
+      ],
+      "rect": [
+        86,
+        86.5,
+        117.5,
+        306.5
+      ],
+      "mask": "res://assets/hangar/detailed/bulwark_right_arm_mask.svg",
+      "anchor": [
+        432,
+        265
+      ]
+    },
+    "Left Arm": {
+      "region": [
+        822,
+        174,
+        244,
+        614
+      ],
+      "rect": [
+        397.5,
+        87,
+        122,
+        307
+      ],
+      "mask": "res://assets/hangar/detailed/bulwark_left_arm_mask.svg",
+      "anchor": [
+        824,
+        265
+      ]
+    },
+    "Legs": {
+      "region": [
+        226,
+        480,
+        806,
+        742
+      ],
+      "rect": [
+        99.5,
+        240,
+        403,
+        371
+      ],
+      "mask": "res://assets/hangar/detailed/bulwark_legs_mask.svg",
+      "anchor": [
+        625,
+        510
+      ]
+    }
+  }
+}

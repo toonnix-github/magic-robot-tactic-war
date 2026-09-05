@@ -1,5 +1,11 @@
 # Visual Hangar v0.1
 
+## Two-family art sample (#70)
+
+The user-requested Aegis/Bulwark artwork and industrial bay now appear in the native editor. Ten atlas modules have explicit neck, shoulder and waist registration; attachments follow the equipped torso for mixed builds. Other families and weapon illustrations keep their existing SVG art. The user is handling final transparency cleanup; see `assets/hangar/detailed/README.md` for the source-canvas and attachment contract. Preview, Equip, visible Cancel, Orbs and deployment remain available. Callouts render above the mech with dark backings for contrast.
+
+Execution / Dependency: follows integrated #58; independent of combat/data changes, parallel-limited with Hangar editor/assembly/test changes. Integrates via a dedicated #70 PR into `phase2/build-your-mech` after Regression passes.
+
 Issue #58 replaces the form-like preparation screen with spatial mech editing. The normal preparation entry scene and authoritative build model are unchanged.
 
 ## Interaction
