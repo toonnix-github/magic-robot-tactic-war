@@ -1,6 +1,8 @@
 # magic-robot-tactic-war
 Mobile tactical RPG combining modular mechs, magic Orbs, part-based damage, and short grid battles.
 
+Current scope: [Phase 2 Build Your Mech](docs/phase2-scope.md). Run the Godot project to edit equipment, deploy the squad, and return after a battle. See [the progress review](docs/phase2-build-your-mech-progress-review.md) for validation evidence and remaining human review.
+
 ## Development Checks
 
 Run the Python regression suite:

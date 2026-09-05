@@ -22,7 +22,7 @@ Issues #35-#42 are merged, but their API-level acceptance did not establish a us
 
 ## Evidence
 
-Godot 4.7.2: acceptance suite passed. Python: 53 tests passed. Function coverage: 337/351 (96.0%). Coverage now rejects Godot script errors even if the engine exits zero and prints a success marker. GitHub Regression status must be checked on the submitted PR.
+Godot 4.7.2: acceptance suite passed. Python: 53 tests passed. Function coverage: 337/351 (96.0%). Coverage now rejects Godot script errors even if the engine exits zero and prints a success marker. [GitHub Regression passed](https://github.com/toonnix-github/magic-robot-tactic-war/actions/runs/33965982996) for implementation commit `85adda7`, including report reproducibility. Changes are submitted in [PR #57](https://github.com/toonnix-github/magic-robot-tactic-war/pull/57).
 
 Across the five paired seeds both builds won and Mira survived. Precision averaged 49.0 activations and 187.6 direct damage; Rifle/Shield averaged 40.8 activations and 202.6 direct damage. Rifle/Shield took more damage (62.0 versus 23.6), and Mira intercepted zero attacks in both builds. These observations do not prove Shield interception benefits or universal superiority. They also do not prove human enjoyment.
 
