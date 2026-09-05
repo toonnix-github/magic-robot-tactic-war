@@ -172,26 +172,19 @@ func setup(model) -> void:
 	candidate_grid.add_theme_constant_override("v_separation", 6)
 	inspector.add_child(candidate_grid)
 
-	comparison.bbcode_enabled = true
-	comparison.fit_content = true
-	comparison.scroll_active = false
-	comparison.custom_minimum_size.y = 48
-	inspector.add_child(comparison)
-
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
 	inspector.add_child(actions)
-	equip_button.text = "Equip Frame"
+	equip_button.text = "Equip"
 	equip_button.custom_minimum_size.y = 36
 	equip_button.size_flags_horizontal = SIZE_EXPAND_FILL
-	cancel_button.text = "Cancel"
-	cancel_button.custom_minimum_size = Vector2(80, 36)
 	actions.add_child(equip_button)
+	cancel_button.visible = false
 	actions.add_child(cancel_button)
 
 	inspector.add_child(HSeparator.new())
 
-	# Section 2: Socketed Orb on this Part (Unified Part & Orb Tuning!)
+	# Section 2: Socketed Orb on this Part
 	var orb_section_lbl := Label.new()
 	orb_section_lbl.text = "SOCKETED ORB"
 	orb_section_lbl.add_theme_font_size_override("font_size", 14)
@@ -213,7 +206,7 @@ func setup(model) -> void:
 
 	for weapon in WEAPONS:
 		var profile: Dictionary = hangar.build_model.weapon_profile(weapon, hangar.GameDataScript.WEAPON_DATA)
-		weapon_select.add_item("%s / R%d-%d / %s / %s" % [weapon, profile["range_min"], profile["range_max"], profile["handedness"], profile["pattern_short"]])
+		weapon_select.add_item("%s (R%d-%d, %s)" % [weapon, profile["range_min"], profile["range_max"], profile["handedness"]])
 	_row(inspector, "Weapon", weapon_select)
 	_setup_detail_label(weapon_details)
 	inspector.add_child(weapon_details)
@@ -273,6 +266,12 @@ func setup(model) -> void:
 	telemetry_hdr.add_theme_color_override("font_color", Color("38d9a9"))
 	stat_box.add_child(telemetry_hdr)
 	stat_box.add_child(HSeparator.new())
+
+	comparison.bbcode_enabled = true
+	comparison.fit_content = true
+	comparison.scroll_active = false
+	comparison.visible = false
+	stat_box.add_child(comparison)
 
 	stat_breakdown.bbcode_enabled = true
 	stat_breakdown.fit_content = true
@@ -431,27 +430,28 @@ func refresh() -> void:
 	for option in hangar.available_part_options(slot):
 		var id: String = option["id"]
 		var button := Button.new()
-		button.text = str(option["name"]) + ("\nEquipped" if id == equipped_id else "\n%d HP" % option["max_hp"])
+		button.text = str(option["name"]) + ("\n[Equipped]" if id == equipped_id else "")
 		button.icon = mech_view.texture_for(slot, id)
 		button.expand_icon = true
 		button.add_theme_constant_override("icon_max_width", 40)
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.clip_text = true
 		button.tooltip_text = str(option["name"])
-		button.custom_minimum_size = Vector2(0, 56)
+		button.custom_minimum_size = Vector2(0, 52)
 		button.size_flags_horizontal = SIZE_EXPAND_FILL
 		button.pressed.connect(preview_part.bind(id))
 		candidate_grid.add_child(button)
 		candidates[id] = button
 		if id == equipped_id:
-			equipped_label.text = "Equipped: %s (%d HP)" % [option["name"], option["max_hp"]]
+			equipped_label.text = "Current: %s" % option["name"]
 
 	orb_select.clear()
 	orb_select.add_item("Empty socket")
 	orb_select.set_item_metadata(0, "")
 	for orb in hangar.available_orb_options(slot):
 		var orb_profile: Dictionary = hangar.build_model.orb_profile(str(orb["id"]), hangar.GameDataScript.ORB_DATA)
-		orb_select.add_item("%s / %s" % [str(orb.get("name", orb["id"])), " / ".join(orb_profile["menu_lines"])])
+		var desc: String = ", ".join(orb_profile["menu_lines"])
+		orb_select.add_item("%s (%s)" % [str(orb.get("name", orb["id"])), desc])
 		var index := orb_select.item_count - 1
 		orb_select.set_item_metadata(index, orb["id"])
 		if orb["id"] == build.get("orbs", {}).get(slot, ""):
@@ -473,11 +473,10 @@ func _format_stat_breakdown(breakdown: Dictionary) -> String:
 		orb_lines.append("[color=#38d9a9]•[/color] %s: %s (%s)" % [profile.get("part_name", ""), profile.get("name", ""), effs])
 	var orb_text := "\n".join(orb_lines) if not orb_lines.is_empty() else "[color=#778c85]No Orbs installed[/color]"
 
-	return "[b]PART FRAME[/b]\nHead: %d HP  |  Body: %d HP\nL.Arm: %d HP  |  R.Arm: %d HP\nLegs: %d HP\nMove: %d  |  Speed: %+d  |  Acc: %+d  |  Def: %+d  |  Dodge: %d\n\n[b]EFFECTIVE LOADOUT[/b]\nMove: %d tiles  |  Speed: %d\nDefense: %d%%  |  Dodge: %d%%\nAttack Hit: %d%%  |  Damage: %+d%%\n%s\n\n[b]PILOT SKILL[/b]\n%s: %s\n\n[b]SOCKETED ORBS[/b]\n%s" % [
+	return "[b]PART FRAME[/b]\nHead: %d HP  |  Body: %d HP\nL.Arm: %d HP  |  R.Arm: %d HP\nLegs: %d HP\n\n[b]EFFECTIVE LOADOUT[/b]\nMove: %d tiles  |  Speed: %d\nDefense: %d%%  |  Dodge: %d%%\nAttack Hit: %d%%  |  Damage: %+d%%\n%s\n\n[b]PILOT SKILL[/b]\n%s: %s\n\n[b]SOCKETED ORBS[/b]\n%s" % [
 		p_hp.get("Head", 100), p_hp.get("Body", 110),
 		p_hp.get("Left Arm", 100), p_hp.get("Right Arm", 104),
 		p_hp.get("Legs", 100),
-		parts["move"], parts["speed"], parts["accuracy"], parts["defense"], parts["dodge"],
 		effective["move"], effective.get("speed", 5),
 		effective.get("defense", parts["defense"]), effective.get("dodge", parts["dodge"]),
 		effective["attack_hit_percent"], effective["damage_percent"],
@@ -488,19 +487,19 @@ func _format_stat_breakdown(breakdown: Dictionary) -> String:
 
 
 func _format_weapon_details(profile: Dictionary) -> String:
-	return "[b]Range %d-%d[/b]  |  %s\n%s  |  Base damage %d  |  Base hit %d%%" % [profile["range_min"], profile["range_max"], profile["required_arms"], profile["pattern_label"], profile["base_damage"], profile["base_hit_percent"]]
+	return "[b]Range %d-%d[/b]  |  %s\n%s" % [profile["range_min"], profile["range_max"], profile["required_arms"], profile["pattern_label"]]
 
 
 func _refresh_orb_details(build: Dictionary, slot: String) -> void:
 	var orb_id := str(build.get("orbs", {}).get(slot, ""))
 	if orb_id.is_empty():
-		orb_details.text = "[color=#778c85]Socket is empty. Equip an Orb to empower this part.[/color]"
+		orb_details.text = "[color=#778c85]No Orb socketed[/color]"
 		return
 	var proc_bonus := int(hangar.GameDataScript.PILOT_DATA.get(str(build.get("pilot", "")), {}).get("passive", {}).get("orb_proc_bonus_percent", 0))
 	var profile: Dictionary = hangar.build_model.orb_profile(orb_id, hangar.GameDataScript.ORB_DATA, proc_bonus)
 	var lines: Array = profile["effect_lines"].duplicate()
 	lines.append_array(profile["inactive_lines"])
-	orb_details.text = "[b]%s / %s %s[/b]\n%s" % [profile["name"], profile["element"], profile["rarity"], "  |  ".join(lines)]
+	orb_details.text = "[color=#38d9a9]%s:[/color] %s" % [profile["name"], "  |  ".join(lines)]
 
 
 func preview_part(id: String) -> void:
@@ -519,12 +518,12 @@ func _show_preview() -> void:
 	equip_button.disabled = not changed
 	cancel_button.disabled = not changed
 	deploy_button.disabled = changed
-	comparison.text = "[color=#778c85]Currently equipped frame[/color]"
 	for id in candidates:
 		candidates[id].modulate = Color("38d9a9") if id == candidate_id else Color.WHITE
 	if changed:
+		comparison.visible = true
 		var delta: Dictionary = hangar.preview_part_delta(slot, candidate_id)
-		comparison.text = "[b]%s[/b]\n" % delta["to_name"]
+		comparison.text = "[b][color=#38d9a9]Preview: %s[/color][/b]\n" % delta["to_name"]
 		var before: Dictionary = hangar.build_model.build_stats(build)
 		var after: Dictionary = hangar.build_model.build_stats(shown)
 		var labels := {"max_hp": "Part HP", "accuracy": "Accuracy", "defense": "Defense", "speed": "Speed", "move": "Move", "dodge": "Dodge"}
@@ -536,6 +535,9 @@ func _show_preview() -> void:
 			var b: int = after["part_hp"][slot] if key == "max_hp" else after[key]
 			var color := "#38d9a9" if value > 0 else "#ff6b6b"
 			comparison.text += "%s  %d -> %d  [color=%s](%+d)[/color]\n" % [labels[key], a, b, color, value]
+	else:
+		comparison.visible = false
+		comparison.text = ""
 
 
 func _equip() -> void:
