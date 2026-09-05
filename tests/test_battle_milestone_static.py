@@ -787,6 +787,13 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn("deploy_requested.connect", flow)
         self.assertIn("configure_player_loadouts", flow)
 
+    def test_hangar_has_spatial_part_illustrations(self):
+        view = ROOT / "src/ui/mech_assembly_view.gd"
+        self.assertTrue(view.exists())
+        for family in ["aegis", "longview", "bulwark", "volt"]:
+            for part in ["head", "body", "arm", "legs"]:
+                self.assertTrue((ROOT / f"assets/hangar/{family}_{part}.svg").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
