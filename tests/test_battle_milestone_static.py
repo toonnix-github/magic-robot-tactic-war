@@ -830,6 +830,24 @@ class BattleMilestoneStaticTests(unittest.TestCase):
             for part in ["head", "body", "arm", "legs"]:
                 self.assertTrue((ROOT / f"assets/hangar/{family}_{part}.svg").exists())
 
+    def test_phase2_multi_build_validation_matrix(self):
+        """#43 - Multi-build matrix with 8 Mira archetypes, median activations, and disable metrics."""
+        val_source = (ROOT / "src" / "testing" / "phase2_build_validation.gd").read_text(encoding="utf-8")
+        expected_archetypes = [
+            "mira_precision_fragile",
+            "mira_durable_shield",
+            "mira_agile_rifle",
+            "mira_accuracy_rifle",
+            "mira_durable_sniper",
+            "mira_mobile_spear",
+            "mira_heavy_spear",
+            "mira_sword_shield",
+        ]
+        for archetype in expected_archetypes:
+            self.assertIn(f'"{archetype}"', val_source)
+        self.assertIn("median_activations", val_source)
+        self.assertIn("mira_disables", val_source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3654,19 +3654,33 @@ func _test_phase2_mira_build_comparison(scene: Control) -> void:
 	_assert_equal(scene.units, before_units, "#43: validation preserves the caller's battle")
 	_assert_true(results.has("scenarios"), "#43: results contains scenarios")
 	var scenarios: Dictionary = results.get("scenarios", {})
-	_assert_true(scenarios.has("mira_precision_fragile"), "#43: results contains mira_precision_fragile")
-	_assert_true(scenarios.has("mira_durable_shield"), "#43: results contains mira_durable_shield")
+	_assert_true(scenarios.size() >= 8, "#43: results contains at least 8 archetypes")
+	var expected_archetypes := [
+		"mira_precision_fragile",
+		"mira_durable_shield",
+		"mira_agile_rifle",
+		"mira_accuracy_rifle",
+		"mira_durable_sniper",
+		"mira_mobile_spear",
+		"mira_heavy_spear",
+		"mira_sword_shield",
+	]
+	for arch in expected_archetypes:
+		_assert_true(scenarios.has(arch), "#43: results contains archetype %s" % arch)
 	var report_md: String = scene.generate_phase2_validation_report_markdown(results)
 	_assert_true(report_md.contains("Phase 2 Build-Fun Validation Report"), "#43: markdown report has correct header")
 	_assert_true(report_md.contains("mira_precision_fragile"), "#43: markdown report covers Build A")
 	_assert_true(report_md.contains("mira_durable_shield"), "#43: markdown report covers Build B")
+	_assert_true(report_md.contains("mira_sword_shield"), "#43: markdown report covers Sword+Shield brawler")
 	_assert_false(report_md.contains("implemented and verified green"), "#43: generator cannot grant sign-off")
 	_assert_true(report_md.contains("Human playtest: pending"), "#43: report labels missing human evidence")
 	for scenario in scenarios.values():
 		_assert_true(float(scenario.get("avg_mira_dmg_dealt", 0)) > 0, "#43: real attack damage is measured")
 		_assert_true(scenario.has("builds"), "#43: exact squad configuration is retained")
+		_assert_true(scenario.has("median_activations"), "#43: median activations is computed")
 		for run in scenario["runs"]:
 			_assert_true(run.has("mira_damage_taken"), "#43: per-seed evidence is retained")
+			_assert_true(run.has("mira_disables"), "#43: per-seed disable events are tracked")
 	var helper_path := "res://src/testing/phase2_build_validation.gd"
 	if ResourceLoader.exists(helper_path):
 		var helper = load(helper_path).new()
@@ -3674,11 +3688,13 @@ func _test_phase2_mira_build_comparison(scene: Control) -> void:
 			"mira:attack", "enemy:damage:Shield:7", "enemy:damage:Body:13", "mira:hit:enemy",
 			"enemy:damage:Body:3", "enemy:status:Burn:3",
 			"enemy:attack", "mira:damage:Body:9", "enemy:hit:mira",
-			"mira:damage:Body:3", "mira:status:Burn:3", "mira:shield_intercept:arlen"
+			"mira:damage:Body:3", "mira:status:Burn:3", "mira:shield_intercept:arlen",
+			"mira:destroy:Left Arm", "mira:destroy:Right Arm"
 		], "mira")
 		_assert_equal(metrics["mira_damage_dealt"], 20, "#43: direct damage includes Shield but excludes later Burn")
 		_assert_equal(metrics["mira_damage_taken"], 12, "#43: Burn damage counted once")
 		_assert_equal(metrics["mira_shield_intercepts"], 1, "#43: intercepts belong to Mira")
+		_assert_equal(metrics["mira_disables"], 2, "#43: arm destruction events disabling equipment are tracked")
 
 
 func _assert_true(actual: bool, message: String) -> void:
