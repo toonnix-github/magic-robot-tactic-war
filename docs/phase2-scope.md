@@ -6,6 +6,7 @@ Current integration branch: `phase2/build-your-mech`. Issues #35-#42 define the 
 
 - A fixed curated catalog of parts, weapons, off-hand equipment and passive/proc Orbs.
 - Hangar inspection, part swaps with stat deltas, weapon and Orb changes, build summary and squad deployment.
+- Normal entry is `scenes/preparation_flow.tscn`; the native editor uses the existing Hangar build model. Completed battles return to the same prepared squad for another edit/deploy cycle.
 - Sword/Rifle are one-handed; Spear/Sniper require both arms. Shield is left-arm off-hand equipment, not a primary weapon. Destruction disables equipment requiring that arm.
 - One Orb per part; destruction disables its effects.
 - Current Unit HUD follows initiative; Inspected Unit HUD follows inspection without transferring control. Numeric part/Shield HP and equipment state support tactical decisions.

@@ -735,6 +735,26 @@ class BattleMilestoneStaticTests(unittest.TestCase):
             self.assertIn(hook, hangar_source)
         self.assertIn("build_model.build_signals", hangar_source)
 
+    def test_phase2_hangar_explains_effective_build_and_deployment(self):
+        """#58 - Hangar choices and deployment are readable before battle."""
+        model_source = (ROOT / "src" / "data" / "mech_build_model.gd").read_text(encoding="utf-8")
+        editor_source = (ROOT / "src" / "ui" / "hangar_editor.gd").read_text(encoding="utf-8")
+        assembly_source = (ROOT / "src" / "ui" / "mech_assembly_view.gd").read_text(encoding="utf-8")
+        flow_source = (ROOT / "src" / "ui" / "preparation_flow.gd").read_text(encoding="utf-8")
+
+        for hook in ["func weapon_profile", "func orb_profile", "func build_combat_breakdown"]:
+            self.assertIn(hook, model_source)
+        for control in ["weapon_details", "orb_details", "stat_breakdown", "review_overlay", "mission_select", "confirm_deploy_button"]:
+            self.assertIn(control, editor_source)
+        self.assertIn("func _open_squad_review", editor_source)
+        self.assertIn("func _confirm_deploy", editor_source)
+        self.assertIn("equipment_visual_state", assembly_source)
+        self.assertIn("weapon_visual", assembly_source)
+        self.assertIn("shield_visual", assembly_source)
+        self.assertIn("selected_mission_id", flow_source)
+        for asset in ["weapon_sword.svg", "weapon_rifle.svg", "weapon_spear.svg", "weapon_sniper.svg", "shield.svg"]:
+            self.assertTrue((ROOT / "assets" / "hangar" / asset).exists(), asset)
+
     def test_phase2_squad_deploy_builds_apis_exist(self):
         """#41 - Squad preparation and deploy custom builds into battle."""
         hangar_source = (ROOT / "src" / "ui" / "hangar_screen.gd").read_text(encoding="utf-8")
@@ -779,6 +799,20 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         runner = ROOT / "tools" / "run_phase2_validation.gd"
         self.assertTrue(runner.exists())
         self.assertIn("phase2-build-fun-validation-report.md", runner.read_text(encoding="utf-8"))
+
+    def test_phase2_entry_scene_owns_playable_loop(self):
+        project = (ROOT / "project.godot").read_text(encoding="utf-8")
+        self.assertIn('run/main_scene="res://scenes/preparation_flow.tscn"', project)
+        flow = (ROOT / "src/ui/preparation_flow.gd").read_text(encoding="utf-8")
+        self.assertIn("deploy_requested.connect", flow)
+        self.assertIn("configure_player_loadouts", flow)
+
+    def test_hangar_has_spatial_part_illustrations(self):
+        view = ROOT / "src/ui/mech_assembly_view.gd"
+        self.assertTrue(view.exists())
+        for family in ["aegis", "longview", "bulwark", "volt"]:
+            for part in ["head", "body", "arm", "legs"]:
+                self.assertTrue((ROOT / f"assets/hangar/{family}_{part}.svg").exists())
 
 
 if __name__ == "__main__":
