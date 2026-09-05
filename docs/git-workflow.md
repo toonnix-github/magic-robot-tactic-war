@@ -75,6 +75,7 @@ Two AI workers must never intentionally work from the same mutable feature branc
 Architecture refactors should be their own ticket and branch whenever practical. Do not combine large structural refactors with gameplay changes because that makes parallel work and review unreliable.
 
 ## Current Phase 1 Integration
+Historical section: current work targets `phase2/build-your-mech`; see `phase2-scope.md`. The Phase 1 branch and ticket examples below are retained for reference.
 For the current prototype:
 - integration branch: `prototype/combat-v01`
 - #30 should use a branch such as `fix/30-visible-auto-playback`

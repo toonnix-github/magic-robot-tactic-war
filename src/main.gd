@@ -9,6 +9,7 @@ const BattleAIScript := preload("res://src/ai/battle_ai.gd")
 const BattlePresenterScript := preload("res://src/presentation/battle_presenter.gd")
 const BattleHudScript := preload("res://src/ui/battle_hud.gd")
 const MechBuildModelScript := preload("res://src/data/mech_build_model.gd")
+const Phase2BuildValidationScript := preload("res://src/testing/phase2_build_validation.gd")
 
 const PROTOTYPE_VERSION := "0.1"
 const GRID_COLUMNS := 10
@@ -121,6 +122,7 @@ var combat_controller = CombatControllerScript.new()
 var battle_ai = BattleAIScript.new()
 var battle_presenter = BattlePresenterScript.new()
 var battle_hud = BattleHudScript.new()
+var phase2_build_validation = Phase2BuildValidationScript.new()
 
 
 
@@ -3111,3 +3113,16 @@ func generate_benchmark_report_markdown(results: Dictionary) -> String:
 	lines.append("Objective evidence confirms the Phase 1 design premise: **Build first, command second**. Preparation, loadout synergy, and weapon choice fundamentally govern combat effectiveness.")
 
 	return "\n".join(lines)
+
+
+func run_phase2_build_validation_suite(custom_seeds: Array = []) -> Dictionary:
+	var simulation = load("res://scenes/main.tscn").instantiate()
+	simulation.visible = false
+	add_child(simulation)
+	var results: Dictionary = phase2_build_validation.run(simulation, custom_seeds)
+	simulation.free()
+	return results
+
+
+func generate_phase2_validation_report_markdown(results: Dictionary) -> String:
+	return phase2_build_validation.report(results)

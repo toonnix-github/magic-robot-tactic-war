@@ -769,6 +769,24 @@ class BattleMilestoneStaticTests(unittest.TestCase):
 
         self.assertIn("var inspected_unit", main_source)
 
+    def test_phase2_build_fun_validation_suite(self):
+        """#43 - Phase 2 build-fun validation and sign-off."""
+        main_source = (ROOT / "src" / "main.gd").read_text(encoding="utf-8")
+        self.assertIn("func run_phase2_build_validation_suite", main_source)
+        self.assertIn("func generate_phase2_validation_report_markdown", main_source)
+        self.assertIn('preload("res://src/testing/phase2_build_validation.gd")', main_source)
+        self.assertNotIn('"mira_precision_fragile"', main_source)
+        runner = ROOT / "tools" / "run_phase2_validation.gd"
+        self.assertTrue(runner.exists())
+        self.assertIn("phase2-build-fun-validation-report.md", runner.read_text(encoding="utf-8"))
+
+    def test_phase2_entry_scene_owns_playable_loop(self):
+        project = (ROOT / "project.godot").read_text(encoding="utf-8")
+        self.assertIn('run/main_scene="res://scenes/preparation_flow.tscn"', project)
+        flow = (ROOT / "src/ui/preparation_flow.gd").read_text(encoding="utf-8")
+        self.assertIn("deploy_requested.connect", flow)
+        self.assertIn("configure_player_loadouts", flow)
+
 
 if __name__ == "__main__":
     unittest.main()

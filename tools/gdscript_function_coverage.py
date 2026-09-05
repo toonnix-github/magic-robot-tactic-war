@@ -139,6 +139,10 @@ def visible_output(output: str) -> str:
     )
 
 
+def tests_passed(returncode: int, output: str) -> bool:
+    return returncode == 0 and "GODOT TESTS PASSED" in output and "ERROR:" not in output
+
+
 def main() -> int:
     args = parse_args()
     godot = find_godot(args.godot)
@@ -155,9 +159,9 @@ def main() -> int:
         if filtered_output:
             print(filtered_output)
 
-        if result.returncode != 0:
+        if not tests_passed(result.returncode, output):
             print(f"Godot test command failed with exit code {result.returncode}", file=sys.stderr)
-            return result.returncode
+            return result.returncode or 1
 
         total = 0
         covered_count = 0

@@ -1,5 +1,7 @@
 # Battle Screen UX/UI Reference v0.1
 
+Historical composition reference. [Phase 2 scope](../phase2-scope.md) supersedes selected-unit panel ownership and immediate-movement wording: inspection never transfers initiative control, and movement requires preview plus Confirm/Cancel. Current and inspected unit panels expose numeric part/Shield HP.
+
 ## Purpose
 This is the visual source of truth for the first playable mobile-landscape battle prototype.
 
