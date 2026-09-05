@@ -39,6 +39,9 @@ var category_btn_weapon := Button.new()
 var parts_container := VBoxContainer.new()
 var weapons_container := VBoxContainer.new()
 var active_category: String = "part"
+var stats_tab_combat := Button.new()
+var stats_tab_parts := Button.new()
+var active_stats_tab: String = "combat"
 
 
 func setup(model) -> void:
@@ -286,10 +289,28 @@ func setup(model) -> void:
 	stat_scroll.add_child(stat_box)
 
 	var telemetry_hdr := Label.new()
-	telemetry_hdr.text = "AUTHORITATIVE TELEMETRY"
+	telemetry_hdr.text = "MECH STATUS"
 	telemetry_hdr.add_theme_font_size_override("font_size", 16)
 	telemetry_hdr.add_theme_color_override("font_color", Color("38d9a9"))
 	stat_box.add_child(telemetry_hdr)
+
+	# Stats Tabs: [ Combat Stats ] | [ Parts HP ]
+	var stats_nav := HBoxContainer.new()
+	stats_nav.add_theme_constant_override("separation", 6)
+	stat_box.add_child(stats_nav)
+
+	stats_tab_combat.text = "Combat Stats"
+	stats_tab_combat.size_flags_horizontal = SIZE_EXPAND_FILL
+	stats_tab_combat.custom_minimum_size.y = 32
+	stats_tab_combat.pressed.connect(_select_stats_tab.bind("combat"))
+	stats_nav.add_child(stats_tab_combat)
+
+	stats_tab_parts.text = "Parts HP"
+	stats_tab_parts.size_flags_horizontal = SIZE_EXPAND_FILL
+	stats_tab_parts.custom_minimum_size.y = 32
+	stats_tab_parts.pressed.connect(_select_stats_tab.bind("parts"))
+	stats_nav.add_child(stats_tab_parts)
+
 	stat_box.add_child(HSeparator.new())
 
 	comparison.bbcode_enabled = true
@@ -315,6 +336,7 @@ func setup(model) -> void:
 
 	_build_review_overlay()
 	_select_category("part")
+	_select_stats_tab("combat")
 	refresh()
 
 
@@ -493,17 +515,23 @@ func _format_stat_breakdown(breakdown: Dictionary, preview_breakdown: Dictionary
 	var shield_hp: int = int(effective.get("shield_hp", 0))
 	var shield_str := "Shield: %d HP" % shield_hp if shield_hp > 0 else "Shield: None"
 
+	if active_stats_tab == "parts":
+		var head_hp_str := _part_hp_entry("Head", "Head", p_hp.get("Head", 100), preview_breakdown)
+		var body_hp_str := _part_hp_entry("Body", "Body", p_hp.get("Body", 110), preview_breakdown)
+		var larm_hp_str := _part_hp_entry("Left Arm", "L.Arm", p_hp.get("Left Arm", 100), preview_breakdown)
+		var rarm_hp_str := _part_hp_entry("Right Arm", "R.Arm", p_hp.get("Right Arm", 104), preview_breakdown)
+		var legs_hp_str := _part_hp_entry("Legs", "Legs", p_hp.get("Legs", 100), preview_breakdown)
+		return "[b]PARTS HP[/b]\n%s  |  %s\n%s  |  %s\n%s\n\n[color=#8faea4]Part Integrity Rules:\n• Head destroyed: Targeting accuracy penalty\n• Body destroyed: Mech disabled\n• Arms destroyed: Equipped weapon/shield disabled\n• Legs destroyed: Movement speed reduced[/color]" % [
+			head_hp_str, body_hp_str,
+			larm_hp_str, rarm_hp_str,
+			legs_hp_str
+		]
+
 	var orb_lines: Array[String] = []
 	for profile in breakdown.get("orb_profiles", []):
 		var effs: String = ", ".join(profile.get("effect_lines", []))
 		orb_lines.append("[color=#38d9a9]•[/color] %s: %s (%s)" % [profile.get("part_name", ""), profile.get("name", ""), effs])
 	var orb_text := "\n".join(orb_lines) if not orb_lines.is_empty() else "[color=#778c85]No Orbs installed[/color]"
-
-	var head_hp_str := _part_hp_entry("Head", "Head", p_hp.get("Head", 100), preview_breakdown)
-	var body_hp_str := _part_hp_entry("Body", "Body", p_hp.get("Body", 110), preview_breakdown)
-	var larm_hp_str := _part_hp_entry("Left Arm", "L.Arm", p_hp.get("Left Arm", 100), preview_breakdown)
-	var rarm_hp_str := _part_hp_entry("Right Arm", "R.Arm", p_hp.get("Right Arm", 104), preview_breakdown)
-	var legs_hp_str := _part_hp_entry("Legs", "Legs", p_hp.get("Legs", 100), preview_breakdown)
 
 	var move_str := _stat_entry("Move", effective["move"], preview_breakdown.get("effective_stats", {}).get("move", effective["move"]), " tiles")
 	var speed_str := _stat_entry("Speed", effective.get("speed", 5), preview_breakdown.get("effective_stats", {}).get("speed", effective.get("speed", 5)))
@@ -514,10 +542,7 @@ func _format_stat_breakdown(breakdown: Dictionary, preview_breakdown: Dictionary
 	var prev_dodge: int = int(preview_breakdown.get("effective_stats", {}).get("dodge", dodge_val)) if not preview_breakdown.is_empty() else dodge_val
 	var dodge_str := _stat_entry("Dodge", dodge_val, prev_dodge, "%")
 
-	return "[b]PART FRAME[/b]\n%s  |  %s\n%s  |  %s\n%s\n\n[b]EFFECTIVE LOADOUT[/b]\n%s  |  %s\n%s  |  %s\nAttack Hit: %d%%  |  Damage: %+d%%\n%s\n\n[b]PILOT SKILL[/b]\n%s: %s\n\n[b]SOCKETED ORBS[/b]\n%s" % [
-		head_hp_str, body_hp_str,
-		larm_hp_str, rarm_hp_str,
-		legs_hp_str,
+	return "[b]COMBAT STATS[/b]\n%s  |  %s\n%s  |  %s\nAttack Hit: %d%%  |  Damage: %+d%%\n%s\n\n[b]PILOT SKILL[/b]\n%s: %s\n\n[b]SOCKETED ORBS[/b]\n%s" % [
 		move_str, speed_str,
 		def_str, dodge_str,
 		effective["attack_hit_percent"], effective["damage_percent"],
@@ -676,6 +701,14 @@ func _select_category(cat: String) -> void:
 	weapons_container.visible = not is_part
 	category_btn_part.modulate = Color("38d9a9") if is_part else Color.WHITE
 	category_btn_weapon.modulate = Color("38d9a9") if not is_part else Color.WHITE
+
+
+func _select_stats_tab(tab: String) -> void:
+	active_stats_tab = tab
+	var is_combat: bool = (tab == "combat")
+	stats_tab_combat.modulate = Color("38d9a9") if is_combat else Color.WHITE
+	stats_tab_parts.modulate = Color("38d9a9") if not is_combat else Color.WHITE
+	_show_preview()
 
 
 func _select_slot(slot: String) -> void:
