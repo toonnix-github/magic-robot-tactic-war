@@ -2,6 +2,8 @@
 
 Status: Phase 1 prototype source of truth.
 
+These combat rules remain the Phase 2 baseline. See [Phase 2 scope](phase2-scope.md) for build preparation, weapon handedness and Shield-as-off-hand clarification.
+
 ## Core Battle Pillars
 - Mobile-first landscape tactical RPG.
 - Standard battlefield: 7x10 square grid.

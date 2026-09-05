@@ -1,5 +1,7 @@
 # Phase 1 Prototype Scope
 
+Historical Phase 1 baseline. Current preparation and HUD scope is defined in [Phase 2 scope](phase2-scope.md); its explicit extensions supersede the battle-only UI restriction below.
+
 ## Goal
 Prove that the core combat loop is fun on a mobile landscape screen before building progression, town, story or monetization systems.
 

@@ -1,0 +1,206 @@
+extends Control
+
+signal part_selected(slot: String)
+
+const SLOTS := {
+	"Head": Rect2(250, 35, 100, 86),
+	"Body": Rect2(216, 110, 168, 148),
+	"Right Arm": Rect2(140, 124, 100, 193),
+	"Left Arm": Rect2(360, 124, 100, 193),
+	"Legs": Rect2(216, 250, 168, 170),
+}
+const ORB_ANCHORS := {
+	"Head": Vector2(0.50, 0.56),
+	"Body": Vector2(0.50, 0.53),
+	"Right Arm": Vector2(0.50, 0.56),
+	"Left Arm": Vector2(0.50, 0.56),
+	"Legs": Vector2(0.50, 0.42),
+}
+var display_build: Dictionary = {}
+var selected_slot := "Head"
+var buttons: Dictionary = {}
+var orb_markers: Dictionary = {}
+var textures: Dictionary = {}
+var weapon_visual := TextureRect.new()
+var shield_visual := TextureRect.new()
+var previewing := false
+
+
+func _ready() -> void:
+	custom_minimum_size = Vector2(300, 270)
+	size_flags_horizontal = SIZE_EXPAND_FILL
+	size_flags_vertical = SIZE_EXPAND_FILL
+	for slot in SLOTS:
+		var button := TextureButton.new()
+		button.ignore_texture_size = true
+		button.stretch_mode = TextureButton.STRETCH_SCALE
+		button.focus_mode = Control.FOCUS_ALL
+		button.tooltip_text = slot
+		button.pressed.connect(_choose.bind(slot))
+		button.mouse_entered.connect(_hover.bind(slot, true))
+		button.mouse_exited.connect(_hover.bind(slot, false))
+		add_child(button)
+		buttons[slot] = button
+	for visual in [weapon_visual, shield_visual]:
+		visual.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		visual.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		visual.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(visual)
+	for slot in SLOTS:
+		var marker := Panel.new()
+		marker.custom_minimum_size = Vector2(16, 16)
+		marker.size = Vector2(16, 16)
+		marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		marker.visible = false
+		add_child(marker)
+		orb_markers[slot] = marker
+	resized.connect(_layout)
+	_layout()
+
+
+func _choose(slot: String) -> void:
+	part_selected.emit(slot)
+
+
+func _hover(slot: String, active: bool) -> void:
+	buttons[slot].modulate = Color(1.25, 1.25, 1.25) if active else Color.WHITE
+
+
+func _layout() -> void:
+	var factor: float = min(size.x / 600.0, size.y / 460.0)
+	var origin := (size - Vector2(600, 460) * factor) * 0.5
+	for slot in buttons:
+		var rect: Rect2 = SLOTS[slot]
+		buttons[slot].position = origin + rect.position * factor
+		buttons[slot].size = rect.size * factor
+		orb_markers[slot].position = orb_marker_position(slot) - orb_markers[slot].size * 0.5
+	weapon_visual.position = origin + Vector2(80, 174) * factor
+	weapon_visual.size = Vector2(180, 224) * factor
+	shield_visual.position = origin + Vector2(425, 235) * factor
+	shield_visual.size = Vector2(120, 160) * factor
+	queue_redraw()
+
+
+func orb_marker_position(slot: String) -> Vector2:
+	if not buttons.has(slot):
+		return Vector2.ZERO
+	var rect: Rect2 = buttons[slot].get_rect()
+	return rect.position + rect.size * ORB_ANCHORS.get(slot, Vector2(0.5, 0.5))
+
+
+func texture_for(slot: String, part_id: String) -> Texture2D:
+	var family: String = part_id.get_slice("_", 0)
+	if family == "guard":
+		family = "bulwark"
+	if family == "sprinter":
+		family = "volt"
+	var kind := "arm" if slot.contains("Arm") else slot.to_lower()
+	var path := "res://assets/hangar/%s_%s.svg" % [family, kind]
+	if not textures.has(path):
+		var bitmap := Image.new()
+		if bitmap.load_svg_from_string(FileAccess.get_file_as_string(path)) != OK:
+			return null
+		textures[path] = ImageTexture.create_from_image(bitmap)
+	return textures[path]
+
+
+func equipment_texture(asset_name: String) -> Texture2D:
+	var path := "res://assets/hangar/%s.svg" % asset_name
+	if not textures.has(path):
+		var bitmap := Image.new()
+		if bitmap.load_svg_from_string(FileAccess.get_file_as_string(path)) != OK:
+			return null
+		textures[path] = ImageTexture.create_from_image(bitmap)
+	return textures[path]
+
+
+func show_build(build: Dictionary, slot: String, is_preview: bool = false) -> void:
+	display_build = build.duplicate(true)
+	selected_slot = slot
+	previewing = is_preview
+	var weapon_name := str(build.get("weapon", ""))
+	weapon_visual.texture = equipment_texture("weapon_%s" % weapon_name.to_lower())
+	weapon_visual.visible = weapon_visual.texture != null
+	weapon_visual.tooltip_text = weapon_name
+	shield_visual.texture = equipment_texture("shield")
+	shield_visual.visible = str(build.get("off_hand", "")) == "Shield"
+	shield_visual.tooltip_text = "Shield"
+	for part in buttons:
+		buttons[part].texture_normal = texture_for(part, build["parts"][part])
+		buttons[part].flip_h = part == "Left Arm"
+		var orb_id: String = str(build.get("orbs", {}).get(part, ""))
+		orb_markers[part].visible = not orb_id.is_empty()
+		if not orb_id.is_empty():
+			orb_markers[part].add_theme_stylebox_override("panel", _orb_style(orb_id))
+			buttons[part].tooltip_text = "%s / Orb: %s" % [part, orb_id]
+		else:
+			buttons[part].tooltip_text = "%s / Orb slot empty" % part
+	queue_redraw()
+
+
+func equipment_visual_state() -> Dictionary:
+	var weapon_name := str(display_build.get("weapon", ""))
+	return {
+		"weapon": weapon_name,
+		"weapon_visible": weapon_visual.visible,
+		"shield_visible": shield_visual.visible,
+		"required_arms": "Both Arms" if weapon_name in ["Spear", "Sniper"] else "Right Arm",
+	}
+
+
+func _draw() -> void:
+	var font := ThemeDB.fallback_font
+	var factor: float = min(size.x / 600.0, size.y / 460.0)
+	var origin := (size - Vector2(600, 460) * factor) * 0.5
+	var muted := Color("52615f")
+	for y in range(70, 455, 35):
+		draw_line(origin + Vector2(90, y) * factor, origin + Vector2(510, y) * factor, Color("202c2d"), 1)
+	var platform := PackedVector2Array()
+	for i in range(65):
+		var angle := TAU * float(i) / 64.0
+		platform.append(origin + (Vector2(300, 427) + Vector2(cos(angle) * 145, sin(angle) * 20)) * factor)
+	draw_polyline(platform, muted, 1)
+	for joint in [Vector2(229, 150), Vector2(371, 150), Vector2(272, 252), Vector2(328, 252)]:
+		draw_circle(origin + joint * factor, 17 * factor, Color("304643"))
+	if buttons.has(selected_slot):
+		var active: Rect2 = buttons[selected_slot].get_rect().grow(4)
+		draw_style_box(_selection_style(), active)
+	for slot in buttons:
+		var rect: Rect2 = buttons[slot].get_rect()
+		var on_left: bool = slot in ["Head", "Right Arm", "Legs"]
+		var y: float = rect.get_center().y
+		var start := Vector2(origin.x + (15 if on_left else 467) * factor, y)
+		var color := Color("78e1c3") if slot == selected_slot else Color("aebeb9")
+		draw_string(font, start, slot, HORIZONTAL_ALIGNMENT_LEFT, 122 * factor, 14, color)
+		var line_start := start + Vector2(0, 9)
+		var end := Vector2(rect.position.x if on_left else rect.end.x, y + 9)
+		draw_line(line_start, end, color.darkened(0.5), 1)
+	var caption := "PART PREVIEW" if previewing else "ASSEMBLED MECH"
+	draw_string(font, Vector2(15, size.y - 8), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, muted.lightened(0.3))
+
+
+func _selection_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.2, 0.7, 0.55, 0.08)
+	style.border_color = Color("72d5b8")
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(4)
+	return style
+
+
+func _orb_style(orb_id: String) -> StyleBoxFlat:
+	var fill := Color("ef9b79")
+	if orb_id.begins_with("lightning"):
+		fill = Color("edd77e")
+	elif orb_id.begins_with("water"):
+		fill = Color("80cbd7")
+	elif orb_id.begins_with("earth"):
+		fill = Color("91c58d")
+	var style := StyleBoxFlat.new()
+	style.bg_color = fill
+	style.border_color = Color("f4fbf8")
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(8)
+	style.shadow_color = Color(0, 0, 0, 0.75)
+	style.shadow_size = 3
+	return style
