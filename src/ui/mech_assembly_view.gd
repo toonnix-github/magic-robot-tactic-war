@@ -9,9 +9,17 @@ const SLOTS := {
 	"Left Arm": Rect2(360, 124, 100, 193),
 	"Legs": Rect2(216, 250, 168, 170),
 }
+const ORB_ANCHORS := {
+	"Head": Vector2(0.50, 0.56),
+	"Body": Vector2(0.50, 0.53),
+	"Right Arm": Vector2(0.50, 0.56),
+	"Left Arm": Vector2(0.50, 0.56),
+	"Legs": Vector2(0.50, 0.42),
+}
 var display_build: Dictionary = {}
 var selected_slot := "Head"
 var buttons: Dictionary = {}
+var orb_markers: Dictionary = {}
 var textures: Dictionary = {}
 var previewing := false
 
@@ -31,6 +39,14 @@ func _ready() -> void:
 		button.mouse_exited.connect(_hover.bind(slot, false))
 		add_child(button)
 		buttons[slot] = button
+	for slot in SLOTS:
+		var marker := Panel.new()
+		marker.custom_minimum_size = Vector2(16, 16)
+		marker.size = Vector2(16, 16)
+		marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		marker.visible = false
+		add_child(marker)
+		orb_markers[slot] = marker
 	resized.connect(_layout)
 	_layout()
 
@@ -50,7 +66,15 @@ func _layout() -> void:
 		var rect: Rect2 = SLOTS[slot]
 		buttons[slot].position = origin + rect.position * factor
 		buttons[slot].size = rect.size * factor
+		orb_markers[slot].position = orb_marker_position(slot) - orb_markers[slot].size * 0.5
 	queue_redraw()
+
+
+func orb_marker_position(slot: String) -> Vector2:
+	if not buttons.has(slot):
+		return Vector2.ZERO
+	var rect: Rect2 = buttons[slot].get_rect()
+	return rect.position + rect.size * ORB_ANCHORS.get(slot, Vector2(0.5, 0.5))
 
 
 func texture_for(slot: String, part_id: String) -> Texture2D:
@@ -76,6 +100,13 @@ func show_build(build: Dictionary, slot: String, is_preview: bool = false) -> vo
 	for part in buttons:
 		buttons[part].texture_normal = texture_for(part, build["parts"][part])
 		buttons[part].flip_h = part == "Left Arm"
+		var orb_id: String = str(build.get("orbs", {}).get(part, ""))
+		orb_markers[part].visible = not orb_id.is_empty()
+		if not orb_id.is_empty():
+			orb_markers[part].add_theme_stylebox_override("panel", _orb_style(orb_id))
+			buttons[part].tooltip_text = "%s / Orb: %s" % [part, orb_id]
+		else:
+			buttons[part].tooltip_text = "%s / Orb slot empty" % part
 	queue_redraw()
 
 
@@ -106,10 +137,6 @@ func _draw() -> void:
 		var line_start := start + Vector2(0, 9)
 		var end := Vector2(rect.position.x if on_left else rect.end.x, y + 9)
 		draw_line(line_start, end, color.darkened(0.5), 1)
-		var orb: String = str(display_build.get("orbs", {}).get(slot, ""))
-		if not orb.is_empty():
-			var orb_color := Color("ef9b79") if orb.begins_with("fire") else (Color("edd77e") if orb.begins_with("lightning") else Color("80cbd7"))
-			draw_circle(rect.end - Vector2(8, 8), 5, orb_color)
 	var caption := "PART PREVIEW" if previewing else "ASSEMBLED MECH"
 	draw_string(font, Vector2(15, size.y - 8), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, muted.lightened(0.3))
 
@@ -120,4 +147,22 @@ func _selection_style() -> StyleBoxFlat:
 	style.border_color = Color("72d5b8")
 	style.set_border_width_all(1)
 	style.set_corner_radius_all(4)
+	return style
+
+
+func _orb_style(orb_id: String) -> StyleBoxFlat:
+	var fill := Color("ef9b79")
+	if orb_id.begins_with("lightning"):
+		fill = Color("edd77e")
+	elif orb_id.begins_with("water"):
+		fill = Color("80cbd7")
+	elif orb_id.begins_with("earth"):
+		fill = Color("91c58d")
+	var style := StyleBoxFlat.new()
+	style.bg_color = fill
+	style.border_color = Color("f4fbf8")
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(8)
+	style.shadow_color = Color(0, 0, 0, 0.75)
+	style.shadow_size = 3
 	return style

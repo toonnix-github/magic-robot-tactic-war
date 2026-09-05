@@ -37,3 +37,5 @@ Work was isolated at `D:/a/magic-mecha-phase2-review` because concurrent edits w
 ## Remaining Human Review
 
 Follow `playtest/phase2-human-playtest.md`. No human session or subjective fun/readability judgment has been claimed. Keep #43 open until a human evaluates the working loop, records blockers or acceptance, and Regression is green.
+
+Detailed per-mech battle result analytics are deferred from Phase 2 at the user's direction. The current Victory/Defeat return flow is sufficient for this phase; closure should focus on understandable preparation, accurate deployment and build differences in battle.

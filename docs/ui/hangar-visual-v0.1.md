@@ -9,7 +9,7 @@ Issue #58 replaces the form-like preparation screen with spatial mech editing. T
 - Illustrated alternatives on the right show names, durability and which part is equipped.
 - Selecting an alternative previews its silhouette and color without modifying the build. Numeric before/after values show every changed stat; signed differences and colors distinguish improvements from costs.
 - Equip commits the candidate. Cancel, another part or another pilot dismisses it. Deployment is disabled while a preview is unresolved.
-- Weapon, Shield and the selected part's Orb remain editable below the comparison. Both-arm weapon restrictions are visible. Colored markers indicate occupied Orb slots.
+- Weapon, Shield and the selected part's Orb remain editable below the comparison. Both-arm weapon restrictions are visible. Colored Orb sockets sit on the visible armor of their installed part rather than at the selection-box edge.
 
 ## Assets and Ownership
 

@@ -3532,6 +3532,10 @@ func _test_phase2_playable_flow() -> void:
 		editor.equip_button.pressed.emit()
 		_assert_equal(flow.hangar.builds["arlen"]["parts"]["Body"], "bulwark_body", "#58: Equip commits candidate")
 		_assert_equal(editor.mech_view.display_build["parts"]["Body"], "bulwark_body", "#58: illustration reflects equipped part")
+		for orb_slot in ["Head", "Body", "Right Arm", "Left Arm", "Legs"]:
+			var marker: Vector2 = editor.mech_view.orb_marker_position(orb_slot)
+			var part_rect: Rect2 = editor.mech_view.buttons[orb_slot].get_rect().grow(-12.0)
+			_assert_true(part_rect.has_point(marker), "#58: %s Orb marker stays inside its part" % orb_slot)
 		editor.mech_view.part_selected.emit("Head")
 	editor.unit_select.item_selected.emit(1)
 	_assert_equal(flow.hangar.current_unit_id, "mira", "#43: actual selector changes unit")
