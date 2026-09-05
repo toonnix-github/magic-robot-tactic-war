@@ -24,6 +24,8 @@ var textures: Dictionary = {}
 var weapon_visual := TextureRect.new()
 var shield_visual := TextureRect.new()
 var previewing := false
+var cur_part_hps: Dictionary = {}
+var preview_part_hps: Dictionary = {}
 
 
 func _ready() -> void:
@@ -114,10 +116,13 @@ func equipment_texture(asset_name: String) -> Texture2D:
 	return textures[path]
 
 
-func show_build(build: Dictionary, slot: String, is_preview: bool = false) -> void:
+func show_build(build: Dictionary, slot: String, is_preview: bool = false, hps: Dictionary = {}, prev_hps: Dictionary = {}) -> void:
 	display_build = build.duplicate(true)
 	selected_slot = slot
 	previewing = is_preview
+	if not hps.is_empty():
+		cur_part_hps = hps.duplicate(true)
+	preview_part_hps = prev_hps.duplicate(true)
 	var weapon_name := str(build.get("weapon", ""))
 	weapon_visual.texture = equipment_texture("weapon_%s" % weapon_name.to_lower())
 	weapon_visual.visible = weapon_visual.texture != null
@@ -136,6 +141,7 @@ func show_build(build: Dictionary, slot: String, is_preview: bool = false) -> vo
 		else:
 			buttons[part].tooltip_text = "%s / Orb slot empty" % part
 	queue_redraw()
+
 
 
 func equipment_visual_state() -> Dictionary:
@@ -168,12 +174,26 @@ func _draw() -> void:
 	for slot in buttons:
 		var rect: Rect2 = buttons[slot].get_rect()
 		var on_left: bool = slot in ["Head", "Right Arm", "Legs"]
-		var y: float = rect.get_center().y
+		var y_offset: float = -25.0 if slot == "Body" else (10.0 if slot == "Left Arm" else 0.0)
+		var y: float = rect.get_center().y + y_offset * factor
 		var start := Vector2(origin.x + (15 if on_left else 467) * factor, y)
 		var color := Color("78e1c3") if slot == selected_slot else Color("aebeb9")
-		draw_string(font, start, slot, HORIZONTAL_ALIGNMENT_LEFT, 122 * factor, 14, color)
-		var line_start := start + Vector2(0, 9)
-		var end := Vector2(rect.position.x if on_left else rect.end.x, y + 9)
+		draw_string(font, start + Vector2(0, -2 * factor), slot, HORIZONTAL_ALIGNMENT_LEFT, 130 * factor, 13, color)
+		var hp_str := ""
+		var hp_color := Color("8faea4")
+		if cur_part_hps.has(slot):
+			var cur_hp: int = cur_part_hps[slot]
+			if not preview_part_hps.is_empty() and preview_part_hps.has(slot) and preview_part_hps[slot] != cur_hp:
+				var new_hp: int = preview_part_hps[slot]
+				var diff: int = new_hp - cur_hp
+				hp_str = "%d -> %d (%+d)" % [cur_hp, new_hp, diff]
+				hp_color = Color("38d9a9") if diff > 0 else Color("ff6b6b")
+			else:
+				hp_str = "%d HP" % cur_hp
+		if not hp_str.is_empty():
+			draw_string(font, start + Vector2(0, 18 * factor), hp_str, HORIZONTAL_ALIGNMENT_LEFT, 130 * factor, 12, hp_color)
+		var line_start := start + Vector2(0, 4 * factor)
+		var end := Vector2(rect.position.x if on_left else rect.end.x, y + 4 * factor)
 		draw_line(line_start, end, color.darkened(0.5), 1)
 	var caption := "PART PREVIEW" if previewing else "ASSEMBLED MECH"
 	draw_string(font, Vector2(15, size.y - 8), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, muted.lightened(0.3))

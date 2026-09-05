@@ -39,9 +39,6 @@ var category_btn_weapon := Button.new()
 var parts_container := VBoxContainer.new()
 var weapons_container := VBoxContainer.new()
 var active_category: String = "part"
-var stats_tab_combat := Button.new()
-var stats_tab_parts := Button.new()
-var active_stats_tab: String = "combat"
 
 
 func setup(model) -> void:
@@ -294,23 +291,6 @@ func setup(model) -> void:
 	telemetry_hdr.add_theme_color_override("font_color", Color("38d9a9"))
 	stat_box.add_child(telemetry_hdr)
 
-	# Stats Tabs: [ Combat Stats ] | [ Parts HP ]
-	var stats_nav := HBoxContainer.new()
-	stats_nav.add_theme_constant_override("separation", 6)
-	stat_box.add_child(stats_nav)
-
-	stats_tab_combat.text = "Combat Stats"
-	stats_tab_combat.size_flags_horizontal = SIZE_EXPAND_FILL
-	stats_tab_combat.custom_minimum_size.y = 32
-	stats_tab_combat.pressed.connect(_select_stats_tab.bind("combat"))
-	stats_nav.add_child(stats_tab_combat)
-
-	stats_tab_parts.text = "Parts HP"
-	stats_tab_parts.size_flags_horizontal = SIZE_EXPAND_FILL
-	stats_tab_parts.custom_minimum_size.y = 32
-	stats_tab_parts.pressed.connect(_select_stats_tab.bind("parts"))
-	stats_nav.add_child(stats_tab_parts)
-
 	stat_box.add_child(HSeparator.new())
 
 	comparison.bbcode_enabled = true
@@ -336,7 +316,6 @@ func setup(model) -> void:
 
 	_build_review_overlay()
 	_select_category("part")
-	_select_stats_tab("combat")
 	refresh()
 
 
@@ -511,21 +490,8 @@ func refresh() -> void:
 func _format_stat_breakdown(breakdown: Dictionary, preview_breakdown: Dictionary = {}) -> String:
 	var parts: Dictionary = breakdown["part_stats"]
 	var effective: Dictionary = breakdown["effective_stats"]
-	var p_hp: Dictionary = parts.get("part_hp", {})
 	var shield_hp: int = int(effective.get("shield_hp", 0))
 	var shield_str := "Shield: %d HP" % shield_hp if shield_hp > 0 else "Shield: None"
-
-	if active_stats_tab == "parts":
-		var head_hp_str := _part_hp_entry("Head", "Head", p_hp.get("Head", 100), preview_breakdown)
-		var body_hp_str := _part_hp_entry("Body", "Body", p_hp.get("Body", 110), preview_breakdown)
-		var larm_hp_str := _part_hp_entry("Left Arm", "L.Arm", p_hp.get("Left Arm", 100), preview_breakdown)
-		var rarm_hp_str := _part_hp_entry("Right Arm", "R.Arm", p_hp.get("Right Arm", 104), preview_breakdown)
-		var legs_hp_str := _part_hp_entry("Legs", "Legs", p_hp.get("Legs", 100), preview_breakdown)
-		return "[b]PARTS HP[/b]\n%s  |  %s\n%s  |  %s\n%s\n\n[color=#8faea4]Part Integrity Rules:\n• Head destroyed: Targeting accuracy penalty\n• Body destroyed: Mech disabled\n• Arms destroyed: Equipped weapon/shield disabled\n• Legs destroyed: Movement speed reduced[/color]" % [
-			head_hp_str, body_hp_str,
-			larm_hp_str, rarm_hp_str,
-			legs_hp_str
-		]
 
 	var orb_lines: Array[String] = []
 	for profile in breakdown.get("orb_profiles", []):
@@ -550,16 +516,6 @@ func _format_stat_breakdown(breakdown: Dictionary, preview_breakdown: Dictionary
 		breakdown["pilot_passive"], breakdown["pilot_effect"],
 		orb_text
 	]
-
-
-func _part_hp_entry(slot_key: String, label: String, cur_hp: int, preview_breakdown: Dictionary) -> String:
-	if not preview_breakdown.is_empty():
-		var prev_hp: int = int(preview_breakdown.get("part_stats", {}).get("part_hp", {}).get(slot_key, cur_hp))
-		if prev_hp != cur_hp:
-			var diff: int = prev_hp - cur_hp
-			var color := "#38d9a9" if diff > 0 else "#ff6b6b"
-			return "%s: %d -> %d [color=%s](%+d)[/color]" % [label, cur_hp, prev_hp, color, diff]
-	return "%s: %d HP" % [label, cur_hp]
 
 
 func _stat_entry(label: String, cur_val: int, prev_val: int, suffix: String = "") -> String:
@@ -598,7 +554,9 @@ func _show_preview() -> void:
 	var slot: String = hangar.highlighted_part_name
 	var changed: bool = not candidate_id.is_empty() and candidate_id != build["parts"][slot]
 	var shown: Dictionary = hangar.build_model.swap_part(build, slot, candidate_id) if changed else build
-	mech_view.show_build(shown, slot, changed)
+	var before: Dictionary = hangar.build_model.build_stats(build)
+	var after: Dictionary = hangar.build_model.build_stats(shown) if changed else before
+	mech_view.show_build(shown, slot, changed, before["part_hp"], after["part_hp"] if changed else {})
 	equip_button.disabled = not changed
 	cancel_button.disabled = not changed
 	deploy_button.disabled = changed
@@ -624,8 +582,6 @@ func _show_preview() -> void:
 			hangar.GameDataScript.UNIT_INITIATIVE_DATA
 		)
 		stat_breakdown.text = _format_stat_breakdown(breakdown, preview_breakdown)
-		var before: Dictionary = hangar.build_model.build_stats(build)
-		var after: Dictionary = hangar.build_model.build_stats(shown)
 		comparison.text = "%d -> %d" % [before["part_hp"][slot], after["part_hp"][slot]]
 	else:
 		stat_breakdown.text = _format_stat_breakdown(breakdown, {})
@@ -702,13 +658,6 @@ func _select_category(cat: String) -> void:
 	category_btn_part.modulate = Color("38d9a9") if is_part else Color.WHITE
 	category_btn_weapon.modulate = Color("38d9a9") if not is_part else Color.WHITE
 
-
-func _select_stats_tab(tab: String) -> void:
-	active_stats_tab = tab
-	var is_combat: bool = (tab == "combat")
-	stats_tab_combat.modulate = Color("38d9a9") if is_combat else Color.WHITE
-	stats_tab_parts.modulate = Color("38d9a9") if not is_combat else Color.WHITE
-	_show_preview()
 
 
 func _select_slot(slot: String) -> void:
