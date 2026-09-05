@@ -2,12 +2,15 @@ extends Control
 
 signal part_selected(slot: String)
 
+const ArtLibrary := preload("res://src/ui/hangar_art_library.gd")
+var art_library = ArtLibrary.new()
+
 const SLOTS := {
-	"Head": Rect2(250, 35, 100, 86),
-	"Body": Rect2(216, 110, 168, 148),
-	"Right Arm": Rect2(140, 124, 100, 193),
-	"Left Arm": Rect2(360, 124, 100, 193),
-	"Legs": Rect2(216, 250, 168, 170),
+	"Head": Rect2(263, 27, 74, 79),
+	"Body": Rect2(212, 92, 176, 165),
+	"Right Arm": Rect2(115, 101, 98, 290),
+	"Left Arm": Rect2(387, 101, 98, 290),
+	"Legs": Rect2(151, 242, 296, 362),
 }
 const ORB_ANCHORS := {
 	"Head": Vector2(0.50, 0.56),
@@ -26,6 +29,7 @@ var shield_visual := TextureRect.new()
 var previewing := false
 var cur_part_hps: Dictionary = {}
 var preview_part_hps: Dictionary = {}
+var callouts := Control.new()
 
 
 func _ready() -> void:
@@ -56,6 +60,9 @@ func _ready() -> void:
 		marker.visible = false
 		add_child(marker)
 		orb_markers[slot] = marker
+	callouts.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	callouts.draw.connect(_draw_callouts)
+	add_child(callouts)
 	resized.connect(_layout)
 	_layout()
 
@@ -69,18 +76,22 @@ func _hover(slot: String, active: bool) -> void:
 
 
 func _layout() -> void:
-	var factor: float = min(size.x / 600.0, size.y / 460.0)
-	var origin := (size - Vector2(600, 460) * factor) * 0.5
+	var factor: float = min(size.x / 600.0, size.y / 650.0)
+	var origin := (size - Vector2(600, 650) * factor) * 0.5
 	for slot in buttons:
 		var rect: Rect2 = SLOTS[slot]
+		var id: String = display_build.get("parts", {}).get(slot, "")
+		if uses_detailed_art(slot, id):
+			rect = art_library.rect_for(slot, id, display_build.get("parts", {}).get("Body", ""))
 		buttons[slot].position = origin + rect.position * factor
 		buttons[slot].size = rect.size * factor
 		orb_markers[slot].position = orb_marker_position(slot) - orb_markers[slot].size * 0.5
-	weapon_visual.position = origin + Vector2(80, 174) * factor
-	weapon_visual.size = Vector2(180, 224) * factor
-	shield_visual.position = origin + Vector2(425, 235) * factor
+	weapon_visual.position = origin + Vector2(75, 320) * factor
+	weapon_visual.size = Vector2(180, 250) * factor
+	shield_visual.position = origin + Vector2(400, 280) * factor
 	shield_visual.size = Vector2(120, 160) * factor
-	queue_redraw()
+	callouts.size = size
+	callouts.queue_redraw()
 
 
 func orb_marker_position(slot: String) -> Vector2:
@@ -91,6 +102,8 @@ func orb_marker_position(slot: String) -> Vector2:
 
 
 func texture_for(slot: String, part_id: String) -> Texture2D:
+	if uses_detailed_art(slot, part_id):
+		return art_library.texture_for(slot, part_id)
 	var family: String = part_id.get_slice("_", 0)
 	if family == "guard":
 		family = "bulwark"
@@ -104,6 +117,10 @@ func texture_for(slot: String, part_id: String) -> Texture2D:
 			return null
 		textures[path] = ImageTexture.create_from_image(bitmap)
 	return textures[path]
+
+
+func uses_detailed_art(slot: String, part_id: String) -> bool:
+	return art_library.has_art(slot, part_id)
 
 
 func equipment_texture(asset_name: String) -> Texture2D:
@@ -132,7 +149,9 @@ func show_build(build: Dictionary, slot: String, is_preview: bool = false, hps: 
 	shield_visual.tooltip_text = "Shield"
 	for part in buttons:
 		buttons[part].texture_normal = texture_for(part, build["parts"][part])
-		buttons[part].flip_h = part == "Left Arm"
+		var detailed := uses_detailed_art(part, build["parts"][part])
+		buttons[part].material = art_library.material_for(part, build["parts"][part]) if detailed else null
+		buttons[part].flip_h = part == "Left Arm" and not detailed
 		var orb_id: String = str(build.get("orbs", {}).get(part, ""))
 		orb_markers[part].visible = not orb_id.is_empty()
 		if not orb_id.is_empty():
@@ -140,7 +159,7 @@ func show_build(build: Dictionary, slot: String, is_preview: bool = false, hps: 
 			buttons[part].tooltip_text = "%s / Orb: %s" % [part, orb_id]
 		else:
 			buttons[part].tooltip_text = "%s / Orb slot empty" % part
-	queue_redraw()
+	_layout()
 
 
 
@@ -154,31 +173,23 @@ func equipment_visual_state() -> Dictionary:
 	}
 
 
-func _draw() -> void:
+func _draw_callouts() -> void:
 	var font := ThemeDB.fallback_font
-	var factor: float = min(size.x / 600.0, size.y / 460.0)
-	var origin := (size - Vector2(600, 460) * factor) * 0.5
+	var factor: float = min(size.x / 600.0, size.y / 650.0)
+	var origin := (size - Vector2(600, 650) * factor) * 0.5
 	var muted := Color("52615f")
-	for y in range(70, 455, 35):
-		draw_line(origin + Vector2(90, y) * factor, origin + Vector2(510, y) * factor, Color("202c2d"), 1)
-	var platform := PackedVector2Array()
-	for i in range(65):
-		var angle := TAU * float(i) / 64.0
-		platform.append(origin + (Vector2(300, 427) + Vector2(cos(angle) * 145, sin(angle) * 20)) * factor)
-	draw_polyline(platform, muted, 1)
-	for joint in [Vector2(229, 150), Vector2(371, 150), Vector2(272, 252), Vector2(328, 252)]:
-		draw_circle(origin + joint * factor, 17 * factor, Color("304643"))
 	if buttons.has(selected_slot):
 		var active: Rect2 = buttons[selected_slot].get_rect().grow(4)
-		draw_style_box(_selection_style(), active)
+		callouts.draw_style_box(_selection_style(), active)
 	for slot in buttons:
 		var rect: Rect2 = buttons[slot].get_rect()
 		var on_left: bool = slot in ["Head", "Right Arm", "Legs"]
 		var y_offset: float = -25.0 if slot == "Body" else (10.0 if slot == "Left Arm" else 0.0)
 		var y: float = rect.get_center().y + y_offset * factor
-		var start := Vector2(origin.x + (15 if on_left else 467) * factor, y)
+		var start := Vector2(8 if on_left else size.x - 96, y)
 		var color := Color("78e1c3") if slot == selected_slot else Color("aebeb9")
-		draw_string(font, start + Vector2(0, -2 * factor), slot, HORIZONTAL_ALIGNMENT_LEFT, 130 * factor, 13, color)
+		callouts.draw_rect(Rect2(start + Vector2(-4, -15), Vector2(94, 33)), Color(0.015, 0.045, 0.05, 0.85))
+		callouts.draw_string(font, start + Vector2(0, -2 * factor), slot, HORIZONTAL_ALIGNMENT_LEFT, 90, 13, color)
 		var hp_str := ""
 		var hp_color := Color("8faea4")
 		if cur_part_hps.has(slot):
@@ -191,12 +202,12 @@ func _draw() -> void:
 			else:
 				hp_str = "%d HP" % cur_hp
 		if not hp_str.is_empty():
-			draw_string(font, start + Vector2(0, 18 * factor), hp_str, HORIZONTAL_ALIGNMENT_LEFT, 130 * factor, 12, hp_color)
+			callouts.draw_string(font, start + Vector2(0, 18 * factor), hp_str, HORIZONTAL_ALIGNMENT_LEFT, 90, 11, hp_color)
 		var line_start := start + Vector2(0, 4 * factor)
 		var end := Vector2(rect.position.x if on_left else rect.end.x, y + 4 * factor)
-		draw_line(line_start, end, color.darkened(0.5), 1)
+		callouts.draw_line(line_start, end, color.darkened(0.5), 1)
 	var caption := "PART PREVIEW" if previewing else "ASSEMBLED MECH"
-	draw_string(font, Vector2(15, size.y - 8), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, muted.lightened(0.3))
+	callouts.draw_string(font, Vector2(15, size.y - 8), caption, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, muted.lightened(0.3))
 
 
 func _selection_style() -> StyleBoxFlat:
