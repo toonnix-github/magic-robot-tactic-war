@@ -755,6 +755,19 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         for asset in ["weapon_sword.svg", "weapon_rifle.svg", "weapon_spear.svg", "weapon_sniper.svg", "shield.svg"]:
             self.assertTrue((ROOT / "assets" / "hangar" / asset).exists(), asset)
 
+    def test_phase2_hangar_front_mission_layout_and_telemetry(self):
+        """Hangar UI adopts Front Mission 3 structure: unit switcher, slot tabs, orb integration, telemetry stats."""
+        editor_source = (ROOT / "src" / "ui" / "hangar_editor.gd").read_text(encoding="utf-8")
+        self.assertIn("func _prev_unit", editor_source)
+        self.assertIn("func _next_unit", editor_source)
+        self.assertIn("func _select_unit", editor_source)
+        self.assertIn("func _select_slot", editor_source)
+        self.assertIn("unit_tab_buttons", editor_source)
+        self.assertIn("slot_tab_buttons", editor_source)
+        self.assertNotIn("Total Armor", editor_source)
+        self.assertIn("PILOT SKILL", editor_source)
+        self.assertIn("SOCKETED ORBS", editor_source)
+
     def test_phase2_displayed_build_stats_are_combat_authoritative(self):
         """#60 - displayed Speed, Defense, Dodge, and Orb modifiers reach combat."""
         combat_source = (ROOT / "src" / "combat" / "combat_controller.gd").read_text(encoding="utf-8")
