@@ -34,6 +34,11 @@ var mission_ids: Array[String] = []
 
 var unit_tab_buttons: Array[Button] = []
 var slot_tab_buttons: Dictionary = {}
+var category_btn_part := Button.new()
+var category_btn_weapon := Button.new()
+var parts_container := VBoxContainer.new()
+var weapons_container := VBoxContainer.new()
+var active_category: String = "part"
 
 
 func setup(model) -> void:
@@ -135,16 +140,34 @@ func setup(model) -> void:
 	inspector.add_theme_constant_override("separation", 10)
 	inspector_scroll.add_child(inspector)
 
-	# Part Slot Tabs (Head, Body, Left Arm, Right Arm, Legs)
-	var slot_header := Label.new()
-	slot_header.text = "PART SELECTION"
-	slot_header.add_theme_font_size_override("font_size", 14)
-	slot_header.add_theme_color_override("font_color", Color("74a89b"))
-	inspector.add_child(slot_header)
+	# Top Category Tabs: [ Part ] | [ Weapon ]
+	var cat_row := HBoxContainer.new()
+	cat_row.add_theme_constant_override("separation", 6)
+	inspector.add_child(cat_row)
 
+	category_btn_part.text = "Part"
+	category_btn_part.size_flags_horizontal = SIZE_EXPAND_FILL
+	category_btn_part.custom_minimum_size.y = 36
+	category_btn_part.pressed.connect(_select_category.bind("part"))
+	cat_row.add_child(category_btn_part)
+
+	category_btn_weapon.text = "Weapon"
+	category_btn_weapon.size_flags_horizontal = SIZE_EXPAND_FILL
+	category_btn_weapon.custom_minimum_size.y = 36
+	category_btn_weapon.pressed.connect(_select_category.bind("weapon"))
+	cat_row.add_child(category_btn_weapon)
+
+	inspector.add_child(HSeparator.new())
+
+	# 1. PARTS CONTAINER
+	parts_container.size_flags_horizontal = SIZE_EXPAND_FILL
+	parts_container.add_theme_constant_override("separation", 10)
+	inspector.add_child(parts_container)
+
+	# Part Slot Tabs (Head, Body, Left Arm, Right Arm, Legs)
 	var slot_row := HBoxContainer.new()
 	slot_row.add_theme_constant_override("separation", 4)
-	inspector.add_child(slot_row)
+	parts_container.add_child(slot_row)
 	for slot_name in SLOTS:
 		var slot_btn := Button.new()
 		slot_btn.text = slot_name.replace(" Arm", "")
@@ -155,26 +178,26 @@ func setup(model) -> void:
 		slot_row.add_child(slot_btn)
 		slot_tab_buttons[slot_name] = slot_btn
 
-	inspector.add_child(HSeparator.new())
+	parts_container.add_child(HSeparator.new())
 
 	# Section 1: Frame Tuning
 	slot_title.add_theme_font_size_override("font_size", 18)
 	slot_title.add_theme_color_override("font_color", Color("e0ece8"))
-	inspector.add_child(slot_title)
+	parts_container.add_child(slot_title)
 
 	equipped_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	equipped_label.add_theme_color_override("font_color", Color("8faea4"))
 	equipped_label.add_theme_font_size_override("font_size", 13)
-	inspector.add_child(equipped_label)
+	parts_container.add_child(equipped_label)
 
 	candidate_grid.columns = 2
 	candidate_grid.add_theme_constant_override("h_separation", 6)
 	candidate_grid.add_theme_constant_override("v_separation", 6)
-	inspector.add_child(candidate_grid)
+	parts_container.add_child(candidate_grid)
 
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 8)
-	inspector.add_child(actions)
+	parts_container.add_child(actions)
 	equip_button.text = "Equip"
 	equip_button.custom_minimum_size.y = 36
 	equip_button.size_flags_horizontal = SIZE_EXPAND_FILL
@@ -182,37 +205,39 @@ func setup(model) -> void:
 	cancel_button.visible = false
 	actions.add_child(cancel_button)
 
-	inspector.add_child(HSeparator.new())
+	parts_container.add_child(HSeparator.new())
 
 	# Section 2: Socketed Orb on this Part
 	var orb_section_lbl := Label.new()
 	orb_section_lbl.text = "SOCKETED ORB"
 	orb_section_lbl.add_theme_font_size_override("font_size", 14)
 	orb_section_lbl.add_theme_color_override("font_color", Color("74a89b"))
-	inspector.add_child(orb_section_lbl)
+	parts_container.add_child(orb_section_lbl)
 
-	_row(inspector, "Orb", orb_select)
+	_row(parts_container, "Orb", orb_select)
 	_setup_detail_label(orb_details)
-	inspector.add_child(orb_details)
+	parts_container.add_child(orb_details)
 
-	inspector.add_child(HSeparator.new())
+	# 2. WEAPONS CONTAINER
+	weapons_container.size_flags_horizontal = SIZE_EXPAND_FILL
+	weapons_container.add_theme_constant_override("separation", 10)
+	inspector.add_child(weapons_container)
 
-	# Section 3: Weapon & Off-Hand
 	var gear_section_lbl := Label.new()
 	gear_section_lbl.text = "ARMAMENT"
 	gear_section_lbl.add_theme_font_size_override("font_size", 14)
 	gear_section_lbl.add_theme_color_override("font_color", Color("74a89b"))
-	inspector.add_child(gear_section_lbl)
+	weapons_container.add_child(gear_section_lbl)
 
 	for weapon in WEAPONS:
 		var profile: Dictionary = hangar.build_model.weapon_profile(weapon, hangar.GameDataScript.WEAPON_DATA)
 		weapon_select.add_item("%s (R%d-%d, %s)" % [weapon, profile["range_min"], profile["range_max"], profile["handedness"]])
-	_row(inspector, "Weapon", weapon_select)
+	_row(weapons_container, "Weapon", weapon_select)
 	_setup_detail_label(weapon_details)
-	inspector.add_child(weapon_details)
+	weapons_container.add_child(weapon_details)
 
 	shield_toggle.text = "Shield"
-	_row(inspector, "Left Hand", shield_toggle)
+	_row(weapons_container, "Left Hand", shield_toggle)
 
 	# 2. CENTER COLUMN: Mech Bay (Visual Representation)
 	var center_col := VBoxContainer.new()
@@ -289,6 +314,7 @@ func setup(model) -> void:
 	cancel_button.pressed.connect(_cancel)
 
 	_build_review_overlay()
+	_select_category("part")
 	refresh()
 
 
@@ -643,7 +669,17 @@ func _select_shield(enabled: bool) -> void:
 	refresh()
 
 
+func _select_category(cat: String) -> void:
+	active_category = cat
+	var is_part: bool = (cat == "part")
+	parts_container.visible = is_part
+	weapons_container.visible = not is_part
+	category_btn_part.modulate = Color("38d9a9") if is_part else Color.WHITE
+	category_btn_weapon.modulate = Color("38d9a9") if not is_part else Color.WHITE
+
+
 func _select_slot(slot: String) -> void:
+	_select_category("part")
 	hangar.highlight_part(slot)
 	candidate_id = ""
 	refresh()
