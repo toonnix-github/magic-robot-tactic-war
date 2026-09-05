@@ -88,13 +88,13 @@ Exact squad configuration:
 
 | Seed | Winner | Activations | Mira survived | Damage dealt | Damage taken | Mira intercepts |
 | --- | --- | --- | --- | --- | --- | --- |
-| 42 | player | 60 | true | 218 | 77 | 0 |
-| 101 | player | 46 | true | 210 | 0 | 0 |
-| 777 | player | 72 | true | 208 | 41 | 0 |
-| 1337 | player | 21 | true | 105 | 0 | 0 |
-| 9999 | player | 46 | true | 197 | 0 | 0 |
+| 42 | enemy | 70 | false | 129 | 223 | 0 |
+| 101 | player | 32 | true | 171 | 0 | 0 |
+| 777 | player | 43 | true | 158 | 0 | 0 |
+| 1337 | player | 47 | true | 155 | 74 | 0 |
+| 9999 | player | 43 | true | 204 | 0 | 0 |
 
-Wins: 5; losses: 0; unfinished: 0. Average activations: 49.0; Mira survival: 100.0%; average direct damage: 187.6; average damage taken: 23.6; average Mira intercepts: 0.0.
+Wins: 4; losses: 1; unfinished: 0. Average activations: 47.0; Mira survival: 80.0%; average direct damage: 163.4; average damage taken: 59.4; average Mira intercepts: 0.0.
 
 ## mira_durable_shield
 
@@ -174,13 +174,13 @@ Exact squad configuration:
 
 | Seed | Winner | Activations | Mira survived | Damage dealt | Damage taken | Mira intercepts |
 | --- | --- | --- | --- | --- | --- | --- |
-| 42 | player | 44 | true | 187 | 60 | 0 |
-| 101 | player | 60 | true | 312 | 65 | 0 |
-| 777 | player | 41 | true | 217 | 60 | 0 |
-| 1337 | player | 21 | true | 88 | 65 | 0 |
-| 9999 | player | 38 | true | 209 | 60 | 0 |
+| 42 | player | 31 | true | 132 | 114 | 0 |
+| 101 | player | 28 | true | 129 | 114 | 0 |
+| 777 | player | 41 | true | 110 | 114 | 0 |
+| 1337 | player | 36 | true | 141 | 92 | 0 |
+| 9999 | player | 45 | true | 129 | 73 | 0 |
 
-Wins: 5; losses: 0; unfinished: 0. Average activations: 40.8; Mira survival: 100.0%; average direct damage: 202.6; average damage taken: 62.0; average Mira intercepts: 0.0.
+Wins: 5; losses: 0; unfinished: 0. Average activations: 36.2; Mira survival: 100.0%; average direct damage: 128.2; average damage taken: 101.4; average Mira intercepts: 0.0.
 
 ## Interpretation and Limits
 
