@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650">
+  <rect width="1200" height="650" fill="#07171b"/>
+  <text x="45" y="48" fill="#75fff0" font-family="Arial" font-size="28" font-weight="700">MODULAR MECH PART IMAGE STANDARD</text>
+  <text x="45" y="78" fill="#9ab6bc" font-family="Arial" font-size="16">Boxes below use their true relative Hangar sizes · export at 4×</text>
+  <g font-family="Arial" text-anchor="middle">
+    <g transform="translate(45 135)">
+      <rect width="75" height="80" fill="#102a30" stroke="#55e6d5" stroke-width="2"/><circle cx="38" cy="79" r="5" fill="#ffb44d"/>
+      <text x="38" y="110" fill="white" font-size="17" font-weight="700">HEAD</text><text x="38" y="134" fill="#9ab6bc" font-size="14">300 × 320</text><text x="38" y="155" fill="#9ab6bc" font-size="13">15:16</text>
+    </g>
+    <g transform="translate(175 135)">
+      <rect width="180" height="192" fill="#102a30" stroke="#55e6d5" stroke-width="2"/><circle cx="89" cy="40" r="5" fill="#ffb44d"/><circle cx="3" cy="63" r="5" fill="#ffb44d"/><circle cx="177" cy="63" r="5" fill="#ffb44d"/><circle cx="89" cy="189" r="5" fill="#ffb44d"/>
+      <text x="90" y="222" fill="white" font-size="17" font-weight="700">BODY</text><text x="90" y="246" fill="#9ab6bc" font-size="14">720 × 768 · 15:16</text>
+    </g>
+    <g transform="translate(415 135)">
+      <rect width="96" height="288" fill="#102a30" stroke="#55e6d5" stroke-width="2"/><circle cx="89" cy="53" r="5" fill="#ffb44d"/>
+      <text x="48" y="318" fill="white" font-size="16" font-weight="700">RIGHT ARM</text><text x="48" y="342" fill="#9ab6bc" font-size="14">384 × 1152</text><text x="48" y="363" fill="#9ab6bc" font-size="13">1:3</text>
+    </g>
+    <g transform="translate(570 135)">
+      <rect width="96" height="288" fill="#102a30" stroke="#55e6d5" stroke-width="2"/><circle cx="7" cy="53" r="5" fill="#ffb44d"/>
+      <text x="48" y="318" fill="white" font-size="16" font-weight="700">LEFT ARM</text><text x="48" y="342" fill="#9ab6bc" font-size="14">384 × 1152</text><text x="48" y="363" fill="#9ab6bc" font-size="13">1:3</text>
+    </g>
+    <g transform="translate(725 135)">
+      <rect width="300" height="375" fill="#102a30" stroke="#55e6d5" stroke-width="2"/><circle cx="150" cy="10" r="5" fill="#ffb44d"/>
+      <text x="150" y="405" fill="white" font-size="17" font-weight="700">LEGS</text><text x="150" y="429" fill="#9ab6bc" font-size="14">1200 × 1500 · 4:5</text>
+    </g>
+  </g>
+  <rect x="45" y="595" width="14" height="14" rx="7" fill="#ffb44d"/><text x="70" y="608" fill="#dbe8eb" font-family="Arial" font-size="15">Attachment point · right and left always mean the robot’s perspective</text>
+</svg>
