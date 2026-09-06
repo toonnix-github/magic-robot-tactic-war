@@ -55,3 +55,8 @@ class HangarArtTests(unittest.TestCase):
         }
         for part, expected_size in expected_boxes.items():
             self.assertEqual(aegis[part]['rect'][2:], expected_size)
+
+    def test_body_box_is_slot_owned_instead_of_family_owned(self):
+        library = (ROOT / 'src/ui/hangar_art_library.gd').read_text()
+        self.assertIn('STANDARD_BODY_RECT', library)
+        self.assertIn('slot == "Body"', library)

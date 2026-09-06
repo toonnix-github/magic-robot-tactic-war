@@ -25,6 +25,12 @@ static func check(view: Control, build: Dictionary) -> Array[String]:
 				failures.append("Aegis %s shoulder gap %.2f px at %s" % [slot, actual.distance_to(expected), viewport_size])
 			if arm.stretch_mode != TextureButton.STRETCH_KEEP_ASPECT_CENTERED:
 				failures.append("Aegis arm must retain its image proportions")
+	var aegis_body_size: Vector2 = view.buttons["Body"].size
+	var body_swap := build.duplicate(true)
+	body_swap["parts"]["Body"] = "bulwark_body"
+	view.show_build(body_swap, "Body", true)
+	if view.buttons["Body"].size.distance_to(aegis_body_size) > 0.01:
+		failures.append("Changing the body part must preserve its dimensions")
 	view.size = original_size
 	view.show_build(build, "Body")
 	return failures

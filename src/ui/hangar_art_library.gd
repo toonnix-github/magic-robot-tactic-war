@@ -2,6 +2,7 @@ extends RefCounted
 
 ## Presentation-only atlas, silhouette and attachment data. Never owns build state.
 const ROOT := "res://assets/hangar/detailed/"
+const STANDARD_BODY_RECT := Rect2(210, 63, 180, 192)
 var modules: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(ROOT + "modules.json"))
 var textures: Dictionary = {}
 var materials: Dictionary = {}
@@ -84,7 +85,7 @@ func material_for(slot: String, part_id: String) -> ShaderMaterial:
 func rect_for(slot: String, part_id: String, body_id: String = "") -> Rect2:
 	var profile: Dictionary = modules[part_id.get_slice("_", 0)][slot]
 	var values: Array = profile["rect"]
-	var rect := Rect2(values[0], values[1], values[2], values[3])
+	var rect := STANDARD_BODY_RECT if slot == "Body" else Rect2(values[0], values[1], values[2], values[3])
 	if slot == "Body" or not has_art("Body", body_id):
 		return rect
 	var body: Dictionary = modules[body_id.get_slice("_", 0)]["Body"]
