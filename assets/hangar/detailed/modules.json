@@ -1,6 +1,7 @@
 {
   "aegis": {
     "Head": {
+      "file": "res://assets/hangar/detailed/aegis_head.png",
       "region": [
         558,
         103,
@@ -20,6 +21,17 @@
       ]
     },
     "Body": {
+      "file": "res://assets/hangar/detailed/aegis_body.png",
+      "image_sockets": {
+        "Right Arm": [
+          0.018,
+          0.328
+        ],
+        "Left Arm": [
+          0.982,
+          0.328
+        ]
+      },
       "region": [
         464,
         169,
@@ -53,6 +65,11 @@
       }
     },
     "Right Arm": {
+      "file": "res://assets/hangar/detailed/aegis_right_arm.png",
+      "image_anchor": [
+        0.9285714285714286,
+        0.1850079744816587
+      ],
       "region": [
         289,
         236,
@@ -72,6 +89,11 @@
       ]
     },
     "Left Arm": {
+      "file": "res://assets/hangar/detailed/aegis_left_arm.png",
+      "image_anchor": [
+        0.07142857142857142,
+        0.1850079744816587
+      ],
       "region": [
         789,
         238,
@@ -91,6 +113,7 @@
       ]
     },
     "Legs": {
+      "file": "res://assets/hangar/detailed/aegis_legs.png",
       "region": [
         354,
         492,

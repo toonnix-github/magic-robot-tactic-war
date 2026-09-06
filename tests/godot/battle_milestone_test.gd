@@ -3753,16 +3753,22 @@ func _run_hangar_art_acceptance() -> void:
 		for slot in ["Head", "Body", "Left Arm", "Right Arm", "Legs"]:
 			var id: String = family + "_" + slot.to_lower().replace(" ", "_")
 			_assert_true(view.uses_detailed_art(slot, id), "#70: all ten modules mapped")
-			_assert_true(view.texture_for(slot, id) is AtlasTexture, "#70: modules use consistent master atlas")
+			var texture: Texture2D = view.texture_for(slot, id)
+			_assert_true(texture != null, "#70: module texture loads")
 			var material: ShaderMaterial = view.art_library.material_for(slot, id)
-			_assert_true(material != null, "#70: sprite has silhouette material")
-			var mask: Texture2D = material.get_shader_parameter("silhouette")
-			_assert_true(mask.get_image().get_pixel(0, 0).a < 0.01, "#70: mask excludes baked background")
+			if texture is AtlasTexture:
+				_assert_true(material != null, "#70: atlas sprite has silhouette material")
+				var mask: Texture2D = material.get_shader_parameter("silhouette")
+				_assert_true(mask.get_image().get_pixel(0, 0).a < 0.01, "#70: mask excludes baked background")
+			else:
+				_assert_true(material == null, "#70: standalone PNG retains its own alpha")
 	_assert_false(view.uses_detailed_art("Head", "volt_head"), "#70: other families retain fallback")
-	var leg_material: ShaderMaterial = view.art_library.material_for("Legs", "aegis_legs")
-	var leg_mask: Image = leg_material.get_shader_parameter("silhouette").get_image()
+	var leg_mask := Image.new()
+	leg_mask.load_svg_from_string(FileAccess.get_file_as_string(view.art_library.modules["aegis"]["Legs"]["mask"]))
 	_assert_true(leg_mask.get_pixel(270, 450).a < 0.01, "#70: background between Aegis legs is excluded")
 	_assert_true(leg_mask.get_pixel(90, 450).a > 0.9, "#70: leg armor remains visible")
+	var shoulder_failures: Array[String] = preload("res://tests/godot/aegis_shoulder_acceptance.gd").check(view, flow.hangar.builds["arlen"])
+	_failures.append_array(shoulder_failures)
 	# Check actual laid-out controls against each torso's independently authored sockets.
 	for body_family in ["aegis", "bulwark"]:
 		for limb_family in ["aegis", "bulwark"]:
@@ -3775,6 +3781,8 @@ func _run_hangar_art_acceptance() -> void:
 			var torso_rect: Rect2 = view.buttons["Body"].get_rect()
 			var torso_region: Array = torso["region"]
 			for slot in ["Head", "Left Arm", "Right Arm", "Legs"]:
+				if body_family == "aegis" and limb_family == "aegis" and slot.contains("Arm"):
+					continue # Actual visible shoulder registration is checked above at three sizes.
 				var limb: Dictionary = view.art_library.modules[limb_family][slot]
 				var limb_rect: Rect2 = view.buttons[slot].get_rect()
 				var region: Array = limb["region"]
@@ -3787,7 +3795,7 @@ func _run_hangar_art_acceptance() -> void:
 	flow.editor._select_slot("Body")
 	flow.editor.preview_part("bulwark_body")
 	_assert_equal(flow.hangar.builds, original, "#70: detailed preview does not mutate build")
-	_assert_true(view.buttons["Body"].material != null, "#70: preview actually uses mask")
+	_assert_equal(view.buttons["Body"].material, view.art_library.material_for("Body", "bulwark_body"), "#70: preview uses the correct image material")
 	flow.editor._cancel()
 	_assert_equal(view.display_build, original["arlen"], "#70: Cancel restores Aegis")
 	flow.editor.preview_part("bulwark_body")

@@ -28,3 +28,13 @@ class HangarArtTests(unittest.TestCase):
         source = (ROOT / 'src/ui/hangar_editor.gd').read_text()
         self.assertIn('HangarBackground', source)
         self.assertTrue((ROOT / 'assets/hangar/detailed/hangar_background.png').is_file())
+
+    def test_aegis_standalone_shoulders_have_image_coordinates(self):
+        manifest = json.loads((ROOT / 'assets/hangar/detailed/modules.json').read_text())
+        aegis = manifest['aegis']
+        self.assertEqual(set(aegis['Body']['image_sockets']), {'Left Arm', 'Right Arm'})
+        for slot in ('Left Arm', 'Right Arm'):
+            for point in (aegis[slot]['image_anchor'], aegis['Body']['image_sockets'][slot]):
+                self.assertEqual(len(point), 2)
+                self.assertTrue(all(0 <= coordinate <= 1 for coordinate in point))
+        self.assertNotIn('image_sockets', manifest['bulwark']['Body'])

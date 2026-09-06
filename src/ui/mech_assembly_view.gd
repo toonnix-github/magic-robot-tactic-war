@@ -39,7 +39,7 @@ func _ready() -> void:
 	for slot in SLOTS:
 		var button := TextureButton.new()
 		button.ignore_texture_size = true
-		button.stretch_mode = TextureButton.STRETCH_SCALE
+		button.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
 		button.focus_mode = Control.FOCUS_ALL
 		button.tooltip_text = slot
 		button.pressed.connect(_choose.bind(slot))
