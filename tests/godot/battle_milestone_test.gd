@@ -3769,28 +3769,23 @@ func _run_hangar_art_acceptance() -> void:
 	_assert_true(leg_mask.get_pixel(90, 450).a > 0.9, "#70: leg armor remains visible")
 	var shoulder_failures: Array[String] = preload("res://tests/godot/aegis_shoulder_acceptance.gd").check(view, flow.hangar.builds["arlen"])
 	_failures.append_array(shoulder_failures)
-	# Check actual laid-out controls against each torso's independently authored sockets.
-	for body_family in ["aegis", "bulwark"]:
-		for limb_family in ["aegis", "bulwark"]:
+	# A body swap changes only the body: every surrounding part keeps its layout.
+	for limb_family in ["aegis", "bulwark"]:
+		var baseline_rects := {}
+		for body_family in ["aegis", "bulwark"]:
 			var mixed: Dictionary = flow.hangar.builds["arlen"].duplicate(true)
 			mixed["parts"]["Body"] = body_family + "_body"
 			for slot in ["Head", "Left Arm", "Right Arm", "Legs"]:
 				mixed["parts"][slot] = limb_family + "_" + slot.to_lower().replace(" ", "_")
 			view.show_build(mixed, "Body")
-			var torso: Dictionary = view.art_library.modules[body_family]["Body"]
-			var torso_rect: Rect2 = view.buttons["Body"].get_rect()
-			var torso_region: Array = torso["region"]
 			for slot in ["Head", "Left Arm", "Right Arm", "Legs"]:
-				if body_family == "aegis" and limb_family == "aegis" and slot.contains("Arm"):
-					continue # Actual visible shoulder registration is checked above at three sizes.
-				var limb: Dictionary = view.art_library.modules[limb_family][slot]
-				var limb_rect: Rect2 = view.buttons[slot].get_rect()
-				var region: Array = limb["region"]
-				var anchor: Array = limb["anchor"]
-				var socket: Array = torso["sockets"][slot]
-				var actual := limb_rect.position + Vector2(anchor[0] - region[0], anchor[1] - region[1]) * limb_rect.size / Vector2(region[2], region[3])
-				var expected := torso_rect.position + Vector2(socket[0] - torso_region[0], socket[1] - torso_region[1]) * torso_rect.size / Vector2(torso_region[2], torso_region[3])
-				_assert_true(actual.distance_to(expected) < 0.01, "#70: %s %s attaches to %s torso" % [limb_family, slot, body_family])
+				var current_rect: Rect2 = view.buttons[slot].get_rect()
+				if baseline_rects.has(slot):
+					var baseline: Rect2 = baseline_rects[slot]
+					_assert_true(current_rect.position.distance_to(baseline.position) < 0.01, "#70: %s %s position survives body swap" % [limb_family, slot])
+					_assert_true(current_rect.size.distance_to(baseline.size) < 0.01, "#70: %s %s size survives body swap" % [limb_family, slot])
+				else:
+					baseline_rects[slot] = current_rect
 	var original: Dictionary = flow.hangar.builds.duplicate(true)
 	flow.editor._select_slot("Body")
 	flow.editor.preview_part("bulwark_body")

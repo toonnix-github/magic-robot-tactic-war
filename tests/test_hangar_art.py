@@ -59,4 +59,5 @@ class HangarArtTests(unittest.TestCase):
     def test_body_box_is_slot_owned_instead_of_family_owned(self):
         library = (ROOT / 'src/ui/hangar_art_library.gd').read_text()
         self.assertIn('STANDARD_BODY_RECT', library)
+        self.assertIn('STANDARD_SOCKET_POINTS', library)
         self.assertIn('slot == "Body"', library)

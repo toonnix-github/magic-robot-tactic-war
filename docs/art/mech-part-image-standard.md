@@ -14,7 +14,7 @@ The complete canvas is the coordinate frame. Do not tightly crop individual expo
 
 Artists may work at 2× or 8× by scaling both dimensions uniformly. All modules in one production set should use the same pixel density. At 4×, one Hangar design unit equals four source pixels.
 
-The Hangar enforces the 180 × 192 Body box for every robot family. Changing Body equipment therefore preserves the assembled robot's dimensions while each texture retains its own aspect ratio inside the box. The Aegis part boxes follow the full standard. Existing PNGs authored before this specification should be exported onto these canvases rather than stretched.
+The Hangar enforces the 180 × 192 Body box and one set of assembly-space socket points for every robot family. Changing Body equipment therefore preserves the torso dimensions and the positions of the head, arms and legs while each texture retains its own aspect ratio. The Aegis part boxes follow the full standard. Existing PNGs authored before this specification should be exported onto these canvases rather than stretched.
 
 ## Execution / Dependency
 
