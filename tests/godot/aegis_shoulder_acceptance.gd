@@ -6,10 +6,12 @@ static func check(view: Control, build: Dictionary) -> Array[String]:
 	var original_size := view.size
 	# Coordinates measured on the actual standalone PNGs, independent of the manifest.
 	var anchors := {"Right Arm": Vector2(312.0 / 336.0, 232.0 / 1254.0), "Left Arm": Vector2(24.0 / 336.0, 232.0 / 1254.0)}
-	var sockets := {"Right Arm": Vector2(0.018, 0.328), "Left Arm": Vector2(0.982, 0.328)}
+	var sockets := {"Right Arm": Vector2(213.24, 125.976), "Left Arm": Vector2(386.76, 125.976)}
 	for viewport_size in [Vector2(600, 650), Vector2(446, 497), Vector2(280, 300)]:
 		view.size = viewport_size
 		view.show_build(build, "Body")
+		var factor: float = minf(view.size.x / 600.0, view.size.y / 650.0)
+		var origin := (view.size - Vector2(600, 650) * factor) * 0.5
 		var left_arm: TextureButton = view.buttons["Left Arm"]
 		var right_arm: TextureButton = view.buttons["Right Arm"]
 		if left_arm.size.distance_to(right_arm.size) > 0.01:
@@ -18,9 +20,8 @@ static func check(view: Control, build: Dictionary) -> Array[String]:
 			failures.append("Aegis arms must use the standard 1:3 ratio")
 		for slot in anchors:
 			var arm: TextureButton = view.buttons[slot]
-			var body: TextureButton = view.buttons["Body"]
 			var actual := visible_point(arm, anchors[slot])
-			var expected := visible_point(body, sockets[slot])
+			var expected: Vector2 = origin + sockets[slot] * factor
 			if actual.distance_to(expected) > 0.5:
 				failures.append("Aegis %s shoulder gap %.2f px at %s" % [slot, actual.distance_to(expected), viewport_size])
 			if arm.stretch_mode != TextureButton.STRETCH_KEEP_ASPECT_CENTERED:
