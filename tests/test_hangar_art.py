@@ -38,3 +38,20 @@ class HangarArtTests(unittest.TestCase):
                 self.assertEqual(len(point), 2)
                 self.assertTrue(all(0 <= coordinate <= 1 for coordinate in point))
         self.assertNotIn('image_sockets', manifest['bulwark']['Body'])
+
+    def test_standard_part_canvases_use_proportional_sizes_and_matching_arms(self):
+        standard = json.loads((ROOT / 'docs/art/mech-part-image-standard.json').read_text())
+        self.assertEqual(standard['pixel_density'], 4)
+        self.assertEqual(standard['parts']['Head']['canvas'], [300, 320])
+        self.assertEqual(standard['parts']['Body']['canvas'], [720, 768])
+        self.assertEqual(standard['parts']['Right Arm']['canvas'], [384, 1152])
+        self.assertEqual(standard['parts']['Left Arm']['canvas'], [384, 1152])
+        self.assertEqual(standard['parts']['Legs']['canvas'], [1200, 1500])
+
+        aegis = json.loads((ROOT / 'assets/hangar/detailed/modules.json').read_text())['aegis']
+        expected_boxes = {
+            'Head': [75, 80], 'Body': [180, 192],
+            'Right Arm': [96, 288], 'Left Arm': [96, 288], 'Legs': [300, 375],
+        }
+        for part, expected_size in expected_boxes.items():
+            self.assertEqual(aegis[part]['rect'][2:], expected_size)

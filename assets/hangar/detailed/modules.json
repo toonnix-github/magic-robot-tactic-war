@@ -9,10 +9,10 @@
         141
       ],
       "rect": [
-        262.05,
-        26.650000000000006,
-        72.60000000000001,
-        77.55000000000001
+        262.5,
+        23,
+        75,
+        80
       ],
       "mask": "res://assets/hangar/detailed/aegis_head_mask.svg",
       "anchor": [
@@ -39,10 +39,10 @@
         347
       ],
       "rect": [
-        210.35,
-        62.95,
-        178.20000000000002,
-        190.85000000000002
+        210,
+        63,
+        180,
+        192
       ],
       "mask": "res://assets/hangar/detailed/aegis_body_mask.svg",
       "sockets": {
@@ -77,10 +77,10 @@
         528
       ],
       "rect": [
-        114.1,
-        99.80000000000001,
-        96.25000000000001,
-        290.40000000000003
+        114,
+        100,
+        96,
+        288
       ],
       "mask": "res://assets/hangar/detailed/aegis_right_arm_mask.svg",
       "anchor": [
@@ -101,10 +101,10 @@
         527
       ],
       "rect": [
-        389.1,
-        100.9,
-        90.2,
-        289.85
+        390,
+        100,
+        96,
+        288
       ],
       "mask": "res://assets/hangar/detailed/aegis_left_arm_mask.svg",
       "anchor": [
@@ -121,10 +121,10 @@
         662
       ],
       "rect": [
-        149.85,
-        240.60000000000002,
-        297.55,
-        364.1
+        150,
+        240,
+        300,
+        375
       ],
       "mask": "res://assets/hangar/detailed/aegis_legs_mask.svg",
       "anchor": [

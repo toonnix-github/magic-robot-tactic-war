@@ -10,6 +10,12 @@ static func check(view: Control, build: Dictionary) -> Array[String]:
 	for viewport_size in [Vector2(600, 650), Vector2(446, 497), Vector2(280, 300)]:
 		view.size = viewport_size
 		view.show_build(build, "Body")
+		var left_arm: TextureButton = view.buttons["Left Arm"]
+		var right_arm: TextureButton = view.buttons["Right Arm"]
+		if left_arm.size.distance_to(right_arm.size) > 0.01:
+			failures.append("Aegis arm placement boxes must have identical dimensions")
+		if absf(right_arm.size.x / right_arm.size.y - 1.0 / 3.0) > 0.001:
+			failures.append("Aegis arms must use the standard 1:3 ratio")
 		for slot in anchors:
 			var arm: TextureButton = view.buttons[slot]
 			var body: TextureButton = view.buttons["Body"]
