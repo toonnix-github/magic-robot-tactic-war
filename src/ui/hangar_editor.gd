@@ -47,6 +47,13 @@ func setup(model) -> void:
 	for side in ["left", "right", "top", "bottom"]:
 		add_theme_constant_override("margin_" + side, 16)
 	theme = _theme()
+	var background := TextureRect.new()
+	background.name = "HangarBackground"
+	background.texture = AssemblyViewScript.ArtLibrary.new().image_texture("res://assets/hangar/detailed/hangar_background.png")
+	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(background)
 
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 10)
@@ -119,7 +126,7 @@ func setup(model) -> void:
 	left_panel.size_flags_horizontal = SIZE_EXPAND_FILL
 	left_panel.size_flags_stretch_ratio = 1.05
 	var left_style := StyleBoxFlat.new()
-	left_style.bg_color = Color("0d1514")
+	left_style.bg_color = Color(0.025, 0.065, 0.075, 0.94)
 	left_style.border_color = Color("233b34")
 	left_style.set_border_width_all(1)
 	left_style.set_corner_radius_all(4)
@@ -202,7 +209,9 @@ func setup(model) -> void:
 	equip_button.custom_minimum_size.y = 36
 	equip_button.size_flags_horizontal = SIZE_EXPAND_FILL
 	actions.add_child(equip_button)
-	cancel_button.visible = false
+	cancel_button.text = "Cancel"
+	cancel_button.custom_minimum_size.y = 36
+	cancel_button.size_flags_horizontal = SIZE_EXPAND_FILL
 	actions.add_child(cancel_button)
 
 	parts_container.add_child(HSeparator.new())
@@ -264,7 +273,7 @@ func setup(model) -> void:
 	right_panel.size_flags_horizontal = SIZE_EXPAND_FILL
 	right_panel.size_flags_stretch_ratio = 1.0
 	var right_style := StyleBoxFlat.new()
-	right_style.bg_color = Color("0a1110")
+	right_style.bg_color = Color(0.02, 0.05, 0.06, 0.94)
 	right_style.border_color = Color("28453d")
 	right_style.set_border_width_all(1)
 	right_style.set_corner_radius_all(4)
@@ -458,7 +467,19 @@ func refresh() -> void:
 		var id: String = option["id"]
 		var button := Button.new()
 		button.text = str(option["name"]) + ("\n[Equipped]" if id == equipped_id else "")
-		button.icon = mech_view.texture_for(slot, id)
+		if mech_view.uses_detailed_art(slot, id):
+			var icon := TextureRect.new()
+			icon.texture = mech_view.texture_for(slot, id)
+			icon.material = mech_view.art_library.material_for(slot, id)
+			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			icon.position = Vector2(5, 5)
+			icon.size = Vector2(40, 42)
+			icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			button.add_child(icon)
+			button.text = "          " + button.text.replace("\n", "\n          ")
+		else:
+			button.icon = mech_view.texture_for(slot, id)
 		button.expand_icon = true
 		button.add_theme_constant_override("icon_max_width", 40)
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
