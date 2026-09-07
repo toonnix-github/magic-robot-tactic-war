@@ -7,6 +7,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FantasyBuilderStaticTests(unittest.TestCase):
+    def test_f5_runs_the_fantasy_builder(self):
+        project = (ROOT / 'project.godot').read_text()
+        self.assertIn('run/main_scene="res://scenes/fantasy_builder.tscn"', project)
+
+    def test_windows_launcher_does_not_quote_a_trailing_backslash(self):
+        launcher = (ROOT / 'launch-fantasy-builder.cmd').read_text()
+        self.assertNotIn('--path "%~dp0"', launcher)
+        self.assertIn('--path "%~dp0."', launcher)
+
     def test_catalog_is_data_driven_and_complete(self):
         data = json.loads((ROOT / 'data/fantasy/build_catalog.json').read_text())
         self.assertEqual(set(data['jobs']), {'Knight', 'Warrior', 'Ranger', 'Mage', 'Healer'})

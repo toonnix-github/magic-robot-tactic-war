@@ -1,6 +1,6 @@
 # Fantasy character building screen — #76
 
-This isolated preparation prototype implements the user-approved fantasy pivot. It does not change the existing mech combat, main scene, or Phase 2 closure requirements.
+This preparation prototype implements the user-approved fantasy pivot. At the user's request it is now the default F5 entry point. It does not change the existing mech combat or Phase 2 closure requirements; the legacy preparation scene remains directly runnable.
 
 ## Scope
 
@@ -16,7 +16,7 @@ Level 1 stats and all equipment numbers are provisional preview values. Stat poi
 - Independently developable: yes, through a standalone Godot scene.
 - Parallel-safe for neighboring combat/UI work: new fantasy data/model/view files; only Regression workflow and milestone test runner integration are shared.
 - Shared-file conflict risk: milestone runner, Regression workflow and asset import in the coverage runner. Cold test copies must import the raster atlas before loading the screen.
-- Integration: PR into `phase2/build-your-mech`; preserve the current default entry and expose a dedicated fantasy launcher.
+- Integration: PR into `phase2/build-your-mech`; switch the default entry to the fantasy builder at the user's request and expose a dedicated fantasy launcher. Preserve legacy scenes.
 
 ## Acceptance
 
@@ -32,17 +32,18 @@ Level 1 stats and all equipment numbers are provisional preview values. Stat poi
 
 ## Run
 
-Open `scenes/fantasy_builder.tscn` in Godot and run the current scene (F6), or use `launch-fantasy-builder.cmd` after setting GODOT_BIN to a Godot 4 executable.
+Open this checkout's `project.godot` in Godot and press F5, or use `launch-fantasy-builder.cmd`. The launcher discovers GODOT_BIN, PATH or portable Godot. Its quoted project path ends in `.` to avoid a trailing backslash escaping the closing quote on Windows. Launch errors stay visible. Run `scenes/preparation_flow.tscn` with F6 for the old mech loop.
 
 ## Verification — 2026-09-07
 
 - Red: the three new Python contracts failed for the missing catalog/model/scene; Godot acceptance failed for the missing model before implementation.
-- Green: `python -m unittest discover` — 63 tests passed.
+- Green: `python -m unittest discover` — 65 tests passed, including default F5 entry and Windows path quoting.
 - `godot --headless --path . -s res://tests/godot/battle_milestone_test.gd` — GODOT TESTS PASSED, including new equipment restrictions, previews without mutation, stat stacking, unique fairy transfer, local save round-trip, malformed save rejection and UI interaction checks.
 - `python tools/gdscript_function_coverage.py --godot <Godot executable> --fail-under 80` — 420/435 functions, 96.6%.
 - Existing Phase 2 evidence generator reproduced its committed report without a content diff.
 - Rendered 1280×590 and 844×390 layouts using `tools/capture_fantasy_builder.gd`, with isolated in-memory builds. Evidence is under `docs/playtest/fantasy/`.
 - Only the static screen is implemented. Ability descriptions and numbers are provisional preparation data, not functioning fantasy combat. Stat allocation remains deferred. Some gear variants share illustration layers; accessories have no body layer. Narrow screens use scrollable equipment, candidates and descriptions.
+- Launch correction: new Python and Godot default-entry tests were red before the fix. `cmd /c launch-fantasy-builder.cmd --quit-after 8` then imported assets and ran the default scene successfully (exit 0). Visible editor and game windows were opened and verified responsive.
 
 ## Manual review
 
