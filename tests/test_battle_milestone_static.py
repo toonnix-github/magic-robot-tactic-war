@@ -837,8 +837,9 @@ class BattleMilestoneStaticTests(unittest.TestCase):
         self.assertIn("phase2-build-fun-validation-report.md", runner.read_text(encoding="utf-8"))
 
     def test_phase2_entry_scene_owns_playable_loop(self):
-        project = (ROOT / "project.godot").read_text(encoding="utf-8")
-        self.assertIn('run/main_scene="res://scenes/preparation_flow.tscn"', project)
+        # The approved fantasy pivot changes F5; the legacy loop remains runnable.
+        scene = (ROOT / "scenes/preparation_flow.tscn").read_text(encoding="utf-8")
+        self.assertIn('res://src/ui/preparation_flow.gd', scene)
         flow = (ROOT / "src/ui/preparation_flow.gd").read_text(encoding="utf-8")
         self.assertIn("deploy_requested.connect", flow)
         self.assertIn("configure_player_loadouts", flow)

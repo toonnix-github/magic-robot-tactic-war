@@ -119,6 +119,14 @@ def production_gdscript_files(project_root: Path) -> list[Path]:
 
 
 def run_godot(godot: str, project_root: Path) -> subprocess.CompletedProcess[str]:
+    # The isolated copy intentionally has no .godot cache. Import raster assets
+    # before scripts preload textures, just as a fresh editor checkout does.
+    imported = subprocess.run(
+        [godot, "--headless", "--path", str(project_root), "--editor", "--import", "--quit"],
+        text=True, capture_output=True, check=False,
+    )
+    if imported.returncode != 0 or "ERROR:" in imported.stderr:
+        return imported
     command = [godot, "--headless", "--path", str(project_root), "-s", GODOT_TEST_SCRIPT]
     return subprocess.run(command, text=True, capture_output=True, check=False)
 

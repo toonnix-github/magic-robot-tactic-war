@@ -1,0 +1,706 @@
+{
+  "slots": {
+    "headgear": "Headgear",
+    "right_hand": "Right hand",
+    "left_hand": "Left hand",
+    "armor": "Armor",
+    "shoes": "Shoes",
+    "cape": "Cape",
+    "accessory_1": "Accessory I",
+    "accessory_2": "Accessory II",
+    "fairy": "Fairy"
+  },
+  "jobs": {
+    "Knight": {
+      "stats": {
+        "hp": 100,
+        "atk": 14,
+        "matk": 3,
+        "def": 10,
+        "speed": 8,
+        "move": 4
+      },
+      "abilities": [
+        "Intercept: protect an ally one adjacent tile away. Guaranteed; one interception per round, separate from counters and support."
+      ],
+      "description": "Protect the party. Build for armor or evasion.",
+      "equipment": {
+        "headgear": "steel_helm",
+        "right_hand": "iron_sword",
+        "left_hand": "iron_shield",
+        "armor": "steel_plate",
+        "shoes": "steel_boots",
+        "cape": "crimson_cape",
+        "accessory_1": "vital_pendant",
+        "accessory_2": "",
+        "fairy": "zephyr"
+      }
+    },
+    "Warrior": {
+      "stats": {
+        "hp": 90,
+        "atk": 18,
+        "matk": 2,
+        "def": 6,
+        "speed": 10,
+        "move": 4
+      },
+      "abilities": [
+        "Counter: retaliate within weapon range after being attacked. One counter per round."
+      ],
+      "description": "Strike back. Trade safety for physical power.",
+      "equipment": {
+        "headgear": "steel_helm",
+        "right_hand": "great_axe",
+        "left_hand": "",
+        "armor": "steel_plate",
+        "shoes": "steel_boots",
+        "cape": "crimson_cape",
+        "accessory_1": "vital_pendant",
+        "accessory_2": "",
+        "fairy": "ember"
+      }
+    },
+    "Ranger": {
+      "stats": {
+        "hp": 75,
+        "atk": 13,
+        "matk": 3,
+        "def": 4,
+        "speed": 14,
+        "move": 5
+      },
+      "abilities": [
+        "Support shot: follow an ally's normal attack if its target is in weapon range. One support per round."
+      ],
+      "description": "Control from afar. Range, speed and disabling shots.",
+      "equipment": {
+        "headgear": "leather_band",
+        "right_hand": "longbow",
+        "left_hand": "",
+        "armor": "scout_leather",
+        "shoes": "trail_boots",
+        "cape": "forest_cape",
+        "accessory_1": "vital_pendant",
+        "accessory_2": "",
+        "fairy": "spark"
+      }
+    },
+    "Mage": {
+      "stats": {
+        "hp": 65,
+        "atk": 3,
+        "matk": 18,
+        "def": 3,
+        "speed": 10,
+        "move": 4
+      },
+      "abilities": [
+        "Elemental attack: normal attacks deal Magic ATK-based damage in the weapon's element, bypassing DEF."
+      ],
+      "description": "Channel elemental damage through a magic weapon.",
+      "equipment": {
+        "headgear": "sage_hat",
+        "right_hand": "ember_staff",
+        "left_hand": "",
+        "armor": "woven_robes",
+        "shoes": "trail_boots",
+        "cape": "forest_cape",
+        "accessory_1": "focus_seal",
+        "accessory_2": "",
+        "fairy": "flint"
+      }
+    },
+    "Healer": {
+      "stats": {
+        "hp": 70,
+        "atk": 3,
+        "matk": 15,
+        "def": 4,
+        "speed": 9,
+        "move": 4
+      },
+      "abilities": [
+        "Healer: healing replaces attacking. Respect the weapon's minimum and maximum range; wait when no beneficial target exists."
+      ],
+      "description": "Heal at a distance. Turn recovery into party buffs.",
+      "equipment": {
+        "headgear": "sage_hat",
+        "right_hand": "mercy_staff",
+        "left_hand": "",
+        "armor": "woven_robes",
+        "shoes": "trail_boots",
+        "cape": "forest_cape",
+        "accessory_1": "focus_seal",
+        "accessory_2": "",
+        "fairy": "brook"
+      }
+    }
+  },
+  "items": {
+    "steel_helm": {
+      "name": "Sentinel helm",
+      "slot": "headgear",
+      "stats": {
+        "def": 3,
+        "speed": -1
+      },
+      "art": "helm",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "abilities": []
+    },
+    "leather_band": {
+      "name": "Wayfarer circlet",
+      "slot": "headgear",
+      "stats": {
+        "speed": 2
+      },
+      "art": "circlet",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "abilities": []
+    },
+    "sage_hat": {
+      "name": "Sage's hat",
+      "slot": "headgear",
+      "stats": {
+        "matk": 4
+      },
+      "art": "hat",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "abilities": []
+    },
+    "iron_sword": {
+      "name": "Iron sword",
+      "slot": "right_hand",
+      "stats": {
+        "atk": 8
+      },
+      "art": "sword",
+      "jobs": [
+        "Knight",
+        "Warrior"
+      ],
+      "abilities": [],
+      "hands": 1,
+      "range": [
+        1,
+        1
+      ],
+      "type": "Sword"
+    },
+    "guard_spear": {
+      "name": "Guard spear",
+      "slot": "right_hand",
+      "stats": {
+        "atk": 6,
+        "def": 2
+      },
+      "art": "staff",
+      "jobs": [
+        "Knight"
+      ],
+      "abilities": [],
+      "hands": 1,
+      "range": [
+        1,
+        2
+      ],
+      "type": "Spear"
+    },
+    "great_axe": {
+      "name": "Crescent axe",
+      "slot": "right_hand",
+      "stats": {
+        "atk": 14,
+        "speed": -2
+      },
+      "art": "axe",
+      "jobs": [
+        "Warrior"
+      ],
+      "abilities": [],
+      "hands": 2,
+      "range": [
+        1,
+        1
+      ],
+      "type": "Axe"
+    },
+    "longbow": {
+      "name": "Yew longbow",
+      "slot": "right_hand",
+      "stats": {
+        "atk": 8
+      },
+      "art": "bow",
+      "jobs": [
+        "Ranger"
+      ],
+      "abilities": [],
+      "hands": 2,
+      "range": [
+        2,
+        4
+      ],
+      "type": "Bow"
+    },
+    "crippling_bow": {
+      "name": "Binding bow",
+      "slot": "right_hand",
+      "stats": {
+        "atk": 5
+      },
+      "art": "bow",
+      "jobs": [
+        "Ranger"
+      ],
+      "abilities": [
+        "Binding shot: 35% chance after a normal hit to reduce enemy Speed by 2 for this round."
+      ],
+      "hands": 2,
+      "range": [
+        2,
+        4
+      ],
+      "type": "Bow"
+    },
+    "ember_staff": {
+      "name": "Ember staff",
+      "slot": "right_hand",
+      "stats": {
+        "matk": 9
+      },
+      "art": "staff",
+      "jobs": [
+        "Mage"
+      ],
+      "abilities": [],
+      "hands": 2,
+      "range": [
+        2,
+        4
+      ],
+      "type": "Staff",
+      "element": "Fire"
+    },
+    "storm_wand": {
+      "name": "Storm wand",
+      "slot": "right_hand",
+      "stats": {
+        "matk": 6,
+        "speed": 2
+      },
+      "art": "staff",
+      "jobs": [
+        "Mage"
+      ],
+      "abilities": [],
+      "hands": 1,
+      "range": [
+        1,
+        3
+      ],
+      "type": "Wand",
+      "element": "Thunder"
+    },
+    "mercy_staff": {
+      "name": "Mercy staff",
+      "slot": "right_hand",
+      "stats": {
+        "matk": 8
+      },
+      "art": "staff",
+      "jobs": [
+        "Healer"
+      ],
+      "abilities": [
+        "Mending: heal the lowest-HP-percentage eligible ally. Full-HP healing may trigger buffs."
+      ],
+      "hands": 2,
+      "range": [
+        2,
+        5
+      ],
+      "type": "Healing staff"
+    },
+    "pilgrim_staff": {
+      "name": "Pilgrim staff",
+      "slot": "right_hand",
+      "stats": {
+        "matk": 5,
+        "def": 2
+      },
+      "art": "staff",
+      "jobs": [
+        "Healer"
+      ],
+      "abilities": [],
+      "hands": 2,
+      "range": [
+        2,
+        5
+      ],
+      "type": "Healing staff"
+    },
+    "iron_shield": {
+      "name": "Iron shield",
+      "slot": "left_hand",
+      "stats": {
+        "def": 5,
+        "speed": -1
+      },
+      "art": "shield",
+      "jobs": [
+        "Knight",
+        "Warrior"
+      ],
+      "abilities": []
+    },
+    "buckler": {
+      "name": "Light buckler",
+      "slot": "left_hand",
+      "stats": {
+        "def": 2,
+        "speed": 1
+      },
+      "art": "shield",
+      "jobs": [
+        "Knight",
+        "Warrior"
+      ],
+      "abilities": []
+    },
+    "steel_plate": {
+      "name": "Sentinel plate",
+      "slot": "armor",
+      "stats": {
+        "hp": 20,
+        "def": 8,
+        "speed": -3
+      },
+      "art": "plate",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "abilities": []
+    },
+    "scout_leather": {
+      "name": "Scout leathers",
+      "slot": "armor",
+      "stats": {
+        "hp": 5,
+        "def": 3,
+        "speed": 3
+      },
+      "art": "leather",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "abilities": []
+    },
+    "woven_robes": {
+      "name": "Runic robes",
+      "slot": "armor",
+      "stats": {
+        "matk": 5,
+        "def": 2
+      },
+      "art": "robe",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "abilities": []
+    },
+    "steel_boots": {
+      "name": "Steel greaves",
+      "slot": "shoes",
+      "stats": {
+        "def": 3,
+        "speed": -1
+      },
+      "art": "steel_boots",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "abilities": []
+    },
+    "trail_boots": {
+      "name": "Trail boots",
+      "slot": "shoes",
+      "stats": {
+        "speed": 2
+      },
+      "art": "leather_boots",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "abilities": []
+    },
+    "crimson_cape": {
+      "name": "Crimson mantle",
+      "slot": "cape",
+      "stats": {
+        "hp": 10,
+        "def": 1
+      },
+      "art": "red_cape",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "abilities": []
+    },
+    "forest_cape": {
+      "name": "Forest cloak",
+      "slot": "cape",
+      "stats": {
+        "speed": 2
+      },
+      "art": "green_cape",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "abilities": []
+    },
+    "swift_charm": {
+      "name": "Swift charm",
+      "slot": "accessory",
+      "stats": {
+        "speed": 2
+      },
+      "art": "",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "abilities": [
+        "Quickstep: +2 Speed."
+      ]
+    },
+    "vital_pendant": {
+      "name": "Vital pendant",
+      "slot": "accessory",
+      "stats": {
+        "hp": 15
+      },
+      "art": "",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "abilities": []
+    },
+    "focus_seal": {
+      "name": "Focus seal",
+      "slot": "accessory",
+      "stats": {
+        "matk": 3
+      },
+      "art": "",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "abilities": []
+    },
+    "guard_sigil": {
+      "name": "Guard sigil",
+      "slot": "accessory",
+      "stats": {
+        "def": 2
+      },
+      "art": "",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "abilities": []
+    }
+  },
+  "fairies": {
+    "zephyr": {
+      "name": "Zephyr",
+      "element": "Wind",
+      "color": "#8bdbc2",
+      "shape": "diamond",
+      "slot": "fairy",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "stats": {
+        "speed": 5
+      },
+      "abilities": [
+        "Farwind: +1 maximum range to ranged attacks.",
+        "Wind shield: 50% chance when attacked to reduce incoming damage by 50% for that attack."
+      ],
+      "art": ""
+    },
+    "ember": {
+      "name": "Ember",
+      "element": "Fire",
+      "color": "#f49b71",
+      "shape": "flame",
+      "slot": "fairy",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "stats": {
+        "atk": 2
+      },
+      "abilities": [
+        "Cinder: 50% chance after a normal attack to deal an additional 10 Fire damage."
+      ],
+      "art": ""
+    },
+    "brook": {
+      "name": "Brook",
+      "element": "Water",
+      "color": "#8cbef0",
+      "shape": "drop",
+      "slot": "fairy",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "stats": {
+        "matk": 2
+      },
+      "abilities": [
+        "Shelter: 50% chance after healing to grant the recipient a barrier of 8 HP for this round."
+      ],
+      "art": ""
+    },
+    "flint": {
+      "name": "Flint",
+      "element": "Earth",
+      "color": "#dbbc80",
+      "shape": "square",
+      "slot": "fairy",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "stats": {
+        "def": 3
+      },
+      "abilities": [
+        "Steadfast: after intercepting, gain +2 DEF for this battle. Stacks across fights."
+      ],
+      "art": ""
+    },
+    "spark": {
+      "name": "Spark",
+      "element": "Thunder",
+      "color": "#d1abf5",
+      "shape": "star",
+      "slot": "fairy",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "stats": {
+        "speed": 2
+      },
+      "abilities": [
+        "Arc: 40% chance after a normal attack to deal an additional 10 Thunder damage."
+      ],
+      "art": ""
+    },
+    "bloom": {
+      "name": "Bloom",
+      "element": "Water",
+      "color": "#a5d9ed",
+      "shape": "flower",
+      "slot": "fairy",
+      "jobs": [
+        "Knight",
+        "Warrior",
+        "Ranger",
+        "Mage",
+        "Healer"
+      ],
+      "stats": {
+        "matk": 1
+      },
+      "abilities": [
+        "Blessing: 50% chance after healing, even at full HP, to grant the recipient +2 ATK and +2 Magic ATK for this battle. Stacks across fights."
+      ],
+      "art": ""
+    }
+  }
+}
