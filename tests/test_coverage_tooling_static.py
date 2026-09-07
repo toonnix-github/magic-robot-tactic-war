@@ -1,11 +1,30 @@
 from pathlib import Path
 import unittest
+import subprocess
+from unittest.mock import patch
+from tools import gdscript_function_coverage as coverage
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class CoverageToolingStaticTests(unittest.TestCase):
+    def test_coverage_imports_assets_before_running_a_cold_copy(self):
+        with patch.object(coverage.subprocess, 'run') as run:
+            run.return_value = subprocess.CompletedProcess([], 0, '', '')
+            coverage.run_godot('godot', Path('project'))
+            self.assertEqual(run.call_count, 2)
+            self.assertIn('--import', run.call_args_list[0].args[0])
+            self.assertIn(coverage.GODOT_TEST_SCRIPT, run.call_args_list[1].args[0])
+
+    def test_failed_asset_import_stops_coverage(self):
+        with patch.object(coverage.subprocess, 'run') as run:
+            run.return_value = subprocess.CompletedProcess([], 1, '', 'import failed')
+            result = coverage.run_godot('godot', Path('project'))
+            self.assertEqual(run.call_count, 1)
+            self.assertIn('--import', run.call_args.args[0])
+            self.assertEqual(result.returncode, 1)
+
     def test_gdscript_coverage_runner_exists(self):
         runner = ROOT / "tools" / "gdscript_function_coverage.py"
         self.assertTrue(runner.exists(), "GDScript coverage runner is missing")

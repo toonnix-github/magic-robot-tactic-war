@@ -5,6 +5,16 @@ Current scope: [Phase 2 Build Your Mech](docs/phase2-scope.md). Run the Godot pr
 
 ## Development Checks
 
+### Fantasy character building screen (#76)
+
+Open `scenes/fantasy_builder.tscn` in Godot and press **F6** to run the isolated fantasy preparation screen. On Windows, `launch-fantasy-builder.cmd` uses `GODOT_BIN`, an available `godot` command, or the local portable Godot installation.
+
+Select a hero, select an equipment slot, inspect stat changes, then equip. Fairy transfers explicitly identify the previous owner. **Build effects** shows the combined job and equipment abilities. Builds save locally; **Reset party** restores defaults after confirmation. This scene contains no fantasy battle or level progression. The existing default mech scene is preserved.
+
+See [scope and verification](docs/fantasy-building-screen.md) and [art source/prompt](docs/art/fantasy-equipment-atlas.md).
+
+### Regression commands
+
 Run the Python regression suite:
 
 ```powershell

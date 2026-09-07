@@ -11,6 +11,7 @@ func _init() -> void:
 
 
 func _run() -> void:
+	_failures.append_array(load("res://tests/godot/fantasy_builder_acceptance.gd").check(self))
 	var packed_scene: PackedScene = load("res://scenes/main.tscn")
 	var scene: Control = packed_scene.instantiate() as Control
 	root.add_child(scene)
