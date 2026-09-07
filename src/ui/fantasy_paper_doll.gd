@@ -22,9 +22,6 @@ const REGIONS := {
 }
 const PLACEMENTS := {
 	"base": Rect2(89, 23, 174, 392),
-	"plate": Rect2(105, 95, 144, 147),
-	"leather": Rect2(105, 95, 144, 147),
-	"robe": Rect2(88, 93, 178, 283),
 	"helm": Rect2(148, 25, 58, 83),
 	"circlet": Rect2(148, 44, 58, 29),
 	"hat": Rect2(125, 0, 104, 83),
@@ -32,14 +29,38 @@ const PLACEMENTS := {
 	"green_cape": Rect2(74, 92, 208, 285),
 	"steel_boots": Rect2(98, 310, 155, 109),
 	"leather_boots": Rect2(98, 310, 155, 109),
-	"sword": Rect2(77, 193, 48, 220),
-	"bow": Rect2(62, 106, 69, 300),
-	"staff": Rect2(74, 49, 64, 367),
-	"shield": Rect2(225, 176, 91, 146),
-	"axe": Rect2(66, 156, 71, 257),
 }
 var layers: Dictionary = {}
 var fairy: Dictionary = {}
+const HAND_RIGHT := Vector2(116.29, 233.21)
+const HAND_LEFT := Vector2(244.80, 233.21)
+const NECK := Vector2(177.71, 99.13)
+const WAIST := Vector2(177.71, 193.42)
+# Source grip coordinates are measured on the atlas, not the cropped rectangle.
+const GRIPS := {"sword": Vector2(1024,678), "bow": Vector2(66,1093), "staff": Vector2(409,1080), "axe": Vector2(1039,1094), "shield": Vector2(848,1060)}
+# Uniform image scale and rotation in degrees; the grip is the rotation pivot.
+const WEAPON_STYLE := {"sword": Vector2(0.78, 10), "bow": Vector2(0.86, -18), "staff": Vector2(0.88, -10), "axe": Vector2(0.78, -6), "shield": Vector2(0.55, 0)}
+const ARMOR_FIT := {
+	"plate": {"collar": Vector2(470,68), "waist": Vector2(470,185), "width_scale": 0.69},
+	"leather": {"collar": Vector2(785,73), "waist": Vector2(785,190), "width_scale": 0.62},
+	"robe": {"collar": Vector2(1098,56), "waist": Vector2(1098,175), "width_scale": 0.73},
+}
+var canvas_transform := Transform2D.IDENTITY
+
+func art_transform(art: String) -> Transform2D:
+	if GRIPS.has(art):
+		var style: Vector2 = WEAPON_STYLE[art]
+		var transform := Transform2D(deg_to_rad(style.y), Vector2.ONE * style.x, 0, Vector2.ZERO)
+		var target: Vector2 = HAND_LEFT if art == "shield" else HAND_RIGHT
+		transform.origin = target - transform * (GRIPS[art] - REGIONS[art].position)
+		return transform
+	if ARMOR_FIT.has(art):
+		var fit: Dictionary = ARMOR_FIT[art]
+		var scale_y: float = (WAIST.y - NECK.y) / (fit.waist.y - fit.collar.y)
+		var transform := Transform2D(0, Vector2(fit.width_scale, scale_y), 0, Vector2.ZERO)
+		transform.origin = NECK - transform * (fit.collar - REGIONS[art].position)
+		return transform
+	return Transform2D(0, PLACEMENTS[art].size / REGIONS[art].size, 0, PLACEMENTS[art].position)
 
 func show_build(equipment: Dictionary, catalog: Dictionary) -> void:
 	layers.clear()
@@ -51,7 +72,8 @@ func show_build(equipment: Dictionary, catalog: Dictionary) -> void:
 func _draw() -> void:
 	var factor := minf(size.x / 350.0, size.y / 435.0)
 	var offset := (size - Vector2(350, 435) * factor) * 0.5
-	draw_set_transform(offset, 0, Vector2.ONE * factor)
+	canvas_transform = Transform2D(0, Vector2.ONE * factor, 0, offset)
+	draw_set_transform_matrix(canvas_transform)
 	draw_circle(Vector2(175, 210), 149, Color("253533"))
 	draw_arc(Vector2(175, 210), 151, 0, TAU, 80, Color("71684c"), 1.0, true)
 	draw_arc(Vector2(175, 210), 159, 0.2, 2.7, 40, Color("434b40"), 1.0, true)
@@ -60,6 +82,8 @@ func _draw() -> void:
 	draw_layer("base")
 	for slot in ["armor", "shoes", "headgear", "right_hand", "left_hand"]:
 		draw_layer(layers.get(slot, ""))
+	if not layers.get("right_hand", "").is_empty():
+		draw_gripping_hand()
 	if not fairy.is_empty():
 		draw_fairy(Vector2(285, 102), Color(fairy.color), fairy.shape)
 	draw_set_transform(Vector2.ZERO)
@@ -72,7 +96,27 @@ func shadow_style() -> StyleBoxFlat:
 
 func draw_layer(art: String) -> void:
 	if REGIONS.has(art):
-		draw_texture_rect_region(ATLAS, PLACEMENTS[art], REGIONS[art])
+		var source: Rect2 = REGIONS[art]
+		var transform := art_transform(art)
+		draw_set_transform_matrix(canvas_transform * transform)
+		if art == "robe":
+			# Fit the upper garment to the torso; extend only the skirt below its belt.
+			var split: float = ARMOR_FIT.robe.waist.y - source.position.y
+			draw_texture_rect_region(ATLAS, Rect2(Vector2.ZERO, Vector2(source.size.x, split)), Rect2(source.position, Vector2(source.size.x, split)))
+			var skirt_scale := (400.0 - WAIST.y) / (source.size.y - split)
+			var skirt_transform := Transform2D(0, Vector2(transform.x.length(), skirt_scale), 0, Vector2(transform.origin.x, WAIST.y))
+			draw_set_transform_matrix(canvas_transform * skirt_transform)
+			draw_texture_rect_region(ATLAS, Rect2(Vector2.ZERO, Vector2(source.size.x, source.size.y - split)), Rect2(source.position + Vector2(0, split), Vector2(source.size.x, source.size.y - split)))
+		else:
+			draw_texture_rect_region(ATLAS, Rect2(Vector2.ZERO, source.size), source)
+		draw_set_transform_matrix(canvas_transform)
+
+func draw_gripping_hand() -> void:
+	# Foreground fingers/wrist conceal the grip, so the weapon reads as held.
+	var source := Rect2(92, 170, 21, 31)
+	var transform := art_transform("base")
+	var destination := Rect2(transform * (source.position - REGIONS.base.position), source.size * transform.get_scale())
+	draw_texture_rect_region(ATLAS, destination, source)
 
 func draw_fairy(center: Vector2, color: Color, shape: String) -> void:
 	for radius in [27, 20, 14]:

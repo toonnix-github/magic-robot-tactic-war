@@ -2,6 +2,7 @@ extends RefCounted
 
 static func check(tree: SceneTree) -> Array[String]:
 	var errors: Array[String] = []
+	errors.append_array(load("res://tests/godot/fantasy_alignment_acceptance.gd").check())
 	if ProjectSettings.get_setting("application/run/main_scene") != "res://scenes/fantasy_builder.tscn":
 		errors.append("F5 must launch the fantasy builder")
 	var script = load("res://src/data/fantasy_build_model.gd")

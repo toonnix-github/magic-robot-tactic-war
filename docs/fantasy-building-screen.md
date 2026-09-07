@@ -37,9 +37,9 @@ Open this checkout's `project.godot` in Godot and press F5, or use `launch-fanta
 ## Verification — 2026-09-07
 
 - Red: the three new Python contracts failed for the missing catalog/model/scene; Godot acceptance failed for the missing model before implementation.
-- Green: `python -m unittest discover` — 65 tests passed, including default F5 entry and Windows path quoting.
+- Green: `python -m unittest discover` — 66 tests passed, including default F5 entry, Windows path quoting and attachment rendering ownership.
 - `godot --headless --path . -s res://tests/godot/battle_milestone_test.gd` — GODOT TESTS PASSED, including new equipment restrictions, previews without mutation, stat stacking, unique fairy transfer, local save round-trip, malformed save rejection and UI interaction checks.
-- `python tools/gdscript_function_coverage.py --godot <Godot executable> --fail-under 80` — 420/435 functions, 96.6%.
+- `python tools/gdscript_function_coverage.py --godot <Godot executable> --fail-under 80` — 422/437 functions, 96.6%.
 - Existing Phase 2 evidence generator reproduced its committed report without a content diff.
 - Rendered 1280×590 and 844×390 layouts using `tools/capture_fantasy_builder.gd`, with isolated in-memory builds. Evidence is under `docs/playtest/fantasy/`.
 - Only the static screen is implemented. Ability descriptions and numbers are provisional preparation data, not functioning fantasy combat. Stat allocation remains deferred. Some gear variants share illustration layers; accessories have no body layer. Narrow screens use scrollable equipment, candidates and descriptions.
@@ -50,3 +50,7 @@ Open this checkout's `project.godot` in Godot and press F5, or use `launch-fanta
 Run the standalone scene. Select Knight → Armor → Scout leathers and compare HP/DEF/Speed before equipping. Inspect the changed illustration. Select Healer → Fairy → Zephyr; read the transfer warning, then transfer and check Knight's empty fairy slot. Equip Bloom on Healer to inspect the full-HP healing buff concept. Use Build effects to see the combined job/equipment/fairy descriptions. Restart the scene to verify local persistence. Reset party restores defaults after confirmation.
 
 Whether building is enjoyable and the character presentation suits the pivot remains the user's product judgment.
+
+## Equipment alignment review fix
+
+The first visual pass used independent rectangles for weapons and armor. The review fix registers weapon grips to the palms, rotates about those grips, preserves weapon aspect ratios, fits armor collar/waist to the base body, and draws the right hand over held equipment. New Python/Godot tests failed before implementation and verify the shared registration. Scope remains illustration only; model and combat rules are unchanged. Review evidence includes `docs/playtest/fantasy/equipment-alignment.png` alongside updated screen captures.

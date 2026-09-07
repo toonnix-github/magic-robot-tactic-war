@@ -7,6 +7,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FantasyBuilderStaticTests(unittest.TestCase):
+    def test_equipment_draw_uses_registration_and_hand_occlusion(self):
+        view = (ROOT / 'src/ui/fantasy_paper_doll.gd').read_text()
+        self.assertIn('art_transform(art)', view)
+        self.assertIn('draw_gripping_hand()', view)
+        self.assertNotIn('ATLAS, PLACEMENTS[art], REGIONS[art]', view)
+
     def test_f5_runs_the_fantasy_builder(self):
         project = (ROOT / 'project.godot').read_text()
         self.assertIn('run/main_scene="res://scenes/fantasy_builder.tscn"', project)
